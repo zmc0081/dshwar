@@ -1,7 +1,7 @@
 {
-  "name": "@dshwar/principal",
+  "name": "@dshwar/auth",
   "version": "0.1.0",
-  "description": "principal 传播 —— DSHWAR 引入的唯一新概念。其余包都是上游已有契约的替代实现。",
+  "description": "认证契约:token → Principal。只验证与映射,永不存密码、永不签发令牌、永不实现注册流程。",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
@@ -23,6 +23,9 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@dshwar/principal": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.1"

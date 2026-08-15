@@ -61,10 +61,17 @@ const CHECKS = [
   {
     name: 'ANONYMOUS 越界',
     rule: 'CLAUDE.md PR 自查 —— ANONYMOUS 只允许出现在 @dshwar/principal 包内',
+    // 范围严格对齐 CLAUDE.md 的原文 grep:`packages/*/src`,只管产品源码。
+    //
+    // test/ 刻意不在范围内,且这不是放水:规则的目的是让产品代码没法绕过
+    // fail closed —— 拿到 ANONYMOUS 就意味着有人在写「如果是匿名就……」的分支,
+    // 而正确写法是让下游自然地解析不到东西。测试恰恰相反,它必须能构造匿名主体
+    // 来断言 fail closed 真的发生了。把测试也拦掉,等于禁止验证这条规则本身。
     run: () => {
-      const files = collectFiles(p('packages'), isTs).filter(
-        (f) => !repoPath(REPO, f).startsWith('packages/principal/'),
-      )
+      const files = collectFiles(p('packages'), isTs).filter((f) => {
+        const rel = repoPath(REPO, f)
+        return rel.includes('/src/') && !rel.startsWith('packages/principal/')
+      })
       return grepFiles(files, /\bANONYMOUS\b/g, REPO)
     },
   },

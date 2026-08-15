@@ -6,5 +6,9 @@
   // `include: []` 而非 `files: []`:references 尚为空时(Session 2 才落第一个包),
   // 空的 `files` 会触发 TS18002。
   "include": [],
-  "references": [{ "path": "./packages/principal" }]
+  "references": [
+    { "path": "./packages/principal" },
+    { "path": "./packages/auth" },
+    { "path": "./packages/auth-static" }
+  ]
 }
