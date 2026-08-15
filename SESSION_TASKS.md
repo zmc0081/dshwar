@@ -121,17 +121,17 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 
 ### Session 状态
 
-| Session                   | 状态      | 说明                                                                                          |
-| ------------------------- | --------- | --------------------------------------------------------------------------------------------- |
-| 0 可行性验证              | ✅ 已完成 | **止损未触发**,四项全过;上游锁定 `0.1.0-rc.6`;报告见 `docs/FEASIBILITY-REPORT.md`             |
-| 1 工程骨架与边界纪律      | ✅ 已完成 | workspace / TS / ESLint 边界规则 / 守卫脚本 / changesets / CI / single-user 骨架;负向测试 8/8 |
-| 2 `@dshwar/principal`     | ✅ 已完成 | principal 传播;31 个单测覆盖作用域隔离与并发无串号                                            |
-| 3 `auth` + `auth-static`  | ✅ 已完成 | 认证契约与静态实现;`AuthError` 不携带失败原因,19 个单测                                       |
-| 4 `credentials-multiuser` | ✅ 已完成 | per-principal 凭据 + 网关遮蔽;33 个单测;`examples/minimal-server` 跑通                        |
-| 5 `fs-tenant` ★           | ✅ 已完成 | 路径钉死;67 条测试(含符号链接逃逸,须在 Linux 验证)                                            |
-| 6 `storage-scoped`        | ✅ 已完成 | R7 已否决,新建包;长度前缀防伪造;27 个单测                                                     |
-| 7 契约测试与跟版          | ⬜ 未开始 |                                                                                               |
-| 8 开源首发                | ⬜ 未开始 | 依赖 npm 组织占名                                                                             |
+| Session                   | 状态                  | 说明                                                                                                                                      |
+| ------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| 0 可行性验证              | ✅ 已完成             | **止损未触发**,四项全过;上游锁定 `0.1.0-rc.6`;报告见 `docs/FEASIBILITY-REPORT.md`                                                         |
+| 1 工程骨架与边界纪律      | ✅ 已完成             | workspace / TS / ESLint 边界规则 / 守卫脚本 / changesets / CI / single-user 骨架;负向测试 8/8                                             |
+| 2 `@dshwar/principal`     | ✅ 已完成             | principal 传播;31 个单测覆盖作用域隔离与并发无串号                                                                                        |
+| 3 `auth` + `auth-static`  | ✅ 已完成             | 认证契约与静态实现;`AuthError` 不携带失败原因,19 个单测                                                                                   |
+| 4 `credentials-multiuser` | ✅ 已完成             | per-principal 凭据 + 网关遮蔽;33 个单测;`examples/minimal-server` 跑通                                                                    |
+| 5 `fs-tenant` ★           | ✅ 已完成             | 路径钉死;67 条测试(含符号链接逃逸,须在 Linux 验证)                                                                                        |
+| 6 `storage-scoped`        | ✅ 已完成             | R7 已否决,新建包;长度前缀防伪造;27 个单测                                                                                                 |
+| 7 契约测试与跟版          | ✅ 已完成             | `adapters/dsh-0.1.0` 落地;33 条契约测试;R9 双 profile 对照;负向测试增至 9 条                                                              |
+| 8 开源首发                | 🟠 代码就绪待外部资源 | 文档 / 许可 / 商标 / CONTRIBUTING 完成,tarball 空目录安装已验证;npm 组织与 GitHub 仓库未创建,发布未执行 —— 见 `docs/RELEASE-CHECKLIST.md` |
 
 图例:✅ 已完成 · 🔄 进行中 · ⬜ 未开始 · 🟠 代码就绪待外部资源
 
@@ -510,7 +510,7 @@ adapters 边界规则写进 CI 只要半小时，不写的话三个月后满仓�
 
 ---
 
-### ⬜ Session 8: 开源首发
+### 🟠 Session 8: 开源首发
 
 ```
 读取 CLAUDE.md（第八节 开源与商业边界、第九节 商标与声明）。
