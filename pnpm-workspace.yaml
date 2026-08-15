@@ -1,0 +1,15 @@
+# DSHWAR workspace。
+#
+# feasibility/ 刻意不在此列:它是 Session 0 的验证工作区,有自己的 lockfile 与
+# 独立锁版,纳入 workspace 会让上游 caret 依赖参与根解析,污染精确锁版(硬规则 3)。
+packages:
+  - 'packages/*'
+  - 'adapters/*'
+  - 'examples/*'
+  - 'gateway'
+
+# 上游 native 依赖的构建授权。pnpm 11 起用 allowBuilds 而非 onlyBuiltDependencies。
+allowBuilds:
+  '@deepseek-ai/dsh-subprocess-local': true
+  koffi: true
+  node-pty: true

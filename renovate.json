@@ -1,0 +1,41 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "timezone": "Asia/Shanghai",
+  "labels": ["dependencies"],
+  "packageRules": [
+    {
+      "description": "上游 dsh 跟版:目标 48 小时内跟上小版本(CLAUDE.md 第五节)。升级流程是 PR → 契约测试跑红 → 只改 adapters/ → 绿了合并,所以这些 PR 要单独、要显眼、不合并到一起。",
+      "matchPackageNames": ["@deepseek-ai/dsh", "@deepseek-ai/dsh-**"],
+      "groupName": null,
+      "separateMinorPatch": true,
+      "schedule": ["at any time"],
+      "prPriority": 10,
+      "labels": ["dependencies", "upstream-dsh"],
+      "rangeStrategy": "pin",
+      "addLabels": ["需跑 pnpm test:contract"]
+    },
+    {
+      "description": "两条都是必需的。ignoreUnstable:上游当前整条线都是 rc 预发布(0.1.0-rc.6),不允许 unstable 就永远不跟版。respectLatest:上游子包的 dist-tags.latest 是坏的 —— 除 @deepseek-ai/dsh 本体外全部停在 0.0.1-rc.1,而实际已发到 0.1.0-rc.6;尊重 latest 标签等于永远不开 PR。见 docs/FEASIBILITY-REPORT.md §4.3。",
+      "matchPackageNames": ["@deepseek-ai/dsh", "@deepseek-ai/dsh-**", "@deepseek-ai/cordis"],
+      "ignoreUnstable": false,
+      "respectLatest": false
+    },
+    {
+      "description": "typescript 锁在 6.x:typescript-eslint 尚不支持 TS 7,升上去 ESLint 直接拒绝启动。见 docs/DECISIONS/typescript-version.md。typescript-eslint 支持 TS≥7.1 后删掉本条。",
+      "matchPackageNames": ["typescript"],
+      "allowedVersions": "<7"
+    },
+    {
+      "description": "开发工具链合并成一个 PR,减少噪音。",
+      "matchDepTypes": ["devDependencies"],
+      "excludePackageNames": ["typescript"],
+      "matchPackageNames": ["!@deepseek-ai/**"],
+      "groupName": "dev toolchain"
+    }
+  ],
+  "vulnerabilityAlerts": {
+    "labels": ["security"],
+    "prPriority": 20
+  }
+}

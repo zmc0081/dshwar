@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'feature/**']
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # 守卫先跑、单独成 job:边界与锁版违规不该等 20 分钟的矩阵跑完才报出来,
+  # 而且它们与 Node 版本无关,跑两遍是浪费。
+  guards:
+    name: 纪律守卫
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: 版本号一致性(CLAUDE.md 第四节)
+        run: pnpm check:version
+
+      - name: PR 自查清单(CLAUDE.md 第二节)
+        run: pnpm check:guards
+
+      - name: 守卫的负向测试 —— 确认守卫真的会拦
+        run: pnpm verify:guards
+
+      - name: Prettier
+        run: pnpm format:check
+
+  build:
+    name: 构建与测试 (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 与上游 engines 一致:^22.19.0 || >=24.0.0
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint(含 adapters 边界规则)
+        run: pnpm lint
+
+      - name: 单元测试
+        run: pnpm test
+
+      - name: 上游契约测试
+        run: pnpm test:contract
+
+  # PTY 相关契约测试只能在 Linux 跑:上游 dsh-subprocess-local 的 ProcessInspector
+  # 只实现了 linux 与 darwin,win32 直接抛错。
+  # 见 docs/FEASIBILITY-REPORT.md 验证 D。
+  #
+  # 本 job 现在是空跑占位,Session 7 落地契约测试后启用真实断言。
+  terminal-contract:
+    name: 终端能力契约(仅 Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: 占位 —— Session 7 在此接入 PTY 契约测试
+        run: echo "PTY contract tests land in Session 7 (R8)."

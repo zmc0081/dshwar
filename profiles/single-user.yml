@@ -1,0 +1,75 @@
+# profiles/single-user.yml —— 对照基线
+#
+# 组合**上游原生插件** + 匿名 principal。它存在的唯一理由:证明
+# 「DSHWAR 只加隔离,不改语义」。
+#
+# CLAUDE.md 硬规则 8:单用户场景下,本 profile 与 team.yml 的行为必须完全一致。
+# Session 7 的全部契约测试会同时跑这两个 profile,断言输出无差异 ——
+# 这是别人敢用 DSHWAR 的理由,也是我们敢说「消费方零改动」的凭据。
+#
+# 因此本文件有一条纪律:**除了 principal,不要往这里加任何 DSHWAR 的包。**
+# 一旦加了,对照就不再是对照。
+#
+# 上游版本:0.1.0-rc.6(精确锁版,见 CLAUDE.md 硬规则 3)
+
+# ---------------------------------------------------------------------------
+# 基础设施
+# ---------------------------------------------------------------------------
+- id: timer
+  name: '@deepseek-ai/cordis-plugin-timer'
+
+# ---------------------------------------------------------------------------
+# principal —— 本 profile 里唯一的 DSHWAR 包
+#
+# 单用户场景下解析为 ANONYMOUS。注意这**不是**多租户场景的 fail-closed 语义:
+# 这里是「本来就只有一个人」,而非「认不出是谁」。
+# 二者的区别由 @dshwar/principal 的文档说明(Session 2 落地)。
+# ---------------------------------------------------------------------------
+- id: principal
+  name: '@dshwar/principal'
+  # Session 2 落地后取消注释。现在留空是刻意的 —— 包还不存在,
+  # 提前写上会让 profile 加载失败,而失败信息会指向错误的方向。
+  disabled: true
+
+# ---------------------------------------------------------------------------
+# 运行时契约 —— 全部使用上游原生单用户实现
+#
+# DSHWAR 在 team.yml 里替换的正是这几个:
+#   credentials-local  → @dshwar/credentials-multiuser
+#   fs-local           → @dshwar/fs-tenant
+#   storage(默认作用域) → @dshwar/storage-scoped
+# 对照测试比的就是「换之前」与「换之后」在单用户场景下是否一模一样。
+# ---------------------------------------------------------------------------
+- id: credentials
+  name: '@deepseek-ai/dsh-credentials-local'
+  config:
+    apiKeyEnv: DEEPSEEK_API_KEY
+
+- id: fs
+  name: '@deepseek-ai/dsh-fs-local'
+
+- id: storage
+  name: '@deepseek-ai/dsh-storage'
+
+- id: subprocess
+  name: '@deepseek-ai/dsh-subprocess-local'
+
+# ---------------------------------------------------------------------------
+# 会话与存储
+# ---------------------------------------------------------------------------
+- id: session
+  name: '@deepseek-ai/dsh-session'
+
+- id: session-persistence-jsonl
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: !!js dshHomePath('sessions')
+
+# ---------------------------------------------------------------------------
+# 模型
+# ---------------------------------------------------------------------------
+- id: llm
+  name: '@deepseek-ai/dsh-llm'
+
+- id: agent
+  name: '@deepseek-ai/dsh-agent'

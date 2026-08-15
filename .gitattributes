@@ -1,0 +1,14 @@
+# 全仓统一 LF。
+#
+# 不加这条会出一个很难查的问题:Windows 开发机 core.autocrlf=true 时,checkout
+# 会把工作区换成 CRLF,而 .prettierrc.json 配的是 endOfLine: lf ——
+# 于是 `pnpm format:check` 在本机红、在 CI(ubuntu)绿,两边谁也说服不了谁。
+* text=auto eol=lf
+
+# 二进制与锁文件不做转换
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+pnpm-lock.yaml -diff linguist-generated=true

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    // ---- CLAUDE.md 第六节强制三项 ----
+    "strict": true,
+    "exactOptionalPropertyTypes": true,
+    "noUncheckedIndexedAccess": true,
+
+    // ---- 额外的收紧,便宜且防真实 bug ----
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "useUnknownInCatchVariables": true,
+    "forceConsistentCasingInFileNames": true,
+
+    // ---- 模块与目标 ----
+    // 与上游同栈:ESM + nodenext 解析。上游包全部走 exports 字段,
+    // nodenext 是唯一能正确解析 "./types" 这类子路径导出的模式。
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "target": "es2023",
+    "lib": ["es2023"],
+    "types": ["node"],
+
+    // ---- project references 必需 ----
+    // 契约包多、依赖浅,tsc -b 增量构建足够,不引 bundler(ARCHITECTURE.md §2.1)
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+
+    // ---- 单文件可转译,便于将来任何工具接入 ----
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+
+    // 上游 0.1.0-rc.6 的 .d.ts 由其自身 CI 保证,这里不重复检查以省构建时间
+    "skipLibCheck": true
+  }
+}

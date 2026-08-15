@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  // 解决方案文件:自身不含源码,只把各 workspace 包串成 project references。
+  // 新增包时在此登记一行 —— 忘了登记 CI 就构建不到它,这是刻意的。
+  //
+  // `include: []` 而非 `files: []`:references 尚为空时(Session 2 才落第一个包),
+  // 空的 `files` 会触发 TS18002。
+  "include": [],
+  "references": []
+}

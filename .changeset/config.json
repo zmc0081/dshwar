@@ -1,0 +1,16 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@3.0.0/schema.json",
+  "changelog": "@changesets/cli/changelog",
+  "commit": false,
+  "access": "public",
+  "baseBranch": "main",
+
+  "//fixed": "CLAUDE.md 第四节:全部 @dshwar/* 统一版本号。fixed 模式让 changesets 把它们当一个整体提升,版本一致性检查因此只需比对 root + 文档三处,而不是二十个包。",
+  "fixed": [["@dshwar/*"]],
+
+  "linked": [],
+  "updateInternalDependencies": "patch",
+
+  "//ignore": "examples/* 与 feasibility/ 不发布,不参与版本提升。",
+  "ignore": []
+}
