@@ -16,6 +16,7 @@
     "clean": "tsc -b --clean",
     "test": "vitest run",
     "test:contract": "vitest run --dir adapters",
+    "test:linux": "docker run --rm -v \"%cd%:/src:ro\" -w / node:24 bash /src/scripts/test-linux.sh",
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

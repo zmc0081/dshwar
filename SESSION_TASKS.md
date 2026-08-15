@@ -128,7 +128,8 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 | 2 `@dshwar/principal`     | ✅ 已完成 | principal 传播;31 个单测覆盖作用域隔离与并发无串号                                            |
 | 3 `auth` + `auth-static`  | ✅ 已完成 | 认证契约与静态实现;`AuthError` 不携带失败原因,19 个单测                                       |
 | 4 `credentials-multiuser` | ✅ 已完成 | per-principal 凭据 + 网关遮蔽;33 个单测;`examples/minimal-server` 跑通                        |
-| 5 · 6                     | ⬜ 未开始 | 其余两个包                                                                                    |
+| 5 `fs-tenant` ★           | ✅ 已完成 | 路径钉死;67 条测试(含符号链接逃逸,须在 Linux 验证)                                            |
+| 6                         | ⬜ 未开始 | `storage-scoped`                                                                              |
 | 7 契约测试与跟版          | ⬜ 未开始 |                                                                                               |
 | 8 开源首发                | ⬜ 未开始 | 依赖 npm 组织占名                                                                             |
 
@@ -388,7 +389,7 @@ adapters 边界规则写进 CI 只要半小时，不写的话三个月后满仓�
 
 ---
 
-### ⬜ Session 5: `@dshwar/fs-tenant` ★ 隔离的真实边界
+### ✅ Session 5: `@dshwar/fs-tenant` ★ 隔离的真实边界
 
 ```
 读取 CLAUDE.md（第七节 安全与隔离）与上游 dsh-fs、fs-sandbox 的契约。
