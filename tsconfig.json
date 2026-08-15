@@ -9,6 +9,7 @@
   "references": [
     { "path": "./packages/principal" },
     { "path": "./packages/auth" },
-    { "path": "./packages/auth-static" }
+    { "path": "./packages/auth-static" },
+    { "path": "./packages/credentials-multiuser" }
   ]
 }

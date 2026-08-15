@@ -1,0 +1,19 @@
+{
+  "name": "@dshwar/example-minimal-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "三十行证明论点:两用户两 key,消费方零改动。",
+  "type": "module",
+  "scripts": {
+    "start": "node src/main.ts"
+  },
+  "dependencies": {
+    "@dshwar/auth-static": "workspace:*",
+    "@dshwar/credentials-multiuser": "workspace:*",
+    "@dshwar/principal": "workspace:*"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@deepseek-ai/dsh-credentials": "0.1.0-rc.6"
+  }
+}
