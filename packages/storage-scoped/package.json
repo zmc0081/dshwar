@@ -1,0 +1,42 @@
+{
+  "name": "@dshwar/storage-scoped",
+  "version": "0.1.0",
+  "description": "租户维度的存储作用域:记录键加长度前缀,跨租户读写在本层拒绝。",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@dshwar/fs-tenant": "workspace:*",
+    "@dshwar/principal": "workspace:*"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@deepseek-ai/dsh-storage": "0.1.0-rc.6"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@deepseek-ai/dsh-storage": "0.1.0-rc.6"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
