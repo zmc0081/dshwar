@@ -1,0 +1,80 @@
+# profiles/team.yml —— 团队内多用户,逻辑隔离
+#
+# ⚠️ **逻辑隔离仅适用于互相信任的用户。** Harness agent 能执行 shell,
+# 路径钉死抬高了越界成本但不构成强边界。跨信任边界请用 enterprise.yml
+# (进程隔离 + 容器,V0.3.0)。
+#
+# 与 single-user.yml 的**唯一**差别:三个运行时契约换成 DSHWAR 的多用户实现,
+# 外加 principal 与 auth。上游插件一个不动 —— 这正是「只加隔离、不改语义」
+# 要证明的事(硬规则 8)。
+#
+# 上游版本:0.1.0-rc.6(精确锁版)
+
+# ---------------------------------------------------------------------------
+# 基础设施(与 single-user.yml 相同)
+# ---------------------------------------------------------------------------
+- id: timer
+  name: '@deepseek-ai/cordis-plugin-timer'
+
+# ---------------------------------------------------------------------------
+# 身份 —— single-user.yml 里只有 principal,这里多一个 auth
+# ---------------------------------------------------------------------------
+- id: principal
+  name: '@dshwar/principal'
+
+- id: auth
+  name: '@dshwar/auth-static'
+  # ⚠️ auth-static 的 token 是明文配置,**禁止部署**。
+  # 它在这里是为了让 team.yml 能零外部依赖跑起来做对照测试。
+  # 生产请换 @dshwar/auth-jwt 或 @dshwar/auth-oidc(V0.3.0)。
+  config:
+    entries:
+      - token: dev-alice
+        id: alice-e6f1
+        tenantId: acme
+        roles: [member]
+      - token: dev-bob
+        id: bob-a2b3
+        tenantId: globex
+        roles: [member]
+
+# ---------------------------------------------------------------------------
+# 运行时契约 —— 这三个是与 single-user.yml 的全部差异
+#
+#   credentials-local  → credentials-multiuser
+#   fs-local           → fs-tenant（包装 fs-local，不替代）
+#   storage            → storage-scoped（包装后端，不替代）
+# ---------------------------------------------------------------------------
+- id: credentials
+  name: '@dshwar/credentials-multiuser'
+
+- id: fs
+  name: '@dshwar/fs-tenant'
+  config:
+    # 每个主体的实际根是 {root}/{tenantId}/{userId}
+    root: !!js dshHomePath('workspaces')
+
+- id: storage
+  name: '@dshwar/storage-scoped'
+
+# ---------------------------------------------------------------------------
+# 以下全部与 single-user.yml 逐行相同 —— 差异只在上面那三个
+# ---------------------------------------------------------------------------
+- id: subprocess
+  name: '@deepseek-ai/dsh-subprocess-local'
+
+- id: session
+  name: '@deepseek-ai/dsh-session'
+
+- id: session-persistence-jsonl
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: !!js dshHomePath('sessions')
+
+- id: llm
+  name: '@deepseek-ai/dsh-llm'
+
+- id: agent
+  name: '@deepseek-ai/dsh-agent'
+# ⚠️ 刻意**不含** session-query-sqlite:它是全局索引、不感知 principal,
+# 查询会跨租户。见 docs/DECISIONS/storage-scoping.md。

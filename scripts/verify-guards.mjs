@@ -246,6 +246,47 @@ try {
 
     rmSync(p('packages/__guard_fixture__'), { recursive: true, force: true })
   }
+  // ---------------------------------------------------------------------
+  // 6. 篡改 adapters 内的一个假设,契约测试必须红(Session 7 验收)
+  //
+  //    契约测试的全部价值在于「上游改了语义,它立刻跑红」。若篡改假设之后
+  //    它依然是绿的,那它测的就不是上游 —— 而这一点只有主动破坏才能发现。
+  // ---------------------------------------------------------------------
+  {
+    const target = p('adapters/dsh-0.1.0/src/version-guard.ts')
+    if (!existsSync(target)) {
+      expect('6 篡改 adapters 假设后契约测试变红', false, 'adapters/dsh-0.1.0 尚未落地')
+    } else {
+      const backup = `${target}.guardbak`
+      copyFileSync(target, backup)
+      try {
+        const original = readFileSync(target, 'utf8')
+        const tampered = original.replace(
+          /export const EXPECTED_UPSTREAM_VERSION = '[^']+'/,
+          "export const EXPECTED_UPSTREAM_VERSION = '9.9.9-tampered'",
+        )
+        if (tampered === original) {
+          expect('6 篡改 adapters 假设后契约测试变红', false, '未能改动 EXPECTED_UPSTREAM_VERSION')
+        } else {
+          writeFileSync(target, tampered, 'utf8')
+          const contract = run([
+            p('node_modules', 'vitest', 'vitest.mjs'),
+            'run',
+            '--dir',
+            'adapters',
+          ])
+          expect(
+            '6 篡改 adapters 内的上游版本假设,契约测试立刻变红',
+            !contract.ok,
+            contract.ok ? '契约测试放行了错误的上游版本假设 —— 它没在测上游' : undefined,
+          )
+        }
+      } finally {
+        copyFileSync(backup, target)
+        unlinkSync(backup)
+      }
+    }
+  }
 } finally {
   // 无条件清理,失败路径也不留垃圾
   for (const dir of ['packages/__guard_fixture__', 'adapters/__guard_fixture__']) {
@@ -268,7 +309,7 @@ try {
   const guards = runGuards()
   const version = runVersion()
   expect(
-    '6 夹具已清理干净,守卫回到基线',
+    '7 夹具已清理干净,守卫回到基线',
     guards.ok && version.ok,
     guards.ok && version.ok ? undefined : '清理后守卫仍然失败,仓库可能残留夹具',
   )

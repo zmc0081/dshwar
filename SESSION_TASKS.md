@@ -129,7 +129,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 | 3 `auth` + `auth-static`  | ✅ 已完成 | 认证契约与静态实现;`AuthError` 不携带失败原因,19 个单测                                       |
 | 4 `credentials-multiuser` | ✅ 已完成 | per-principal 凭据 + 网关遮蔽;33 个单测;`examples/minimal-server` 跑通                        |
 | 5 `fs-tenant` ★           | ✅ 已完成 | 路径钉死;67 条测试(含符号链接逃逸,须在 Linux 验证)                                            |
-| 6                         | ⬜ 未开始 | `storage-scoped`                                                                              |
+| 6 `storage-scoped`        | ✅ 已完成 | R7 已否决,新建包;长度前缀防伪造;27 个单测                                                     |
 | 7 契约测试与跟版          | ⬜ 未开始 |                                                                                               |
 | 8 开源首发                | ⬜ 未开始 | 依赖 npm 组织占名                                                                             |
 

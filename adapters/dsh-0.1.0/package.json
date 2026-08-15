@@ -1,0 +1,46 @@
+{
+  "name": "@dshwar/adapter-dsh-0-1-0",
+  "version": "0.1.0",
+  "description": "★ 唯一允许感知上游内部的目录。上游破坏性变更全部撞在这一层。",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@deepseek-ai/dsh-credentials": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-fs": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-fs-local": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-invariants": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-storage": "0.1.0-rc.6",
+    "@dshwar/auth-static": "workspace:*",
+    "@dshwar/credentials-multiuser": "workspace:*",
+    "@dshwar/fs-tenant": "workspace:*",
+    "@dshwar/principal": "workspace:*",
+    "@dshwar/storage-scoped": "workspace:*"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
