@@ -34,6 +34,13 @@
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
 
+    // 相对导入写 `.ts` 后缀,emit 时由 TS 重写成 `.js`。
+    // 与上游同款写法(其 .d.ts 里就是 `from './events.ts'`),好处是源码可被
+    // `node --experimental-strip-types` 直接运行 —— Session 0 的验证脚本正是这么跑的,
+    // 调试一个包时不必先 build。
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+
     // 上游 0.1.0-rc.6 的 .d.ts 由其自身 CI 保证,这里不重复检查以省构建时间
     "skipLibCheck": true
   }

@@ -1,0 +1,36 @@
+{
+  "name": "@dshwar/principal",
+  "version": "0.1.0",
+  "description": "principal 传播 —— DSHWAR 引入的唯一新概念。其余包都是上游已有契约的替代实现。",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b --noEmit"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.1"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
