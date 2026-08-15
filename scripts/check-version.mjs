@@ -120,6 +120,50 @@ for (const candidate of [
   })
 }
 
+// ---------- changesets fixed 组覆盖率 ----------
+// 光有 fixed 配置不够:漏一个包出去,它就会独立走版本号,而 changesets 不会报错,
+// 直到发布那天才发现全仓版本号裂开。这里主动比对。
+//
+// 注意:包尚未落地时(Session 1),publishable 为空,本项自然通过 ——
+// changesets 自己会对 "@dshwar/*" 匹配不到包发出警告,那是预期的,非致命。
+function checkFixedCoverage() {
+  const configPath = p('.changeset', 'config.json')
+  if (!existsSync(configPath)) return null
+  let config
+  try {
+    config = JSON.parse(read(configPath))
+  } catch {
+    return { ok: false, detail: '.changeset/config.json 解析失败' }
+  }
+
+  const publishable = found
+    .filter((f) => f.where.startsWith('packages/') || f.where.startsWith('adapters/'))
+    .map((f) => f.where.split('/').slice(1).join('/'))
+    .filter((name) => name.startsWith('@dshwar/'))
+
+  if (publishable.length === 0) return { ok: true, detail: '尚无可发布的 @dshwar/* 包,跳过' }
+
+  const groups = config.fixed ?? []
+  const patterns = groups.flat()
+  const uncovered = publishable.filter(
+    (name) =>
+      !patterns.some((pat) => {
+        if (pat === name) return true
+        if (!pat.includes('*')) return false
+        const re = new RegExp(`^${pat.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`)
+        return re.test(name)
+      }),
+  )
+
+  if (uncovered.length > 0) {
+    return {
+      ok: false,
+      detail: `未被 changesets fixed 组覆盖:${uncovered.join(', ')} —— 它们会独立走版本号`,
+    }
+  }
+  return { ok: true, detail: `${publishable.length} 个包全部在 fixed 组内` }
+}
+
 // ---------- 判定 ----------
 console.log(`DSHWAR · 版本一致性校验\n\n基准(root package.json): ${expected}\n`)
 
@@ -132,9 +176,17 @@ for (const item of found) {
   if (!ok && item.hint) console.log(`          ${item.hint}`)
 }
 
+const coverage = checkFixedCoverage()
+if (coverage) {
+  if (!coverage.ok) failed += 1
+  console.log(
+    `  ${coverage.ok ? '  一致' : '不一致'}  ${'changesets fixed 组覆盖'.padEnd(40)} ${coverage.detail}`,
+  )
+}
+
 console.log('')
 if (failed > 0) {
-  console.log(`${failed} 处版本号与基准不一致。CLAUDE.md 第四节:任一不一致 = 发布阻塞。`)
+  console.log(`${failed} 项未通过。CLAUDE.md 第四节:任一不一致 = 发布阻塞。`)
   console.log('提示:新版本规划确立后、第一个 Session 开工前,须先把全部位置改为正在开发的版本号。')
   process.exit(1)
 }

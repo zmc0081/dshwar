@@ -20,4 +20,19 @@
 pnpm check:version
 ```
 
+## 一个预期中的警告(Session 2 前)
+
+`changeset status` 目前会提示:
+
+```
+fixed: Invalid path: The package or glob "@dshwar/*" does not match any package
+```
+
+这是预期的 —— 第一个 `@dshwar/*` 包要到 Session 2 才落地。退出码是 0,不阻塞任何东西,
+包一出现警告就自动消失。
+
+**不要**为了消掉这条警告把 `fixed` 改空:改空之后没人会记得改回来,
+而漏出 fixed 组的包会独立走版本号,直到发布那天才发现全仓版本号裂开。
+`pnpm check:version` 里有一条覆盖校验专门盯这件事。
+
 更多细节见 <https://github.com/changesets/changesets>。
