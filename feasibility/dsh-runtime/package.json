@@ -1,0 +1,10 @@
+{
+  "name": "dshwar-feasibility-dsh-runtime",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Session 0 环境准备:跑通上游 dsh CLI,探明通道形态(端口/协议/认证)。与 verify/ 分开安装,避免 CLI 的 caret 依赖影响已锁版的验证工作区。",
+  "dependencies": {
+    "@deepseek-ai/dsh": "0.1.0-rc.6"
+  }
+}
