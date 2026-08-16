@@ -1,6 +1,6 @@
 {
   "name": "@dshwar/tenant-map",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "租户映射:从 OIDC claim / SCIM Group / issuer 裁决用户属于哪个租户。映射不出时默认拒绝。",
   "license": "MIT",
   "type": "module",

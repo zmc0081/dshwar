@@ -5,8 +5,8 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-> **开发者预览 · V0.3.0。** 运行时平面与 API 平面(Gateway / SDK)已可用;
-> 身份互操作(SCIM / OIDC)开发中,计量与治理在 V0.4.0。
+> **开发者预览 · V0.4.0。** 运行时、API 平面与身份互操作已可用;
+> 计量与治理开发中,进程隔离 supervisor 在 V0.4.5。
 
 ---
 
@@ -81,7 +81,8 @@ Harness agent **能执行 shell、能读写文件系统**。这决定了隔离�
 | **容器** | 进程 + OS 沙箱                      | 多租户 SaaS                    | —                                    |
 
 **逻辑隔离不构成强边界。** `fs-tenant` 的路径钉死抬高了越界成本,但一个能跑 `bash`
-的 agent 不受它约束。跨信任边界请用进程隔离 + 容器(`supervisor`,V0.4.0)。
+的 agent 不受它约束。跨信任边界请用进程隔离 + 容器(`supervisor`,~~V0.4.0~~ **V0.4.5**
+—— 2026-08-16 调整:V0.4.0 按版本路线表聚焦计量与治理,进程隔离顺延一个版本)。
 
 > 宁可劝退采用者,不要让他们从事故中学会。
 
@@ -121,7 +122,7 @@ Harness agent **能执行 shell、能读写文件系统**。这决定了隔离�
 | [`@dshwar/scim-server`](packages/scim-server)                     | SCIM 2.0 子集,双路停用      | ✅ V0.3.0 |
 | [`@dshwar/webhooks`](packages/webhooks)                           | 出站事件,签名可独立验证     | ✅ V0.3.0 |
 | `@dshwar/metering` · `policy` · `model-router`                    | 计量与治理                  | 📋 V0.4.0 |
-| `@dshwar/supervisor`                                              | 进程隔离                    | 📋 V0.4.0 |
+| `@dshwar/supervisor`                                              | 进程隔离                    | 📋 V0.4.5 |
 
 📋 = 已立项,契约签名见 [CONTRIBUTING.md](CONTRIBUTING.md) 的 good-first-issue 列表。
 
@@ -241,11 +242,12 @@ token 还没过期。JWT 是无状态的,单靠验签做不到这一点;`auth-jw
 
 ## 兼容矩阵
 
-| DSHWAR | API 契约 | DeepSeek Harness (`@deepseek-ai/dsh-*`) | cordis | Node               | 状态         |
-| ------ | -------- | --------------------------------------- | ------ | ------------------ | ------------ |
-| 0.3.0  | `/v1`    | 0.1.0-rc.6                              | 4.0.1  | ^22.19.0 \|\| >=24 | 当前         |
-| 0.2.0  | `/v1`    | 0.1.0-rc.6                              | 4.0.1  | ^22.19.0 \|\| >=24 | API 平面首版 |
-| 0.1.0  | —        | 0.1.0-rc.6                              | 4.0.1  | ^22.19.0 \|\| >=24 | 无 API 平面  |
+| DSHWAR | API 契约     | DeepSeek Harness (`@deepseek-ai/dsh-*`) | cordis | Node               | 状态           |
+| ------ | ------------ | --------------------------------------- | ------ | ------------------ | -------------- |
+| 0.4.0  | `/v1` + SCIM | 0.1.0-rc.6                              | 4.0.1  | ^22.19.0 \|\| >=24 | 当前           |
+| 0.3.0  | `/v1` + SCIM | 0.1.0-rc.6                              | 4.0.1  | ^22.19.0 \|\| >=24 | 身份互操作首版 |
+| 0.2.0  | `/v1`        | 0.1.0-rc.6                              | 4.0.1  | ^22.19.0 \|\| >=24 | API 平面首版   |
+| 0.1.0  | —            | 0.1.0-rc.6                              | 4.0.1  | ^22.19.0 \|\| >=24 | 无 API 平面    |
 
 `@dshwar/gateway` 与 `@dshwar/sdk` 跟随 DSHWAR 主版本号统一提升(changesets fixed 模式),
 但 **API 契约版本单独演进**:`/v1` 只在破坏性变更时才升,与包版本号解耦。

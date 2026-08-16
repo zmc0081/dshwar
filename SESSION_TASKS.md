@@ -1,7 +1,7 @@
 # DSHWAR 开发 Session 任务清单
 
 > 项目对外名称:DSHWAR;npm 作用域 `@dshwar/*`;开源主仓 `dshwar`,控制平面仓 `dshwar-console`。
-> 当前版本(正在开发): **V0.3.0** —— 本行强制为"正在开发的版本号",随新版本规划立即更新(见第三部分强制约束)
+> 当前版本(正在开发): **V0.4.0** —— 本行强制为"正在开发的版本号",随新版本规划立即更新(见第三部分强制约束)
 
 ---
 
@@ -48,15 +48,16 @@ DeepSeek Harness（npm 依赖 @deepseek-ai/dsh-*，精确锁版）
 
 ## 版本路线
 
-| 版本    | 内容                                                      | 周期 | 状态                                               |
-| ------- | --------------------------------------------------------- | ---- | -------------------------------------------------- |
-| V0.1.0  | 运行时平面 MVP + 开源首发                                 | 3 周 | <span style="color:#d00000">开发完成,待发布</span> |
-| V0.2.0  | API 平面:OpenAPI v1 + Gateway + SDK + Admin 端点          | 4 周 | <span style="color:#d00000">开发完成</span>        |
-| V0.3.0  | 身份互操作:Subject Mirror + SCIM 2.0 + 租户映射 + Webhook | 2 周 | <span style="color:#d00000">开发完成</span>        |
-| V0.4.0  | 计量与治理:metering + policy + model-router               | 3 周 | 待启动                                             |
-| V0.5.0  | 控制平面:租户/成员/订阅/运营后台                          | 5 周 | 待启动                                             |
-| V0.6.0  | 支付:billing 契约 + local + 首个 hosted 实现              | 3 周 | 待启动                                             |
-| V0.7.0+ | 端:移动端 SDK + 对话前端                                  | 持续 | 待启动                                             |
+| 版本       | 内容                                                      | 周期 | 状态                                               |
+| ---------- | --------------------------------------------------------- | ---- | -------------------------------------------------- |
+| V0.1.0     | 运行时平面 MVP + 开源首发                                 | 3 周 | <span style="color:#d00000">开发完成,待发布</span> |
+| V0.2.0     | API 平面:OpenAPI v1 + Gateway + SDK + Admin 端点          | 4 周 | <span style="color:#d00000">开发完成</span>        |
+| V0.3.0     | 身份互操作:Subject Mirror + SCIM 2.0 + 租户映射 + Webhook | 2 周 | <span style="color:#d00000">开发完成</span>        |
+| **V0.4.0** | 计量与治理:metering + policy + model-router + audit       | 3 周 | <span style="color:#d00000">开发中</span>          |
+| V0.4.5     | supervisor 进程隔离(自路线冲突裁决后新增)                 | 2 周 | 待启动                                             |
+| V0.5.0     | 控制平面:租户/成员/订阅/运营后台                          | 5 周 | 待启动                                             |
+| V0.6.0     | 支付:billing 契约 + local + 首个 hosted 实现              | 3 周 | 待启动                                             |
+| V0.7.0+    | 端:移动端 SDK + 对话前端                                  | 持续 | 待启动                                             |
 
 ## 准备阶段(在开始 Session 之前)
 
@@ -98,8 +99,277 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 > 已发布版本的 Session 一律标 ✅;开发中版本按实际进度标记,每完成一个即更新。
 >
 > 已发布:(暂无)
-> 规划中(开发中,未上线):**V0.3.0(Session 0-7,开发完成)** · V0.2.0(Session 0-6,开发完成)
+> 规划中(开发中,未上线):**V0.4.0(Session 0-5,当前)** · V0.3.0(Session 0-7,开发完成)
+> · V0.2.0(Session 0-6,开发完成) · V0.1.0(Session 0-8,开发完成)** · V0.2.0(Session 0-6,开发完成)
 > · V0.1.0(Session 0-8,开发完成)
+
+---
+
+## <span style="color:#d00000">●</span> M0.4.0 · 计量与治理(Session 0-5) <span style="color:#d00000">[未上线]</span>
+
+> **这一版换来的是「能对账、能设限」。** V0.3.0 之后,谁能进来已经解决;
+> 但进来之后用了多少、该不该继续用、用哪个模型 —— 全都没有答案。
+> 没有计量,billing(V0.6.0)无米下锅;没有 policy,一个失控脚本能把
+> 整个租户的预算一夜烧光;没有准入,试用用户能直接调最贵的模型。
+>
+> 📌 **核心论点**:计量与治理全部是**治理层**,一行不碰模型引擎
+> (一句话边界:上游做能力,DSHWAR 做归属、隔离、配额、计费、审计)。
+> `model-router` 不路由请求 —— 它只在 `createAgent` 的入口裁决
+> 「这个 principal 此刻允许用哪个模型」,真正的模型调用仍是上游 `dsh-llm` 的事。
+>
+> 开工前必读 `CLAUDE.md`。
+>
+> **开工前已确认的决定**(2026-08-16):**supervisor 进程隔离顺延 V0.4.5。**
+> 版本路线表与 README 的承诺此前冲突(前者未列,后者标 V0.4.0),裁决为
+> 聚焦计量与治理 —— 两块合并会让版本失焦,且 supervisor 的限流/配额设计
+> 依赖计量先落地。README 两处已改 V0.4.5 并注明调整日期,原文不删。
+>
+> **不做的事**:不做 supervisor(V0.4.5)、不做控制平面与后台 UI(V0.5.0)、
+> 不做收款(V0.6.0,本版本只记账不出账单)、不做请求级模型路由(那是上游地盘)。
+
+### Session 状态
+
+| Session                  | 状态      | 说明                                     |
+| ------------------------ | --------- | ---------------------------------------- |
+| 0 可行性证伪:用量可观测  | ⬜ 未开始 | **止损点** —— 上游到底报不报 token 用量  |
+| 1 `@dshwar/audit`        | ⬜ 未开始 | 仅追加审计,`/v1/admin/audit` 转正        |
+| 2 `@dshwar/metering`     | ⬜ 未开始 | 用量归属与查询,usage 两端点转正          |
+| 3 `@dshwar/policy`       | ⬜ 未开始 | 配额与限流,quota 两端点转正,网关执行 429 |
+| 4 `@dshwar/model-router` | ⬜ 未开始 | 模型准入与预算降级,policies 端点转正     |
+| 5 治理链路串联与发布     | ⬜ 未开始 | 端到端:超配额被拒、降级生效、全程入审计  |
+
+图例:✅ 已完成 · 🔄 进行中 · ⬜ 未开始 · 🟠 代码就绪待外部资源
+
+### 本次需求清单
+
+| 编号 | 需求                                                                   | 所属 Session |
+| ---- | ---------------------------------------------------------------------- | ------------ |
+| R0   | **可行性证伪**:上游事件里能不能拿到 per-turn 的 token 用量             | Session 0    |
+| R1   | `@dshwar/audit`:仅追加、可查询、按租户过滤的审计存储                   | Session 1    |
+| R2   | `/v1/admin/audit` 由 501 转实现,契约不变                               | Session 1    |
+| R3   | `@dshwar/metering`:用量记录按 principal/session/turn 归属              | Session 2    |
+| R4   | `/v1/admin/usage` 与 `/v1/admin/subjects/{id}/usage` 转正              | Session 2    |
+| R5   | `@dshwar/policy`:配额存储 + 判定;**超限拒绝是 fail closed 的延伸**     | Session 3    |
+| R6   | `/v1/admin/subjects/{id}/quota` GET/PATCH 转正;网关 429 `rate_limited` | Session 3    |
+| R7   | `@dshwar/model-router`:模型准入 + 预算降级,只在 createAgent 入口裁决   | Session 4    |
+| R8   | `/v1/admin/policies` 转正                                              | Session 4    |
+| R9   | **端到端**:烧完配额 → 下一轮被拒;预算过半 → 自动降级;全程入审计        | Session 5    |
+| R10  | 文档与 profile 更新;supervisor 顺延的对外说明                          | Session 5    |
+
+**本版本红线**:
+
+1. **计量只观测,不阻断**。metering 挂在事件流上,它挂了不能影响会话 ——
+   丢一条用量记录是账目问题,断一次会话是事故。
+2. **判定与执行分离**。policy 包只回答「能不能」,429 由网关发 ——
+   判定逻辑要能被控制平面复用,不能长在 HTTP 层里。
+3. **超限拒绝,不静默降级**。配额烧完就是 429,不偷偷换便宜模型继续跑 ——
+   降级是 model-router 的**显式配置**,不是 policy 的隐式行为。
+4. **审计仅追加**。没有 update、没有 delete;保留期内的记录改不了也删不了。
+
+---
+
+### ⬜ Session 0: 可行性证伪:用量可观测(1 天,止损点)
+
+> 本版本压在一条未验证的假设上:**上游会把 token 用量报出来,且能归属到
+> principal**。metering 的全部设计都建立在这上面 —— 若上游根本不报用量,
+> 或报了但拿不到归属,计量就只能做请求计数,billing 的粒度承诺全要改。
+
+```
+读取 CLAUDE.md。
+
+本次任务:验证 token 用量在上游的暴露路径。不写产品代码,产出验证报告。
+
+1. 验证 A —— 上游类型面
+   - 逐个检查 dsh-llm 的 StreamChunk / GenerateOptions / finish 事件类型:
+     有没有 usage / tokens / cost 字段
+   - 检查 dsh-session 的 SessionEventMap:assistant 消息落库时带不带用量
+   - 检查 dsh-agent 的 AgentHandle:轮次结束时有没有用量汇总
+
+2. 验证 B —— 实际信道
+   - 用 FakeLlmAdapter 发含用量的 chunk,确认它能穿过 agent-loop 到达
+     session/event 监听器(V0.2.0 的事件信封路径)
+   - 确认用量事件带 turn 序号,能与网关的会话记录对上
+
+3. 验证 C —— 归属
+   - 会话 → principal 的映射在网关的 GatewaySessionStore 里已有;
+     确认事件里的 session id 足以完成归属,不需要额外信道
+
+== 产出 ==
+- docs/FEASIBILITY-REPORT-V4.md,逐条断言 + 实际输出
+- 若上游不报用量:metering 降级为「请求/轮次计数」,任务书相应修订,
+  并在 README 写明 token 级计费要等上游补齐
+```
+
+验证:
+
+- 止损判据:若用量完全不可观测**且**无法从消息内容估算,V0.4.0 改为只做 audit + policy(按轮次限额),metering 推迟
+- `/publish chore: {v} session 0 usage observability feasibility`
+
+---
+
+### ⬜ Session 1: `@dshwar/audit` —— 仅追加审计
+
+```
+本次任务:把网关里的 AuditSink 接口升级成真正的审计包。
+
+1. 契约
+   - AuditRecord:at / actor / tenantId / action / target / before? / after? / requestId
+   - AuditStore:append(record) 与 query(filter) —— **没有 update,没有 delete**
+   - 查询按租户过滤是强制参数,不是可选项:审计端点是 Admin API,
+     一把 Key 只能看自己租户的记录
+
+2. 实现
+   - 内存实现 + 上游 storage 契约实现(与 subject 包同款双实现)
+   - 记录键含单调序号,保证追加顺序可重放
+
+3. 网关接线
+   - gateway 的 ConsoleAuditSink / NullAuditSink 保留(它们是 sink,不是 store);
+     新增 StoreAuditSink 把记录落进 AuditStore
+   - /v1/admin/audit 由 501 转实现:按租户过滤 + 游标分页,契约一个字段不改
+
+== 测试 ==
+- append 后 query 可见,顺序稳定
+- 不存在 update/delete 入口(结构断言)
+- 跨租户查询拿不到别家的记录
+- check:contract 绿(转正不是契约变更)
+```
+
+验证:
+
+- `/publish feat: {v} session 1 append-only audit`
+
+---
+
+### ⬜ Session 2: `@dshwar/metering` —— 用量归属
+
+```
+本次任务:把上游报的用量按 principal 归属并可查询。
+
+1. 契约
+   - UsageRecord 对齐 api-contract 里冻结的形状(subjectId / model /
+     inputTokens / outputTokens / at 等,以冻结契约为准)
+   - MeteringStore:record(usage) / query(filter) / aggregate(filter)
+
+2. 采集
+   - 挂在网关的会话事件流上(Session 0 验证的信道)
+   - ★ 红线 1:观测不阻断。采集回调里任何异常都吞掉并落审计,
+     不能让会话因为计量挂了而断
+
+3. 端点转正
+   - GET /v1/admin/usage(聚合)与 GET /v1/admin/subjects/{id}/usage(明细)
+   - 按租户过滤;跨租户 403
+
+== 测试 ==
+- 一轮会话产生的用量记录归属到正确的 principal 与 turn
+- 计量 store 抛错时会话照常完成,错误进审计
+- 聚合口径与明细逐条相加一致(会计恒等式)
+- check:contract 绿
+```
+
+验证:
+
+- `/publish feat: {v} session 2 usage metering`
+
+---
+
+### ⬜ Session 3: `@dshwar/policy` —— 配额与限流
+
+```
+本次任务:配额判定与网关执行。
+
+1. 契约
+   - Quota 对齐 api-contract 冻结形状(tokenLimit nullable / tokenUsed /
+     periodStart / periodEnd)
+   - PolicyService.check(principal, requested) → allow | deny(reason)
+   - ★ 红线 2:判定与执行分离,包里没有任何 HTTP 概念
+
+2. 判定
+   - tokenUsed 来自 metering 的聚合;tokenLimit null = 不限
+   - 周期滚动:周期结束后 tokenUsed 归零重新累计
+   - ★ 缺 metering 数据时 fail closed 还是 fail open?——
+     **fail open**:计量挂了不该把所有人锁在外面(它是账目组件不是安全组件),
+     但要落审计。与硬规则 6 的 fail closed 不冲突:那是身份,这是账。
+
+3. 网关执行
+   - POST /v1/sessions/{id}/turns 前置检查:超限 → 429 rate_limited
+   - quota GET/PATCH 转正;PATCH 记 before/after 进审计
+
+== 测试 ==
+- 烧完配额后下一轮 429,错误形状与契约一致
+- PATCH 提额后立即恢复
+- 周期滚动归零
+- metering 不可用时放行 + 审计(显式测 fail open)
+- check:contract 绿
+```
+
+验证:
+
+- `/publish feat: {v} session 3 quota policy`
+
+---
+
+### ⬜ Session 4: `@dshwar/model-router` —— 准入与降级
+
+```
+本次任务:模型治理,只在 createAgent 入口裁决。
+
+1. 契约
+   - Policy 对齐 api-contract 冻结形状
+   - resolveModel(principal, requested) → { model, provider, downgraded? }
+   - ★ 一句话边界:不碰请求路由、不碰 LLM 调用 —— 裁决完交回上游
+
+2. 准入
+   - 按租户/角色配置允许的模型清单;请求不在清单 → 拒绝(403,不是静默换)
+   - 未配置清单的租户默认放行(准入是 opt-in 的治理,不是默认封锁)
+
+3. 预算降级
+   - ★ 红线 3:降级是显式配置(如「预算用到 80% 后 chat→cheaper」),
+     不是超限时的隐式行为;降级发生时响应头 x-dshwar-model-downgraded 告知,
+     并落审计 —— 用户有权知道自己被换了模型
+
+4. /v1/admin/policies 转正(只读列表,写入口留给控制平面 V0.5.0)
+
+== 测试 ==
+- 清单外模型 403;清单内放行
+- 预算阈值触发降级,响应头与审计都有痕迹
+- 降级配置缺失时超预算不降级(走 policy 的 429)
+- check:contract 绿
+```
+
+验证:
+
+- `/publish feat: {v} session 4 model router`
+
+---
+
+### ⬜ Session 5: 治理链路串联与发布
+
+```
+本次任务:端到端验收与收尾。
+
+1. 端到端(R9)
+   - 一个 principal 连续发轮直到烧完配额 → 下一轮 429
+   - 预算过半后发轮 → 用了降级模型,响应头可见,审计有记录
+   - 全程:每一轮的用量都能在 /v1/admin/usage 查到,
+     每次 Admin 变更都能在 /v1/admin/audit 查到
+
+2. server.ts 接线
+   - 配置文件加 metering / quota / modelPolicy 段
+   - 真跑冒烟:起进程,烧配额,看 429
+
+3. 文档
+   - README 治理一节 + 包表转 ✅ + planned 表更新
+   - docs/GOVERNANCE.md:配额、降级、审计的部署配置
+   - 兼容矩阵更新
+
+== 测试 ==
+- 九道门禁全绿
+- 契约里不再有 PLANNED_V4 的 planned 端点(全部转正)
+```
+
+验证:
+
+- `/publish chore: {v} session 5 governance release`
 
 ---
 
