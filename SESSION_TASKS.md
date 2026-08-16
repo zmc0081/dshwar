@@ -344,7 +344,39 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 | 3 | 配额判定挂在 `/turns`,而进程在建会话时就起来              | 配额耗尽的租户仍能占满进程槽位   |
 | 4 | 测试文件从未经过 `tsc`                                    | 一次会话踩了三个编译期可见的错误 |
 
-**另一组来自 typecheck 上线**:六处「测试通过但没测到东西」。
+**另一组来自 typecheck 上线**(`b635a2d`,已于 2026-08-16 合并):
+它给全仓 19 个包各配了一份 `tsconfig.test.json`,并在纳入检查后修掉了
+**7 个测试文件**里的错误。这些就是「测试通过但没测到东西」的实物证据。
+
+#### 失效断言清单 —— Session 3 探针的经验依据
+
+把它们按「运行时是否真的没测到」分开,因为两类的教训不同:
+
+**A 类:真失效 —— 测试当时确实没在测该测的东西**
+
+| 文件                                        | 问题                                                                 | 后果                                                       |
+| ------------------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `adapters/…/usage-observability.test.ts` + `gateway/test/harness.ts` | 假适配器吐 `reason: 'stop'`,而上游的 `FinishReason` 是对象 `{ kind: 'stop' }` | 下游读 `reason.kind` 拿到 `undefined` —— 假模型不忠实于上游,而契约测试的全部价值就在忠实 |
+| `packages/supervisor/test/pool.test.ts`   | `Partial<Parameters<typeof Supervisor.prototype.constructor>[0]>` —— `Supervisor.prototype.constructor` 的类型是 `Function`,`Parameters<Function>` 不给任何约束 | `make({ … })` 的选项**完全没有类型检查**,选项名写错会被静默忽略,测试照样绿 |
+| `packages/webhooks/test/webhooks.test.ts` | `statuses[i]` 在 `noUncheckedIndexedAccess` 下是 `number | undefined` | `new Response(null, { status: undefined })` **默认成 200** —— 重试测试可能一直在测 200,而不是它想测的状态码 |
+| `packages/auth-static/test/auth-static.test.ts` | `promise.catch(e => e as AuthError)` | `verify` 万一**没有**拒绝,成功的 `Principal` 会被原样递下去,后续断言在错误的对象上找 `.message` |
+
+**B 类:类型层修正 —— 运行时本来就对,但掩盖了可读性或未来的坑**
+
+| 文件                                      | 问题                                                        |
+| ----------------------------------------- | ----------------------------------------------------------- |
+| `gateway/test/sdk-example.test.ts`      | `resolve: () => undefined` 应为 `async` —— `await undefined` 恰好也是 `undefined`,所以没炸 |
+| `packages/api-contract/test/freeze.test.ts` | `buildOpenApiDocument()` 漏了必填的 `version` —— 比对两侧都是 `undefined`,判定仍成立 |
+| `gateway/test/harness.ts`               | 重复读 `request.signal?.aborted` 被 TS 判成恒假 —— 运行时每次都重读,取消是有效的 |
+
+⚠️ **A 类的第 2 条是我在 V0.4.5 Session 1 写的。** 它意味着 supervisor 的 37 条
+测试里,凡是通过 `make({...})` 传选项的那些,**选项名从未被校验过**。
+这正是本版本存在的理由:绿色本身不构成证据。
+
+⚠️ **`.mjs` 夹具是这套机制结构上够不到的盲区。** 全仓两个
+(`echo-child.mjs` / `child-agent.mjs`),后者带着与 A 类第 1 条**完全相同**的
+`reason: 'stop'` 错误,合并时由人工看出来并修掉 —— 不是被检查抓出来的。
+处理方式见 Session 1 第 5 条。
 
 ⚠️ **第 2 条与第 4 条的组合是这一版存在的理由。** 测试用的是自带假模型的
 harness,而不是产品装配路径 `assembleRuntime()` —— 于是「网关没有 provider」
@@ -356,7 +388,7 @@ harness,而不是产品装配路径 `assembleRuntime()` —— 于是「网关�
 | Session                    | 状态      | 说明                                      |
 | -------------------------- | --------- | ----------------------------------------- |
 | 0 端到端冒烟:真实路径      | ⬜ 未开始 | **最高优先级** —— 网关到底能不能发出对话  |
-| 1 `scripts/` 纳入类型检查  | ⬜ 未开始 | 与 test 同机制,补既有错误                 |
+| 1 `scripts/` 纳入类型检查  | ⬜ 未开始 | **范围已缩窄** —— test 部分已由 b635a2d 完成 |
 | 2 配额两段判定             | ⬜ 未开始 | 准入 + 计费,两处都做                      |
 | 3 断言有效性探针           | ⬜ 未开始 | 故意弄坏实现,确认测试变红                 |
 | 4 `agent/error` 送达 + `unavailable` | ⬜ 未开始 | 补上契约里写了却没实现的那条              |
@@ -489,32 +521,53 @@ V0.4.5 把进程池满映射成 `429`,理由是契约的 `ErrorCode` 是闭集�
 
 ---
 
-### ⬜ Session 1: `scripts/` 纳入类型检查
+### ⬜ Session 1: `scripts/` 纳入类型检查(范围已缩窄)
+
+> ⚠️ **`test/` 部分已经做完了,不在本 Session 范围内。** 立项时以为要一起做,
+> 但那份工作在 `b635a2d` 里独立完成并已合并(见本版本块开头的「合并进来的成果」)。
+> 本 Session 只剩 `scripts/`,**照 `tsconfig.test.json` 那套现成机制照搬即可**。
+
+**开工前已复核的实际状态**(2026-08-16 实测,不是推测):
+
+| 目标                                   | 状态                                              |
+| -------------------------------------- | ------------------------------------------------- |
+| `sdk/typescript/scripts/`(generate + render) | ✅ **已经干净** —— `render.ts` 被 `b635a2d` 顺手修了,只需登记进机制 |
+| `packages/api-contract/scripts/generate-openapi.ts` | ❌ TS2339 **仍在**(第 40 行),是唯一已知的待修错误 |
+| `examples/minimal-server`            | ❌ 仍无 `tsconfig.json`(`examples/sdk-session` 有,照它配) |
 
 ```
 读取 CLAUDE.md。本次任务:把 scripts/*.ts 纳入 tsc，机制与 test 相同。
 
 1. 根级 tsconfig.scripts.json（决策 2）
-   - noEmit: true，include 覆盖各处的 scripts/**/*.ts
-   - 已知的三处：packages/api-contract/scripts/、sdk/typescript/scripts/
-     （generate.ts 与 render.ts）
-   - 加 npm script（如 typecheck:scripts），接进 check:all
+   - ★ 照 tsconfig.test.json 抄，不要另发明一套。那份已经过一轮实战，
+     连守卫、CI 接线、negative test 都齐了
+   - noEmit: true，覆盖两处：
+     packages/api-contract/scripts/、sdk/typescript/scripts/
+   - 加 npm script（typecheck:scripts），接进 check:all
 
-2. 修既有错误
+2. 修唯一已知的错误
    - packages/api-contract/scripts/generate-openapi.ts:40
      TS2339: Property 'version' does not exist on type 'OpenApiDocument'
-     ★ 已实测复现，不是推测
-   - 纳入后暴露的其余错误一并修掉
+     ★ 合并之后复测仍在
+   - 注意 freeze.test.ts 已经因为同一个类型改成了
+     buildOpenApiDocument('0.0.0-freeze-test')——修的时候看一眼那边的取舍
 
 3. examples/minimal-server 补 tsconfig
-   - examples/sdk-session 已有，照它配
-   - 登记进根 tsconfig references
+   - 照 examples/sdk-session 配，登记进根 tsconfig references
 
 4. check-guards.mjs 加守卫
-   - 仿照已有的「全部 TS 项目已登记进根 tsconfig references」
+   - 仿照已有的两条（根 tsconfig references / 根 tsconfig.test.json references）
    - 新增：「每个含 scripts/*.ts 的位置都已登记进 tsconfig.scripts.json」
-   - ★ 没有这条守卫，新增的脚本会悄悄回到不检查的状态 ——
-     这正是当初那条守卫要防的同一类问题
+
+5. ★ .mjs 夹具的盲区 —— 本 Session 只需记录，不必解决
+   - tsconfig 那套机制结构上够不到 .mjs。全仓两个：
+     packages/supervisor/test/fixtures/echo-child.mjs
+     adapters/dsh-0.1.0/test/fixtures/child-agent.mjs
+   - 后者曾有与 7 个 .ts 测试文件完全相同的 finish reason 形状错误
+     （reason: 'stop' 应为 { kind: 'stop' }），已在合并时人工修掉 ——
+     但它是**被人看出来的**，不是被检查抓出来的
+   - 可选做法（评估后再定，别硬上）：改写成 .ts 走 strip-types 跑，
+     或加 // @ts-check + JSDoc。两者都有代价，写清楚再选
 
 == 测试 ==
 - 负向:故意在某个 script 里写一个类型错误，确认 typecheck:scripts 变红
@@ -578,6 +631,13 @@ V0.4.5 把进程池满映射成 `429`,理由是契约的 `ErrorCode` 是闭集�
    - 隔离:把 fs-tenant 的路径钉死去掉一段 → 隔离测试必须红
    - 配额:把配额判定改成永远 allow → 配额测试必须红
    - 契约:在 openapi 里删一个端点 → check:contract 必须红
+
+   ★ 选这四处不是拍脑袋。版本块开头的「失效断言清单」是实测得来的,
+     A 类四条里有三条落在假适配器与测试夹具上（假模型不忠实于上游、
+     选项没有类型约束、索引取空后静默默认）——**探针要针对的正是这一类：
+     被测对象没坏，是喂给它的东西坏了，于是断言测了个寂寞。**
+     写探针时优先弄坏「实现」，但也要有一条弄坏「夹具」的
+     （例如把 harness 的 FinishReason 改回字符串），确认对应测试变红。
 
 2. 探针怎么实现
    - 不要真的改源码再改回来（会污染工作树，且中途失败会留下坏代码）

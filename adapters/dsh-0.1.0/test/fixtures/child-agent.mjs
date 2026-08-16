@@ -56,7 +56,12 @@ class PacedAdapter extends LlmAdapter {
     }
     yield { type: 'block-end', index: 0, block: { type: 'text', text } }
     yield { type: 'usage', usage: { inputTokens: 42, outputTokens: this.tokens.length } }
-    yield { type: 'finish', reason: 'stop' }
+    // 上游的 FinishReason 是对象而非字符串(`{ kind: 'stop' }`)——
+    // 写成 'stop' 时下游读 `reason.kind` 拿到的是 undefined。
+    // ⚠️ 本文件是 `.mjs`,`tsconfig.test.json` 那套机制结构上够不到它,
+    // 所以这个错误只能靠人看出来 —— 同款错误在 7 个 `.ts` 测试文件里
+    // 是被类型检查抓出来的(见 V0.4.6 立项时合并的 b635a2d)。
+    yield { type: 'finish', reason: { kind: 'stop' } }
   }
 }
 

@@ -188,7 +188,20 @@ pnpm eslint . --max-warnings 0                                                �
 
 **测试**:Vitest。每个上游接触点必须有契约测试(录制/回放),上游改接口即刻跑红。
 
-**提交**:Conventional Commits(`feat:` / `fix:` / `docs:` / `chore:`);分支 `main` / `feature/v<版本号>`;PR 需含描述 / 影响范围 / 测试方式。
+**提交**:Conventional Commits(`feat:` / `fix:` / `docs:` / `chore:`);PR 需含描述 / 影响范围 / 测试方式。
+
+**分支**:`main` / `feature/v<版本号>`。**`main` 始终是主干,feature 分支合并后即删除。**
+
+> ⚠️ 这条是 2026-08-16 补的,因为它被违反过一次而没人发现:开发从 V0.1.0 一路
+> 做到 V0.4.6 都留在 `feature/v0.1.0` 上,`main` 停在 V0.2.0 中段落后 36 个提交,
+> 而分支名说的是 v0.1.0、内容却是 v0.4.6。
+>
+> 后果不只是难看:`scripts/check-contract.mjs` 拿 **`main` 上的 openapi.json**
+> 当契约冻结基线。`main` 停在半年前,基线就停在半年前 —— 冻结检查比对的是一个
+> 早已不代表主干的快照,**它报的「破坏性 0 处」是对着错误的参照物说的**。
+>
+> 合并回 `main` 用 `--ff-only`,保持历史线性;快进不了说明分支有分叉,
+> 停下查清楚,不要改用普通 merge 或 rebase 掩盖过去。
 
 ---
 
