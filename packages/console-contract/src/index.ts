@@ -28,3 +28,15 @@
  */
 
 export { CONSOLE_CONTRACT_VERSION } from './version.ts'
+
+export { capabilitiesOf, CONSOLE_ROLES } from './roles.ts'
+
+export type {
+  ConsoleAuditEntry,
+  ConsoleCapacity,
+  ConsoleMember,
+  ConsoleQuota,
+  ConsoleRole,
+  ConsoleRoleCapabilities,
+  ConsoleUsageRow,
+} from './wire.ts'

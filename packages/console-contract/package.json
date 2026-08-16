@@ -26,5 +26,11 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "devDependencies": {
+    "@dshwar/audit": "workspace:*",
+    "@dshwar/metering": "workspace:*",
+    "@dshwar/policy": "workspace:*",
+    "@dshwar/subject": "workspace:*"
   }
 }

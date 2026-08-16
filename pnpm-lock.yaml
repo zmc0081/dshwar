@@ -333,7 +333,20 @@ importers:
         specifier: 4.0.1
         version: 4.0.1
 
-  packages/console-contract: {}
+  packages/console-contract:
+    devDependencies:
+      '@dshwar/audit':
+        specifier: workspace:*
+        version: link:../audit
+      '@dshwar/metering':
+        specifier: workspace:*
+        version: link:../metering
+      '@dshwar/policy':
+        specifier: workspace:*
+        version: link:../policy
+      '@dshwar/subject':
+        specifier: workspace:*
+        version: link:../subject
 
   packages/credentials-multiuser:
     dependencies:

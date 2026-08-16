@@ -285,6 +285,48 @@ console.log('DSHWAR · 断言有效性探针\n')
   )
 }
 
+// 9. console 契约与领域模型的一致性(V0.5.0)—— **类型层面的探针**
+//
+//    前八条都靠「跑 vitest 看红不红」。这一条不行:它断言的是**类型**
+//    对不对,而 Vitest 用 esbuild 转译、只擦类型不做检查 —— 领域模型
+//    改个字段名,测试照样全绿。
+//
+//    所以它跑的是 `tsc -b tsconfig.test.json`。改 `Subject.userName`
+//    的名字,`memberOf()` 的投影立刻编译不过。
+//
+//    ⚠️ 这正是 CLAUDE.md 第六节元规则要的答案:「谁验证这条一致性断言?」
+//    —— 这条探针。没有它,那条断言可能一直是对的、也可能早就名存实亡,
+//    而两者在 `pnpm test` 的输出里长得一模一样。
+{
+  const target = p('packages/subject/src/subject.ts')
+  const source = readFileSync(target, 'utf8')
+  const anchor = '  readonly userName: string'
+  if (!source.includes(anchor)) {
+    expect('9 领域模型改字段名 → console 契约的一致性断言编译不过', false, '锚点没匹配上')
+  } else {
+    const red = withMutatedFiles(
+      [{ path: target, mutate: (s) => s.replace(anchor, '  readonly userNameRenamed: string') }],
+      () => {
+        try {
+          execFileSync(
+            process.execPath,
+            [p('node_modules', 'typescript', 'bin', 'tsc'), '-b', 'tsconfig.test.json'],
+            { cwd: REPO, stdio: ['ignore', 'pipe', 'pipe'] },
+          )
+          return false
+        } catch {
+          return true
+        }
+      },
+    )
+    expect(
+      '9 领域模型改字段名 → console 契约的一致性断言编译不过(类型层面的探针)',
+      red,
+      '★ Subject 改了字段名,而 console 契约的投影竟然还编译得过 —— 那条一致性断言是假的',
+    )
+  }
+}
+
 // ===========================================================================
 // 第三类:作用域 —— 在真实时序下调用,而不是在测试里直接调
 // ===========================================================================
