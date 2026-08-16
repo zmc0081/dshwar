@@ -107,3 +107,9 @@ export type { AssembledRuntime, RuntimeOptions, StaticAuthEntry } from './runtim
 
 export { parseArgs, startServer } from './server.ts'
 export type { ServerConfig } from './server.ts'
+
+// ---- 工作台(V0.5.5)----
+export { registerWorkspaceRoutes } from './workspaces/routes.ts'
+export type { WorkspaceRouteOptions } from './workspaces/routes.ts'
+export { InMemoryWorkspaceStore } from './workspaces/store.ts'
+export type { Workspace, WorkspaceStore } from './workspaces/store.ts'

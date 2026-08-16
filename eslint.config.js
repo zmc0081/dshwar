@@ -43,6 +43,16 @@ export default tseslint.config(
       // 会因此看到两个候选的 tsconfig 根目录并直接拒绝解析。
       // 那份副本有它自己的门禁,不该在这里被重复检查。
       '.claude/worktrees/**',
+      // ⚠️ **`.claude/` 整个不在产品代码的管辖内。**
+      //
+      // 它放的是 harness 配置(hooks、本地设置)—— 不发布、不被任何产品代码
+      // import、且**因人而异**:两个开发者的 hooks 可以完全不同。
+      // 拿产品代码的规则去卡它,后果是「换个人开发就红一片」。
+      //
+      // 这不是放宽门禁,是修正一处**范围不一致**:`scripts/lib/scan.mjs` 的
+      // SKIP_DIRS 早就把 `.claude` 整个排除了,而 eslint 只排了 worktrees ——
+      // 两处对同一个目录的看法不同,而不同的那一半没有理由。
+      '.claude/**',
     ],
   },
 

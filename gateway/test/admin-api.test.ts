@@ -208,12 +208,26 @@ describe('未配置后端的部署回落 501', () => {
 
     for (const route of planned) {
       const path = route.path.replace('{id}', alice.id)
+
+      // ⚠️ **凭证要按路由自己的 auth 方案给。**
+      //
+      // 上一版这里写死了 Admin Key —— 那时 planned 端点恰好都在 `/v1/admin/*` 下,
+      // 所以看不出问题。V0.5.5 加了运行时的 `/v1/attachments`,它要 Bearer,
+      // 于是断言拿到 **401 而不是 501**。
+      //
+      // 而 401 是**正确的**:认证在业务之前。若为了让这条测试绿而把认证
+      // 挪到 501 之后,就等于让一个未实现的端点先泄漏「它存在」——
+      // 而那恰恰是 501-而非-404 这条设计要避免的反面。
+      const headers: Record<string, string> = { 'content-type': 'application/json' }
+      if (route.auth === 'admin') headers[ADMIN_KEY_HEADER] = 'admin-acme'
+      else headers['authorization'] = `Bearer ${AUTH_ENTRIES[0]!.token}`
+
       const res = await app.request(path, {
         method: route.method.toUpperCase(),
-        headers: { [ADMIN_KEY_HEADER]: 'admin-acme', 'content-type': 'application/json' },
-        ...(route.method === 'patch' ? { body: '{}' } : {}),
+        headers,
+        ...(route.method === 'patch' || route.method === 'post' ? { body: '{}' } : {}),
       })
-      expect(res.status, `${route.operationId} 未挂载`).toBe(501)
+      expect(res.status, `${route.operationId} 未挂载(或凭证方案不对)`).toBe(501)
     }
   })
 })
