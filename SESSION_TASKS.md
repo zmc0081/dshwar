@@ -126,7 +126,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 | 1 OpenAPI v1 契约        | ✅ 已完成 | Zod 单一事实源 → OpenAPI 3.1;redocly lint 零警告;29 个单测                       |
 | 2 Gateway 骨架与会话路由 | ✅ 已完成 | 分道鉴权在中间件层;22 个单测,含隔离槽位零增长                                    |
 | 3 运行时 API 与 SSE      | ✅ 已完成 | 端到端对真实 harness;19 个单测,含断连释放度量与 Last-Event-ID                    |
-| 4 Admin API              | ⬜ 未开始 | 契约先行,实现分期                                                                |
+| 4 Admin API              | ✅ 已完成 | credentials describe;8 个 planned 返 501;22 个单测                               |
 | 5 TS SDK                 | ⬜ 未开始 | 由 OpenAPI 生成,不手写                                                           |
 | 6 契约冻结与发布         | ⬜ 未开始 |                                                                                  |
 
@@ -354,7 +354,7 @@ docs/FEASIBILITY-REPORT-V2.md，包含：
 
 ---
 
-### ⬜ Session 4: Admin API
+### ✅ Session 4: Admin API
 
 ```
 读取 CLAUDE.md（硬规则 5)与 IDENTITY-INTEROP.md §3.3。

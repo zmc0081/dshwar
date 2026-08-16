@@ -41,3 +41,9 @@ export type { AgentHandleLike, GatewaySession } from './sessions/store.ts'
 
 export { EventBuffer, translateEvent } from './sessions/events.ts'
 export type { SequencedEvent, TranslateOptions, UpstreamSessionEvent } from './sessions/events.ts'
+
+export { registerAdminRoutes } from './admin/routes.ts'
+export type { AdminRouteOptions, SubjectLookup } from './admin/routes.ts'
+
+export { ConsoleAuditSink, NullAuditSink } from './admin/audit.ts'
+export type { AuditRecord, AuditSink } from './admin/audit.ts'
