@@ -1,6 +1,6 @@
 {
   "name": "@dshwar/credentials-multiuser",
-  "version": "0.4.1",
+  "version": "0.4.5",
   "description": "per-principal 凭据解析 + 网关短时效 token 遮蔽。换掉一个实现,所有 LLM 适配器、工具、插件自动变成多用户,消费方零改动。",
   "license": "MIT",
   "type": "module",

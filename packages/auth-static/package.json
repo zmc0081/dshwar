@@ -1,6 +1,6 @@
 {
   "name": "@dshwar/auth-static",
-  "version": "0.4.1",
+  "version": "0.4.5",
   "description": "配置声明的 token → principal 映射。零外部依赖跑通开发环境,并作为全部契约测试的 fixture。禁止部署。",
   "license": "MIT",
   "type": "module",

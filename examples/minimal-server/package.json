@@ -1,6 +1,6 @@
 {
   "name": "@dshwar/example-minimal-server",
-  "version": "0.4.1",
+  "version": "0.4.5",
   "private": true,
   "description": "三十行证明论点:两用户两 key,消费方零改动。",
   "type": "module",
