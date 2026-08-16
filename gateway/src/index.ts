@@ -78,6 +78,9 @@ export { EventBuffer, translateEvent } from './sessions/events.ts'
 export type { SequencedEvent, TranslateOptions, UpstreamSessionEvent } from './sessions/events.ts'
 
 export { registerAdminRoutes } from './admin/routes.ts'
+
+export { guardMemberCapacity, MemberCapacityError, memberCapacityOf } from './member-capacity.ts'
+export type { MemberCapacity } from './member-capacity.ts'
 export type {
   AdminRouteOptions,
   AuditReaderLike,

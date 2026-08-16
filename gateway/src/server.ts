@@ -51,6 +51,7 @@ import {
   createIsolatedRuntime,
   parseIsolationLevel,
 } from './isolation.ts'
+import { guardMemberCapacity, memberCapacityOf } from './member-capacity.ts'
 import { assembleRuntime, type StaticAuthEntry } from './runtime.ts'
 import { registerRuntimeRoutes } from './sessions/routes.ts'
 import { GatewaySessionStore } from './sessions/store.ts'
@@ -276,9 +277,31 @@ export async function startServer(
 
   // Subject Mirror:静态令牌表的用户也进镜像,让 /v1/admin/subjects 有东西可看,
   // 且 SCIM 推进来的用户与静态用户走同一张表
-  const subjects = new InMemorySubjectStore()
+  // ★ V0.5.0 D2:开户闸门套在 store 上,不是套在某个端点上。
+  //
+  // 入口不止一个(今天 SCIM 推,明天控制台 API 建),在端点上加检查等于
+  // 要求每个新入口的作者记得加 —— 而本仓已反复证明「靠人记得」的事会被忘。
+  // 装饰 store 之后所有创建路径穿过同一个点,忘不掉,因为没有别的路。
+  //
+  // ⚠️ 容量用 `() => …` 惰性求值:隔离级别在下面才解析出来,
+  // 而这里已经要把 store 包好给静态令牌用了。
+  const rawSubjects = new InMemorySubjectStore()
+  const subjects = guardMemberCapacity(rawSubjects, () =>
+    memberCapacityOf({
+      level: parseIsolationLevel(config.isolation?.level),
+      totalMemoryBytes: totalmem(),
+      configuredMax: config.isolation?.maxProcesses,
+    }),
+  )
+  // ⚠️ 静态令牌**绕过闸门**,走 rawSubjects。
+  //
+  // 理由是归属问题:静态令牌是**配置**,不是开户动作。它已经由配置层的
+  // `assertSinglePrincipalCapable` 管着(逻辑档 + 多令牌 = 拒绝启动)。
+  // 让它再走一遍开户闸门的后果是**错的那条错误先响** —— 用户看到
+  // 「逻辑档只支持 1 个成员,拒绝再建」,而他根本没在建成员,他在改配置文件。
+  // 错误信息指错了地方,比没有错误信息更浪费人。
   for (const entry of config.authEntries) {
-    await subjects.upsert({
+    await rawSubjects.upsert({
       source: 'static',
       externalId: entry.id,
       userName: entry.id,
