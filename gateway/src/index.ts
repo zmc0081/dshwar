@@ -124,3 +124,7 @@ export {
 export type { PolicyDecision, WorkspacePolicy, WorkspacePolicyStore } from './workspaces/policy.ts'
 export { createPolicyEnforcer } from './workspaces/enforce.ts'
 export type { GuardedAction, PolicyEnforcerOptions } from './workspaces/enforce.ts'
+
+// ---- 作业队列(V0.5.5 Session 3)----
+export { InMemoryJobStore } from './jobs/store.ts'
+export type { Job, JobStatus, JobStore } from './jobs/store.ts'

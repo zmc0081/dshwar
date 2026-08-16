@@ -383,6 +383,32 @@ console.log('DSHWAR · 断言有效性探针\n')
   )
 }
 
+// 12. 作业恢复不清 claimedBy(V0.5.5)—— 一个「看起来对」的实现
+//
+//     `recover('requeue')` 若忘了把 `claimedBy` 清成 null,状态确实回到了
+//     `queued`,**测试里只看 status 的那一半会通过**。而下一轮恢复会再次
+//     把它当成孤儿作业捡起来 —— 作业在两个状态间打转,永远跑不完。
+//
+//     这一条探的是「断言有没有覆盖到那个容易漏的字段」,不是覆盖到状态机本身。
+{
+  const r = withMutation(
+    'gateway/src/jobs/store.ts',
+    (s) =>
+      s.replace(
+        "{ ...job, status: 'queued', claimedBy: null, updatedAt: now }",
+        "{ ...job, status: 'queued', updatedAt: now }",
+      ),
+    ['gateway/test/jobs.test.ts'],
+  )
+  expect(
+    '12 恢复时不清 claimedBy → 作业恢复断言变红',
+    r.red,
+    r.unchanged
+      ? '锚点没匹配上'
+      : '★ 恢复后 claimedBy 还留着,而断言竟然还是绿的 —— 作业会在两个状态间打转',
+  )
+}
+
 // ===========================================================================
 // 第三类:作用域 —— 在真实时序下调用,而不是在测试里直接调
 // ===========================================================================

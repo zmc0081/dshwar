@@ -375,7 +375,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 | 0       | 契约新增:四类端点一次定完,实现分期       | ✅   |
 | 1       | 工作区 CRUD + 产物浏览(产物即工作区文件) | ✅   |
 | 2       | 策略预授权(不做运行时审批弹窗)           | ✅   |
-| 3       | 作业队列(状态外置到 DSHWAR 库)           | ⬜   |
+| 3       | 作业队列(状态外置到 DSHWAR 库)           | ✅   |
 | 4       | 附件契约 + `attachment-tenant`           | ⬜   |
 
 ---
