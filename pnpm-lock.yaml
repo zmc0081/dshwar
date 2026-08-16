@@ -230,6 +230,31 @@ importers:
         specifier: 4.0.1
         version: 4.0.1
 
+  packages/auth-oidc:
+    dependencies:
+      '@dshwar/auth':
+        specifier: workspace:*
+        version: link:../auth
+      '@dshwar/auth-jwt':
+        specifier: workspace:*
+        version: link:../auth-jwt
+      '@dshwar/principal':
+        specifier: workspace:*
+        version: link:../principal
+      '@dshwar/subject':
+        specifier: workspace:*
+        version: link:../subject
+      '@dshwar/tenant-map':
+        specifier: workspace:*
+        version: link:../tenant-map
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.0.1
+        version: 4.0.1
+      jose:
+        specifier: ^6.2.9
+        version: 6.2.9
+
   packages/auth-static:
     dependencies:
       '@dshwar/auth':

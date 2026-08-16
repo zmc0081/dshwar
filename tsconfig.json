@@ -17,6 +17,7 @@
     { "path": "./packages/subject" },
     { "path": "./packages/tenant-map" },
     { "path": "./packages/auth-jwt" },
+    { "path": "./packages/auth-oidc" },
     { "path": "./adapters/dsh-0.1.0" },
     { "path": "./gateway" },
     { "path": "./sdk/typescript" },

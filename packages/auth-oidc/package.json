@@ -1,0 +1,44 @@
+{
+  "name": "@dshwar/auth-oidc",
+  "version": "0.3.0",
+  "description": "OIDC 接入:填一个 issuer URL 即可。discovery 解析后复用 auth-jwt 验签,不重复实现。",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@dshwar/auth": "workspace:*",
+    "@dshwar/auth-jwt": "workspace:*",
+    "@dshwar/principal": "workspace:*",
+    "@dshwar/subject": "workspace:*",
+    "@dshwar/tenant-map": "workspace:*"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "jose": "^6.2.9"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

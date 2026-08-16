@@ -152,7 +152,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 | 1 `@dshwar/subject`         | ✅ 已完成 | 内存与 storage 两个实现跑同一套断言;29 个单测     |
 | 2 `@dshwar/tenant-map`      | ✅ 已完成 | 四种策略 + 歧义即拒;29 个单测,负向多于正向        |
 | 3 `@dshwar/auth-jwt`        | ✅ 已完成 | 验签通过≠放行:停用即拒;23 个单测,真实密钥对       |
-| 4 `@dshwar/auth-oidc`       | ⬜ 未开始 | discovery + 与租户映射接合                        |
+| 4 `@dshwar/auth-oidc`       | ✅ 已完成 | 只解析 discovery,验签复用 auth-jwt;18 个单测      |
 | 5 `@dshwar/scim-server`     | ⬜ 未开始 | User + Group + PATCH                              |
 | 6 网关接入与令牌分离        | ⬜ 未开始 | SCIM 挂载、Admin subjects 转实现、三类令牌        |
 | 7 `@dshwar/webhooks` 与发布 | ⬜ 未开始 | 出站投递 + 端到端验收 + 文档                      |
@@ -332,7 +332,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 
 ---
 
-### ⬜ Session 4: `@dshwar/auth-oidc` —— OIDC 接入
+### ✅ Session 4: `@dshwar/auth-oidc` —— OIDC 接入
 
 ```
 本次任务:让部署方只填一个 issuer URL 就能接上。
