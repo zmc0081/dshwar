@@ -406,3 +406,75 @@ describe('请求校验', () => {
     expect(second.status).toBe(409)
   })
 })
+
+/**
+ * V0.4.6 Session 3 —— 断言有效性探针找出来的两个缺口。
+ *
+ * 两条断言都不是新需求,而是**契约早就承诺、却从没人验证**的东西。
+ * 它们的共同点:被测对象(网关)没坏,坏的是**喂给它的假模型**,
+ * 而现有测试全都照不到那一类。
+ */
+describe('假模型忠实于上游 —— 否则整套契约测试都是空的', () => {
+  beforeEach(async () => {
+    await boot({ fake: { tokens: ['一', '二', '三'], delayMs: 20 } })
+  })
+
+  it('正常跑完的一轮,turn.completed 的 reason 是 completed', async () => {
+    // 契约(`@dshwar/api-contract` 的 TurnCompletedEvent)写着:reason 区分
+    // 正常结束与被取消,客户端据此决定 UI 显示「完成」还是「已停止」。
+    // 而在 V0.4.6 之前,**全仓没有任何测试断言过这个字段** ——
+    // 于是假模型把 finish reason 写成字符串(应为 { kind: 'stop' })时,
+    // 所有测试照样全绿。那正是 V0.4.5 真实发生过的事。
+    const { body } = await createSession('dev-alice')
+    const id = (body['session'] as unknown as { id: string }).id
+
+    const stream = await app.request(`/v1/sessions/${id}/stream`, { headers: auth('dev-alice') })
+    await app.request(`/v1/sessions/${id}/turns`, {
+      method: 'POST',
+      headers: { ...auth('dev-alice'), 'content-type': 'application/json' },
+      body: JSON.stringify({ input: 'hi' }),
+    })
+
+    const events = await readSSE(stream, { until: (e) => e.type === 'turn.completed' })
+    const completed = events.find((e) => e.type === 'turn.completed')
+
+    expect(completed?.data['reason'], 'turn.completed 没带 reason,或值不对').toBe('completed')
+  }, 15_000)
+
+  it('取消之后输出真的截断 —— 不是只看接口返回 200', async () => {
+    // 同一类问题的另一面:假模型若不遵守 `signal`,取消就是摆设,
+    // 而只断言「DELETE 返回 200」的测试对此一无所知。
+    const { body } = await createSession('dev-alice')
+    const id = (body['session'] as unknown as { id: string }).id
+
+    const stream = await app.request(`/v1/sessions/${id}/stream`, { headers: auth('dev-alice') })
+    await app.request(`/v1/sessions/${id}/turns`, {
+      method: 'POST',
+      headers: { ...auth('dev-alice'), 'content-type': 'application/json' },
+      body: JSON.stringify({ input: 'hi' }),
+    })
+
+    // 让它先吐一点,再取消 —— 这样「截断」才是可观测的。
+    // ⚠️ **不睡固定时长**:第一版睡 25 ms,在负载下偶发地一个增量都还没到
+    //(3 个 token × 20 ms,机器忙的时候整轮起步就晚),于是
+    // `deltas.length > 0` 抽风。改成**等第一个增量真的进了缓冲**再取消 ——
+    // 断言依赖的是事实,不是时钟。
+    const session = store.get(id, { id: 'alice-e6f1' } as never)!
+    const deadline = Date.now() + 3000
+    while (Date.now() < deadline) {
+      const buffered = session.buffer
+        .since(undefined)
+        .filter((x) => (x.event as { type: string }).type === 'message.delta')
+      if (buffered.length > 0) break
+      await new Promise((r) => setTimeout(r, 5))
+    }
+    session.handle.agent.cancel({ kind: 'user' })
+
+    const events = await readSSE(stream, { until: (e) => e.type === 'turn.completed', maxMs: 3000 })
+    const deltas = events.filter((e) => e.type === 'message.delta')
+
+    // 三个 token、每个 20ms:取消发生在第一个之后、最后一个之前
+    expect(deltas.length, '一个增量都没有,测不出截断').toBeGreaterThan(0)
+    expect(deltas.length, `收到 ${deltas.length}/3 个增量 —— 假模型没有响应取消`).toBeLessThan(3)
+  }, 15_000)
+})
