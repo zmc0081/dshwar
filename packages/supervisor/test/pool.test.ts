@@ -13,6 +13,7 @@ import {
   type ChildProcessLike,
   type LaunchSpec,
   type ProcessLauncher,
+  type SupervisorConfig,
   type SupervisorEvent,
 } from '../src/index.ts'
 
@@ -67,7 +68,7 @@ function fakeLauncher(): { launcher: ProcessLauncher; children: FakeChild[] } {
   return { launcher, children }
 }
 
-function make(over: Partial<Parameters<typeof Supervisor.prototype.constructor>[0]> = {}) {
+function make(over: Partial<SupervisorConfig> = {}) {
   const { launcher, children } = fakeLauncher()
   const events: SupervisorEvent[] = []
   const supervisor = new Supervisor({

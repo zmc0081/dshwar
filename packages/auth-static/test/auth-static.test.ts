@@ -15,6 +15,23 @@ async function authContext(entries: readonly StaticAuthEntry[] = ENTRIES): Promi
   return ctx
 }
 
+/**
+ * 取出一次必然失败的 `verify` 的拒绝原因。
+ *
+ * 不用 `promise.catch(e => e as AuthError)`:那个表达式的类型是
+ * `Principal | AuthError`,读 `.message` 会被类型检查拦下。更要紧的是,
+ * 万一 `verify` 没拒绝,`.catch` 会把成功的主体原样递下去,后面的断言
+ * 便在一个 `Principal` 上找 `message`,失败信息完全指错方向。
+ */
+async function rejectionOf(promise: Promise<unknown>): Promise<AuthError> {
+  try {
+    await promise
+  } catch (e: unknown) {
+    return e as AuthError
+  }
+  throw new Error('verify 本应拒绝,却成功返回了主体')
+}
+
 describe('StaticAuth · 验证', () => {
   it('注册为 ctx.auth', async () => {
     const ctx = await authContext()
@@ -81,7 +98,7 @@ describe('AuthError · 不泄漏失败原因', () => {
 
   it('错误对象上没有 code / reason / cause 之类的分支依据', async () => {
     const ctx = await authContext()
-    const error = await ctx.auth.verify('nope').catch((e: unknown) => e as AuthError)
+    const error = await rejectionOf(ctx.auth.verify('nope'))
 
     expect(error).toBeInstanceOf(AuthError)
     expect(Object.keys(error)).not.toContain('code')
@@ -94,7 +111,7 @@ describe('AuthError · 不泄漏失败原因', () => {
   it('错误消息不含被验证的 token —— 否则日志会变成 token 的明文副本', async () => {
     const ctx = await authContext()
     const secret = 'super-secret-token-value'
-    const error = await ctx.auth.verify(secret).catch((e: unknown) => e as Error)
+    const error = await rejectionOf(ctx.auth.verify(secret))
 
     expect(error.message).not.toContain(secret)
     expect(JSON.stringify(error)).not.toContain(secret)
@@ -102,7 +119,7 @@ describe('AuthError · 不泄漏失败原因', () => {
 
   it('错误消息不透露已配置的任何 token', async () => {
     const ctx = await authContext()
-    const error = await ctx.auth.verify('nope').catch((e: unknown) => e as Error)
+    const error = await rejectionOf(ctx.auth.verify('nope'))
 
     for (const entry of ENTRIES) {
       expect(error.message).not.toContain(entry.token)

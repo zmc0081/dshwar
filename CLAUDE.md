@@ -84,6 +84,7 @@ node scripts/check-oss-purity.mjs   # 开源构建产物不含闭源组件（硬
 
 # 门禁
 pnpm typecheck                                                                → clean
+pnpm typecheck:test   # 测试文件走 tsconfig.test.json,不跑这条它们不被检查      → clean
 pnpm test && pnpm test:contract                                               → green
 pnpm eslint . --max-warnings 0                                                → clean
 ```

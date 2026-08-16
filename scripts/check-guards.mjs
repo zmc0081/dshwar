@@ -10,7 +10,7 @@
  */
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { collectFiles, grepFiles, isPackageJson, isTs, repoPath } from './lib/scan.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -136,6 +136,56 @@ function checkTsconfigReferences() {
     .map((rel) => ({ file: 'tsconfig.json', line: 0, text: `未登记 ${rel}` }))
 }
 
+/**
+ * 每个带 `test/` 的项目都必须有 `tsconfig.test.json`,且已登记进根
+ * `tsconfig.test.json` 的 references。
+ *
+ * 为什么与上一条分开写:上一条守的是「产品代码被检查」,这一条守的是
+ * 「**测试代码**被检查」,而后者曾经整仓都没有 —— 各包的 tsconfig.json
+ * 一律把测试文件写进 `exclude`,全仓 40+ 个测试文件从没被 tsc 看过。
+ *
+ * 这个坑与上一条是同一类:失败是**静默**的。Vitest 用 esbuild 转译,只擦类型
+ * 不做检查,所以测试跑绿、lint 跑绿,而测试里 import 了一个根本不存在的导出
+ * 也照样合入。V0.4.5 Session 3 一次会话里踩了三次(不存在的 `recordUsage`、
+ * 漏掉必填的 `tenantId`、把 async 的 `query()` 当同步用),三次都是编译期
+ * 一眼可见的错误,却全靠运行时排查 —— 其中两次表现为「计量静默无数据」。
+ *
+ * 所以新增包时漏建或漏登记测试项目,必须在这里变红,而不是等下一次事故。
+ */
+function checkTestTsconfigReferences() {
+  const rootFile = p('tsconfig.test.json')
+  let root
+  try {
+    root = JSON.parse(stripJsonComments(readFileSync(rootFile, 'utf8')))
+  } catch {
+    return [{ file: 'tsconfig.test.json', line: 0, text: '根测试解决方案文件缺失或无法解析' }]
+  }
+  const referenced = new Set(
+    (root.references ?? []).map((r) => r.path.replace(/^\.\//, '').replace(/\/$/, '')),
+  )
+
+  const projectDirs = collectFiles(REPO, (f) => f.endsWith('tsconfig.json'))
+    .map((f) => repoPath(REPO, dirname(f)))
+    .filter((rel) => rel !== '' && rel !== '.')
+
+  const out = []
+  for (const rel of projectDirs) {
+    const hasTests = collectFiles(p(rel, 'test'), isTs).length > 0
+    const exists = existsSync(p(rel, 'tsconfig.test.json'))
+
+    if (hasTests && !exists) {
+      out.push({
+        file: `${rel}/tsconfig.json`,
+        line: 0,
+        text: `${rel} 有 test/ 却没有 tsconfig.test.json`,
+      })
+    } else if (exists && !referenced.has(`${rel}/tsconfig.test.json`)) {
+      out.push({ file: 'tsconfig.test.json', line: 0, text: `未登记 ${rel}/tsconfig.test.json` })
+    }
+  }
+  return out
+}
+
 /** 去掉 JSONC 注释。根 tsconfig 里有大段说明性注释,JSON.parse 咽不下。 */
 function stripJsonComments(text) {
   return text.replace(/^\s*\/\/.*$/gm, '')
@@ -177,6 +227,17 @@ if (unreferenced.length === 0) {
   console.log(`  违规  有 TS 项目未登记进根 tsconfig references  (${unreferenced.length} 处)`)
   console.log('        根 typecheck 是 tsc -b,未登记的项目会被安静跳过,不做任何类型检查')
   for (const h of unreferenced) console.log(`        ${h.text}`)
+}
+
+const testUnreferenced = checkTestTsconfigReferences()
+if (testUnreferenced.length === 0) {
+  console.log('  通过  全部 test/ 已登记进根 tsconfig.test.json references')
+} else {
+  failed += 1
+  console.log(`  违规  有测试目录未纳入类型检查  (${testUnreferenced.length} 处)`)
+  console.log('        Vitest 用 esbuild 转译、不做类型检查,漏掉的测试文件里')
+  console.log('        即便 import 了不存在的导出,门禁也全绿。见 pnpm typecheck:test')
+  for (const h of testUnreferenced) console.log(`        ${h.text}`)
 }
 
 console.log('')

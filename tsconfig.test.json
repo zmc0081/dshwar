@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  // 测试解决方案文件。与根 tsconfig.json 同构,只是串的是各包的 tsconfig.test.json。
+  //
+  // 为什么要有这个文件:根 `tsconfig.json` 串的是产品项目,而产品项目一律
+  // `exclude: ["**/*.test.ts"]` —— 于是全仓测试文件从来没被 tsc 看过一眼。
+  // Vitest 用 esbuild 转译,只擦类型不做检查,所以测试里的类型错误在任何门禁上
+  // 都不会红。V0.4.5 Session 3 一次会话踩了三次(import 了不存在的导出、漏了必填
+  // 的过滤字段、把 async 当同步用),三次都是编译期一眼可见,却全靠运行时排查。
+  //
+  // 新增包时在此登记一行 —— 忘了登记由 `pnpm check:guards` 拦下,
+  // 理由与根 tsconfig.json 的那条守卫完全相同。
+  "include": [],
+  "references": [
+    { "path": "./packages/api-contract/tsconfig.test.json" },
+    { "path": "./packages/audit/tsconfig.test.json" },
+    { "path": "./packages/auth-jwt/tsconfig.test.json" },
+    { "path": "./packages/auth-oidc/tsconfig.test.json" },
+    { "path": "./packages/auth-static/tsconfig.test.json" },
+    { "path": "./packages/credentials-multiuser/tsconfig.test.json" },
+    { "path": "./packages/fs-tenant/tsconfig.test.json" },
+    { "path": "./packages/metering/tsconfig.test.json" },
+    { "path": "./packages/model-router/tsconfig.test.json" },
+    { "path": "./packages/policy/tsconfig.test.json" },
+    { "path": "./packages/principal/tsconfig.test.json" },
+    { "path": "./packages/scim-server/tsconfig.test.json" },
+    { "path": "./packages/storage-scoped/tsconfig.test.json" },
+    { "path": "./packages/subject/tsconfig.test.json" },
+    { "path": "./packages/supervisor/tsconfig.test.json" },
+    { "path": "./packages/tenant-map/tsconfig.test.json" },
+    { "path": "./packages/webhooks/tsconfig.test.json" },
+    { "path": "./adapters/dsh-0.1.0/tsconfig.test.json" },
+    { "path": "./gateway/tsconfig.test.json" },
+    { "path": "./sdk/typescript/tsconfig.test.json" }
+  ]
+}

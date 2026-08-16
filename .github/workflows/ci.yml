@@ -88,6 +88,11 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      # 测试文件走独立的解决方案文件(各包的 tsconfig.json 把它们 exclude 掉了)。
+      # 不单独跑这一步,测试里的类型错误在所有门禁上都不会红。
+      - name: Typecheck(测试文件)
+        run: pnpm typecheck:test
+
       - name: Lint(含 adapters 边界规则)
         run: pnpm lint
 

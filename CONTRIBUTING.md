@@ -118,7 +118,19 @@ export abstract class Policy extends Service {
 pnpm check:all
 ```
 
-## 两个会让你困惑的约定
+## 三个会让你困惑的约定
+
+### 每个带测试的包有两个 tsconfig
+
+`tsconfig.json` 只管 `src/`(composite,`rootDir: "./src"`,产出 `dist/`);
+`tsconfig.test.json` 只管 `test/`(`noEmit`,references 指向前者)。
+不能合成一个:把 `test/` 并进 composite 项目会把 `rootDir` 抬到包根,
+`dist/` 里凭空多出 `src/` 与 `test/` 两层,发布出去的 types 路径全错。
+
+**新增包时两个都要建,并分别登记进根 `tsconfig.json` 与根 `tsconfig.test.json`。**
+漏了会被 `pnpm check:guards` 拦下 —— 因为漏登记是**静默**的:`tsc -b` 只构建
+references 里列出的项目,而 Vitest 用 esbuild 转译、不做类型检查,于是那个包的
+测试即便 import 了根本不存在的导出,三道门禁也照样全绿。
 
 ### `Service` 子类不能用 `#private`
 

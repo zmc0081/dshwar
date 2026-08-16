@@ -18,6 +18,8 @@
  *   8. 破坏性契约变更                  → 必须失败(Session 6 验收)
  *   9. 加一个可选字段                  → **必须放行**(Session 6 验收,另一个方向)
  *  13. 公开包依赖闭源组件              → 必须失败(硬规则 9,V0.4.1)
+ *  14. 有 test/ 却没有测试 tsconfig    → 必须失败(V0.4.5,与第 7 条同源)
+ *  15. 测试项目未登记进根测试解决方案  → 必须失败(同上)
  *
  * 退出码:全绿 0,任一守卫没拦住 1。
  */
@@ -315,6 +317,53 @@ try {
       !guards.ok && /未登记 packages\/__guard_fixture__/.test(guards.output),
       guards.ok ? '守卫放行了未登记的 TS 项目 —— 该项目将不被任何类型检查覆盖' : undefined,
     )
+  }
+
+  // ---------------------------------------------------------------------
+  // 14/15. 测试文件没被纳入类型检查
+  //
+  //     与第 7 条同源,但坑得更深:产品项目**存在且已登记**,只是它一律
+  //     `exclude` 掉测试文件。于是 typecheck 全绿、lint 全绿、Vitest 全绿,
+  //     而测试里 import 一个根本不存在的导出照样能合入 —— V0.4.5 Session 3
+  //     一次会话踩了三次,两次表现为「计量静默收不到数据」,排查了两轮。
+  //
+  //     14 —— 有 test/ 却没建 tsconfig.test.json
+  //     15 —— 建了但忘了登记进根 tsconfig.test.json
+  //     两种漏法的后果完全一样:那个包的测试回到不检查的状态。
+  // ---------------------------------------------------------------------
+  {
+    writeFixture(
+      'packages/__guard_fixture__/tsconfig.json',
+      `${JSON.stringify({ extends: '../../tsconfig.base.json', include: ['src'] }, null, 2)}\n`,
+    )
+    writeFixture(
+      'packages/__guard_fixture__/test/probe.test.ts',
+      ['// 负向测试夹具:有测试目录就必须有测试 tsconfig。', 'export const probe = 1', ''].join(
+        '\n',
+      ),
+    )
+
+    const missing = runGuards()
+    expect(
+      '14 有 test/ 却没有 tsconfig.test.json 被拦住',
+      !missing.ok && /有 test\/ 却没有 tsconfig\.test\.json/.test(missing.output),
+      missing.ok ? '守卫放行了没有测试项目的包 —— 该包的测试不被任何类型检查覆盖' : undefined,
+    )
+
+    writeFixture(
+      'packages/__guard_fixture__/tsconfig.test.json',
+      `${JSON.stringify({ extends: './tsconfig.json', include: ['test'] }, null, 2)}\n`,
+    )
+
+    const unregistered = runGuards()
+    expect(
+      '15 测试项目未登记进根 tsconfig.test.json 被拦住',
+      !unregistered.ok &&
+        /未登记 packages\/__guard_fixture__\/tsconfig\.test\.json/.test(unregistered.output),
+      unregistered.ok ? '守卫放行了未登记的测试项目 —— tsc -b 会安静跳过它' : undefined,
+    )
+
+    rmSync(p('packages/__guard_fixture__'), { recursive: true, force: true })
   }
 
   // ---------------------------------------------------------------------

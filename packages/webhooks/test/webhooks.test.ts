@@ -27,8 +27,8 @@ const event: SubjectEvent = {
 
 const noSleep = async (): Promise<void> => undefined
 
-/** 收集请求的假下游。 */
-function receiver(statuses: number[]): {
+/** 收集请求的假下游。`statuses` 至少给一个 —— 类型上钉住,索引才不会取空。 */
+function receiver(statuses: [number, ...number[]]): {
   fetch: typeof globalThis.fetch
   requests: { headers: Record<string, string>; body: string }[]
 } {
@@ -45,7 +45,8 @@ function receiver(statuses: number[]): {
       body: String(init?.body),
     })
     call += 1
-    return new Response(null, { status: statuses[Math.min(call - 1, statuses.length - 1)] })
+    // 索引被 min 夹在 [0, length-1],而 length ≥ 1 由参数类型保证
+    return new Response(null, { status: statuses[Math.min(call - 1, statuses.length - 1)]! })
   }) as typeof globalThis.fetch
   return { fetch: fetchImpl, requests }
 }
