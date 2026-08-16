@@ -4,6 +4,520 @@
 
 ---
 
+## M0.4.6 —— Session 3/4 的 prompt 与验证清单(第二趟补档)
+
+```
+读取 CLAUDE.md。本次任务:证明关键测试会在实现坏掉时变红。
+
+★ 这是本版本的核心产出。做法是**故意弄坏实现，确认对应测试变红**，
+  而不是做全量变异测试（投入产出比不划算，且会把 CI 拖到分钟级）。
+
+1. 四处核心断言各写一个探针
+   - 取消:把 agent.cancel() 改成空实现 → 取消测试必须红
+   - 隔离:把 fs-tenant 的路径钉死去掉一段 → 隔离测试必须红
+   - 配额:把配额判定改成永远 allow → 配额测试必须红
+   - 契约:在 openapi 里删一个端点 → check:contract 必须红
+
+   ★ 选这四处不是拍脑袋。版本块开头的「失效断言清单」是实测得来的,
+     A 类四条里有三条落在假适配器与测试夹具上（假模型不忠实于上游、
+     选项没有类型约束、索引取空后静默默认）——**探针要针对的正是这一类：
+     被测对象没坏，是喂给它的东西坏了，于是断言测了个寂寞。**
+     写探针时优先弄坏「实现」，但也要有一条弄坏「夹具」的
+     （例如把 harness 的 FinishReason 改回字符串），确认对应测试变红。
+
+2. 探针怎么实现
+   - 不要真的改源码再改回来（会污染工作树，且中途失败会留下坏代码）
+   - 建议:在临时目录里 patch 一份副本再跑，或用 vitest 的模块 mock 覆盖实现
+   - ★ 探针失败的信息必须说清「哪条断言失去了效力」，
+     而不只是「探针没通过」—— 后者要人再花十分钟才知道发生了什么
+
+3. 纳入 check:all
+   - ★ 红线 4:若把 check:all 拖过一分钟，拆成单独 script
+
+== 测试 ==
+- 四个探针各自跑通（即:弄坏后确实变红）
+- 反向:不弄坏时探针不误报
+```
+
+验证:
+
+- ★ 红线 1:不放宽任何已有的安全断言
+- `/publish test: {v} session 3 assertion effectiveness probes`
+
+```
+读取 CLAUDE.md。本次任务:补上契约里写了却没实现的那条，并落实决策 1。
+
+1. agent/error 送达 SSE 客户端
+   - 实测（V0.4.5 Session 2）：agent/error 是挂在 cordis Context 上的事件
+     （dsh-agent/lib/types/runtime-types.d.ts:316，签名带 this: Scoped<Agent>），
+     不是 SessionEventMap 成员，所以 translateEvent 永远看不到它
+   - 要在 GatewaySessionStore.register() 里另开一条 ctx.on('agent/error', …) 订阅
+   - ★ 主要难点是 seq 分配：agent/error 没有 seq，而 EventBuffer 与
+     Last-Event-ID 都按 seq 过滤。直接借 lastSeq + 1 会与随后到来的真实
+     上游事件（如 turn/end）撞号
+   - V0.4.5 的 fail() 能安全借号，前提是「终结之后不再有上游事件」——
+     agent/error 不一定终结，不能照抄
+   - 两个方案，先评估再动手：
+     a. 网关自持 seq 计数器（彻底，但要改现有断言 seq 的测试）
+     b. 为合成事件预留号段（局部，但要论证不破坏续传）
+
+2. ErrorCode 补 unavailable（决策 1）
+   - ErrorCode 加 'unavailable'，STATUS_BY_CODE 映射 503
+   - gateway/src/isolation.ts 的 AtCapacityError 映射改为 unavailable
+     （现在是 rate_limited，那里的注释写明了这是被红线逼出来的折中）
+   - ★ 三件配套缺一不可，见决策 1
+
+3. 契约规定「客户端必须优雅处理未知枚举值」
+   - 写进 packages/api-contract 的对外说明与 OpenAPI 描述
+   - SDK 侧确认:遇到未知枚举值不抛，走 default 分支
+
+4. 冻结检查放行枚举新增
+   - freeze.ts 的 enum.value.added 从 breaking 改为 additive
+   - ★ 连同它现有的理由一起改 —— 那句「闭集枚举加值会让下游已写全的
+     switch 编译失败」在没有第 3 条规定时是对的
+   - enum.value.removed 保持 breaking（红线 3）
+
+== 测试 ==
+- agent 报错时 SSE 收到 error 事件（不是流静默停住）
+- 续传（Last-Event-ID）在错误事件前后都不丢不重
+- 进程池满返回 503 且 code 为 unavailable
+- check:contract 对枚举新增放行、对枚举删除仍然拦
+```
+
+验证:
+
+- ★ 红线 3:`enum.value.removed` 仍是破坏性变更
+- `/publish feat: {v} session 4 agent error delivery and unavailable code`
+
+---
+
+## M0.4.6 —— Session 实现细节
+
+### ⬜ Session 0: 端到端冒烟:真实路径(最高优先级)
+
+> ⚠️ **这是本版本唯一的「必须做」。** 其余四个 Session 都是加固,
+> 只有这一个回答一个至今无人回答的问题:**网关能不能发出一轮真实对话?**
+>
+> V0.2.0 的验收标准写着「第三方仅凭 HTTP 就能完成一次完整会话,不接触 dsh」。
+> 那条标准一直由 `createTestHarness()` 验证 —— 而 harness 自带假模型,
+> `assembleRuntime()` 不带。**两者的差异恰好落在没被测的那一格里。**
+
+```
+读取 CLAUDE.md。本次任务:让真实网关跑通一轮真实对话。不改测试架构。
+
+1. 先查清 provider 从哪来
+   - 上游 @deepseek-ai/dsh-llm 提供什么内置 adapter？有没有官方 DeepSeek provider 包？
+   - ★ 先查再设计，不要凭空造一个 adapter
+   - 硬规则 2：只有 adapters/dsh-<version>/ 允许 import 上游内部实现
+   - 硬规则 3：上游依赖精确锁版
+
+2. 把 provider 接进 assembleRuntime()
+   - RuntimeOptions 加 provider 配置（provider 名 / 模型 / base URL / 凭据来源）
+   - ★ 凭据必须走 @dshwar/credentials-multiuser 的 per-principal 解析
+     不得从 process.env 直接读（硬规则 6 + 「配置只经 profile 注入」）
+   - 若结论是「adapter 由部署方注册，网关不内置」：
+     那也要让 assembleRuntime() 在没有任何 provider 时**拒绝启动或打醒目警告**，
+     并在 docs/DEPLOYMENT.md 写清部署方必须做什么
+
+3. 端到端冒烟
+   - 起真实 server（startServer），用真实凭据发一轮，收到真实回复
+   - 这一条**需要真实 API key**，属于外部资源。拿不到 key 时：
+     用一个照上游契约写的最小 provider（本地 echo/stub），
+     但它必须经 assembleRuntime() 的 provider 配置路径注册，
+     ★ 不得走 createTestHarness()
+
+4. 加守卫，不让缺口重现
+   - 一条测试：assembleRuntime() 装出来的运行时，ctx.llm 里确实有已注册的 provider
+   - 这条测试的作用是不让「测试布局掩盖产品缺口」再次发生
+
+== 产出 ==
+- 真实网关能发出一轮对话的证据（日志或测试输出，贴进 PR）
+- 若走 stub：明确记录「真实 provider 仍未验证」，并进发布清单
+```
+
+验证:
+
+- ★ 红线 2:冒烟走 `assembleRuntime()`,不走 `createTestHarness()`
+- `/publish feat: {v} session 0 real-path smoke test`
+
+---
+### ✅ Session 1: `scripts/` 纳入类型检查(范围已缩窄)
+
+> **交付**:`tsconfig.scripts.json` 机制 + 三条新守卫 + `.mjs` 夹具纳入检查。
+>
+> **实际做的比计划多,因为查证时发现同一类洞有三个:**
+>
+> | 盲区                          | 谁漏了                          | 后果                        |
+> | ----------------------------- | ------------------------------- | --------------------------- |
+> | `scripts/*.ts` 不在任何项目里 | 两处构建脚本                    | `generate-openapi.ts` 的 `document.version`(应为 `.info.version`)—— 有 `?? manifest.version` 兜底且两值相等,肉眼与运行时都看不出来 |
+> | 完全没有 `tsconfig.json` 的包 | `examples/minimal-server`     | README 首屏那段代码,新人第一眼看到的东西,从 V0.1.0 起没被 tsc 看过 |
+> | `test/` 下的 `.mjs` 夹具    | 两个子进程夹具                  | `child-agent.mjs` 的 `reason: 'stop'` 活了一整个版本 |
+>
+> ★ **三个洞是同一个形状**:守卫都从「**已经存在**的东西」出发遍历 ——
+> 有 tsconfig 的目录、`.ts` 文件 —— 于是「本该存在却不存在」的东西对它们
+> 完全不可见。第 19 条守卫(有 `src/*.ts` 却完全没有 tsconfig)就是专门堵
+> 前两条守卫自己的洞。
+>
+> **`.mjs` 按方案 C 落地**(`allowJs` + `checkJs`,运行时零改动)。
+> 三方案比较见 [`docs/DECISIONS/typecheck-mjs-fixtures.md`](docs/DECISIONS/typecheck-mjs-fixtures.md)。
+> 开启后暴露 31 处,全部修完。负向验证把 `reason` 改回错误形状:
+> `Type 'string' is not assignable to type 'FinishReason'` —— 精确指到行。
+>
+> 顺带修掉 `.mjs` 里同款的 `aborted` 重复读问题(`b635a2d` 在 `.ts` 侧修过一次,
+> `.mjs` 当时不在检查范围内,于是又来了一遍)。
+>
+> **负向验证 23 条全绿**,新增四条(17/18/19/20)。
+
+> ⚠️ **`test/` 部分已经做完了,不在本 Session 范围内。** 立项时以为要一起做,
+> 但那份工作在 `b635a2d` 里独立完成并已合并(见本版本块开头的「合并进来的成果」)。
+> 本 Session 只剩 `scripts/`,**照 `tsconfig.test.json` 那套现成机制照搬即可**。
+
+**开工前已复核的实际状态**(2026-08-16 实测,不是推测):
+
+| 目标                                   | 状态                                              |
+| -------------------------------------- | ------------------------------------------------- |
+| `sdk/typescript/scripts/`(generate + render) | ✅ **已经干净** —— `render.ts` 被 `b635a2d` 顺手修了,只需登记进机制 |
+| `packages/api-contract/scripts/generate-openapi.ts` | ❌ TS2339 **仍在**(第 40 行),是唯一已知的待修错误 |
+| `examples/minimal-server`            | ❌ 仍无 `tsconfig.json`(`examples/sdk-session` 有,照它配) |
+
+```
+读取 CLAUDE.md。本次任务:把 scripts/*.ts 纳入 tsc，机制与 test 相同。
+
+1. 根级 tsconfig.scripts.json（决策 2）
+   - ★ 照 tsconfig.test.json 抄，不要另发明一套。那份已经过一轮实战，
+     连守卫、CI 接线、negative test 都齐了
+   - noEmit: true，覆盖两处：
+     packages/api-contract/scripts/、sdk/typescript/scripts/
+   - 加 npm script（typecheck:scripts），接进 check:all
+
+2. 修唯一已知的错误
+   - packages/api-contract/scripts/generate-openapi.ts:40
+     TS2339: Property 'version' does not exist on type 'OpenApiDocument'
+     ★ 合并之后复测仍在
+   - 注意 freeze.test.ts 已经因为同一个类型改成了
+     buildOpenApiDocument('0.0.0-freeze-test')——修的时候看一眼那边的取舍
+
+3. examples/minimal-server 补 tsconfig
+   - 照 examples/sdk-session 配，登记进根 tsconfig references
+
+4. check-guards.mjs 加守卫
+   - 仿照已有的两条（根 tsconfig references / 根 tsconfig.test.json references）
+   - 新增：「每个含 scripts/*.ts 的位置都已登记进 tsconfig.scripts.json」
+
+5. ★ .mjs 夹具的盲区 —— 本 Session 只需记录，不必解决
+   - tsconfig 那套机制结构上够不到 .mjs。全仓两个：
+     packages/supervisor/test/fixtures/echo-child.mjs
+     adapters/dsh-0.1.0/test/fixtures/child-agent.mjs
+   - 后者曾有与 7 个 .ts 测试文件完全相同的 finish reason 形状错误
+     （reason: 'stop' 应为 { kind: 'stop' }），已在合并时人工修掉 ——
+     但它是**被人看出来的**，不是被检查抓出来的
+   - 可选做法（评估后再定，别硬上）：改写成 .ts 走 strip-types 跑，
+     或加 // @ts-check + JSDoc。两者都有代价，写清楚再选
+
+== 测试 ==
+- 负向:故意在某个 script 里写一个类型错误，确认 typecheck:scripts 变红
+- 负向:新增一个未登记的 scripts 目录，确认守卫变红
+```
+
+验证:
+
+- `/publish chore: {v} session 1 typecheck scripts`
+
+---
+### ✅ Session 2: 配额两段判定
+
+> **交付**:`PolicyService.admit()`(同步、读快照)+ 网关建会话侧接线 + 11 条测试。
+>
+> **两段的分工**:`check()` 管**钱**(挂发起轮次,现算,精确);
+> `admit()` 管**资源**(挂建会话,读快照,不阻塞)。
+>
+> ★ **`admit()` 同步是它存在的理由,不是优化。** `metering.query()` 是异步的,
+> 而建会话是热路径 —— 每次都等一次用量查询,等于把计量组件放进会话创建的
+> 故障域,与本包「计量是账目组件,不是安全组件」的既有立场直接矛盾。
+> 有一条测试专门断言 `admit()` 的返回值**不是 Promise**。
+>
+> **三个细节**:
+>
+> 1. 精确判定顺手喂热快照 —— 两段共用同一个事实源,而不是各算各的
+> 2. metering 读不到时**不更新**快照 —— 写一个「没烧完」的假事实,会让一次
+>    网络抖动就把已耗尽的主体重新放行。有测试钉住
+> 3. 并发建会话只触发一次后台刷新(20 次并发 → ≤1 次查询),否则热路径
+>    会把 metering 打穿,而那正是准入要避免的
+>
+> **翻转了一条测试**:`isolation.test.ts` 里那条「【已知缺口】配额耗尽的租户仍能
+> 建会话」从「钉死现状」改成「断言正确行为」—— 它的失败信息当初就写着
+> 「若这里变成 429,说明缺口已修,请更新本测试」。现在断言**一个进程都没起**:
+> 拒绝发生在付出 115 ms 冷启动 + 58 MB 之前。
+>
+> 另加一条两档一致性断言(红线 2):准入在 logical 与 process 下返回同样的 429 ——
+> 只在 process 档做准入会让两档分叉。
+
+```
+读取 CLAUDE.md 与 packages/policy/src/index.ts 的 fail open 说明。
+本次任务:堵住「配额耗尽的租户占满进程槽位」这个 DoS 向量。
+
+1. 建会话侧:快照准入（决策 3）
+   - 在 policy 包加一层配额快照，几秒过期（可配，默认建议 5s）
+   - ★ 准入路径不得同步等 metering.query()（它是异步的，且是热路径）
+   - 查不到快照就放行 —— fail open，与 policy 现有语义一致
+   - 快照只为堵 DoS 向量，不为精确计费
+
+2. /turns 侧:精确判定
+   - 保持现状不动。那里本来就要等，精确值是对的
+
+3. 与进程隔离联动
+   - gateway/test/isolation.test.ts 里有一条
+     「【已知缺口】配额耗尽的租户仍能建会话并占用进程槽位」
+     ★ 它的失败信息写着「若这里变成 429，说明缺口已修，请更新本测试」——
+     修完必须更新它，否则它会变成一条阻碍正确行为的测试
+
+4. 两档隔离行为一致
+   - ★ 红线 2（V0.4.5）：客户端不该知道自己跑在哪种隔离下
+   - 准入行为在 logical 与 process 两档必须相同
+
+== 测试 ==
+- 配额耗尽的租户建会话被拒（两档都测）
+- 准入不阻塞:metering 挂掉时建会话仍然成功（fail open）
+- 快照过期后能刷新到新值
+- 精确计费仍在 /turns，未被准入替代
+```
+
+验证:
+
+- `/publish feat: {v} session 2 two-stage quota admission`
+
+---
+### ✅ Session 3: 断言有效性探针
+
+> **交付**:`scripts/verify-assertions.mjs`(7 条探针)+ 两条补上的断言,
+> 已接进 `check:all`(探针 18 秒,合计约 33 秒,在红线 4 的一分钟预算内)。
+>
+> **三类探针,每一类对应一个真实踩过的坑:**
+>
+> | 类别 | 探针 | 对应的坑 |
+> | --- | --- | --- |
+> | 弄坏实现 | 取消失效 / 路径少钉一段 / 配额永远放行 / 准入永远放行 | 最直觉的一类 |
+> | 弄坏夹具 | 假模型少吐 token / 不吐推理增量 | `pool.test.ts` 的 `Parameters<Function>` —— 被测对象没坏,是喂给它的东西坏了 |
+> | 作用域 | `fs-tenant` 移出 principal 白名单 → 守卫变红 | V0.4.7 那个「靠人记得」的修法的兜底 |
+>
+> ★ **探针跑出来两条红的,查清之后是探针自己的前提错了,不是测试有洞。**
+>
+> 最初写的「把假模型的 finish reason 改成字符串」与「让假模型不再遵守 signal」
+> 都不会让任何测试变红。原因:
+>
+> - **全仓没有任何代码读 `finish` chunk 的 `reason`**。`turn.completed.reason`
+>   来自 `turn/end` 的 `cancelled` 字段。那个形状错误由**类型检查**覆盖
+>   (`b635a2d` 正是这么抓到的),运行时没有可断言的行为
+> - agent loop 自己会在取消后停止消费流,适配器遵不遵守 `signal` 在端到端
+>   层面看不出差别
+>
+> **教训与 Session 0 的「在根 ctx 上读 principal」是同一类**:写探针前必须先
+> 确认那个属性在下游真的有后果。否则探针会一直红,而红的原因是它自己没道理 ——
+> 那比没有探针更浪费人。理由已写进脚本注释,免得后人再加回来。
+>
+> **顺带补上两条契约早就承诺、却从没人验证的断言**:
+> `turn.completed` 的 `reason` 字段(契约说客户端靠它区分「完成」与「已停止」,
+> 而全仓从未断言过它)、以及取消之后输出**真的截断**(不是只看接口返回 200)。
+
+---
+### ✅ Session 4: `agent/error` 送达 + `unavailable`
+
+> **交付**:`agent/error` 接线(含跨进程)+ 网关自持序号 + `ErrorCode` 补
+> `unavailable` + 冻结检查放宽枚举新增。13 条新测试,负向验证 25 条全绿。
+>
+> #### 1. `agent/error` —— 映射表是承诺,不是描述
+>
+> 契约的事件映射表从 V0.2.0 起就写着 `agent/error → error`,但**直到本 Session
+> 才真的有人接线**。在那之前 agent 报错 = 客户端的流静默停住,它无从区分
+> 「模型在想」与「已经炸了」。
+>
+> 漏三个版本的原因:它挂在 cordis **Context** 上,不是 `SessionEventMap` 的成员,
+> `translateEvent` 永远看不到 —— 而没人核对过那张表是不是真的实现了。
+> **写进映射表的每一行都该有一条测试盯着。**
+>
+> 跨进程也接了(worker 转发 + remote 分发)。不接的话进程隔离档会悄悄丢掉
+> 错误通知,而红线 2 要求两档一致 **包括出错的时候**。
+> ⚠️ 只转发 `turn`/`step`,**不转发 error 对象本身** —— 它要过 IPC 的 JSON
+> 序列化,而上游的错误可能带着请求 URL 甚至凭据片段。
+>
+> #### 2. 网关自持序号 —— 让「借号」这个问题消失
+>
+> 合成事件(`agent/error` 翻出来的 `error`、进程死亡的终结通知)没有上游 seq,
+> 而 `Last-Event-ID` 按 `seq >` 过滤,借号就可能与随后到来的真实事件撞号。
+>
+> V0.4.5 的 `fail()` 靠「终结之后不会再有上游事件」论证借号安全 —— 那个论证
+> 对 `agent/error` **不成立**(它不一定终结)。改成网关自持一个计数器,
+> 撞号在**结构上**就不存在,而不是每次都论证一遍。
+>
+> 影响面很小:跨进程对照测试比的是**原始上游事件**的 seq,不经缓冲;
+> 续传测试用的是相对号。契约只承诺 seq 单调,从没承诺它等于任何东西。
+>
+> #### 3. `unavailable` —— 撤销 V0.4.5 那个被逼出来的折中
+>
+> 进程池满从 `rate_limited`(429)改为 `unavailable`(503)。三件配套缺一不可,
+> 且**顺序不能反**:
+>
+> 1. 先在契约里立下「客户端必须优雅处理未知枚举值」
+> 2. 再把 `enum.value.added` 从破坏性改为相容
+> 3. 才加 `unavailable`
+>
+> 只做第 2 步是把安全网剪个洞 —— `freeze.ts` 原本那句「加值会打穿下游写全的
+> `switch`」在没有第 1 步时是**对的**。`enum.value.removed` 保持破坏性(红线 3):
+> 删值会让下游正在处理的分支变成死代码,`default` 兜不住。
+>
+> #### 4. 四条编码了旧规则的测试,尽职地拦住了我
+>
+> `contract.test.ts`(错误码清单)、`freeze.test.ts`(加值必须红)、
+> `isolation.test.ts`(期望 429)、`generated.test.ts`(SDK 的 `never` 穷尽断言)。
+>
+> ★ 最后一条值得单说:SDK 的测试是**消费方抄写的参照**,留着 `never` 断言
+> 等于教人写出下一版编译不过的代码。已改写成正确的形状 —— 认识的码逐一映射,
+> 不认识的走 `default` 兜底,并加一条「模拟服务端比客户端新」的断言。
+
+---
+
+---
+
+## M0.4.1 —— Session 实现细节
+
+### ✅ Session 0: 路径模型变更与逃逸测试重写
+
+```
+读取 CLAUDE.md 与 SESSION_TASKS.md 中本 Session 的任务详情。
+
+本次任务:把 fs-tenant 的路径模型从三段改为四段。
+
+⚠️ 这是整个项目安全性的重心。逃逸测试的要求高于其它任何 Session——
+多一层路径段意味着每一种绕过手法都要重新验证一遍，不能假设原有测试仍然覆盖。
+
+1. 路径模型
+   - {root}/{tenantId}/{userId}/{workspaceId}
+   - workspaceId 与 tenantId、userId 同级对待：白名单字符校验通过后才参与拼接
+   - 校验顺序：先校验每一段，再拼接，再 resolve，最后断言仍在根内
+   - 不要用「拼接后再检查」替代「拼接前先校验」，两者都要
+
+2. 缺省工作区（R2）
+   - 未指定 workspaceId 时落到 default
+   - 目的是让现有调用方零改动仍能工作
+   - default 不是特殊值，走完全相同的校验路径
+
+3. 逃逸测试全量重写（R1）
+   逐条写测试，每一条都要有对应的拒绝断言：
+   - ../ 与多级 ../../，在四段路径的每一个位置分别尝试
+   - 绝对路径
+   - 符号链接指向根外
+   - Windows 8.3 短名与 UNC 路径
+   - URL 编码与 Unicode 规范化绕过
+   - 空 tenantId / userId / workspaceId
+   - workspaceId 伪造成路径分隔符或点号序列
+   - 跨工作区读写（同一用户的两个工作区之间也要隔离）
+
+4. 与上游沙箱的关系
+   - 本包只做路径钉死，不重做沙箱
+   - 策略计算结果仍喂给上游 sandbox-policy / fs-sandbox
+
+== 测试 ==
+- 上述每一条逃逸手法都有对应的拒绝测试
+- 两租户互相不可见（正向与反向各测）
+- 同用户两工作区互相不可见
+- 未指定 workspaceId 时行为与改造前一致（对照 single-user.yml）
+```
+
+验证:
+
+- 逃逸测试全绿,`single-user.yml` 对照基线行为不变
+- `/publish feat: {v} session 0 multi-workspace path model`
+
+---
+### ✅ Session 1: 连带影响面
+
+```
+读取 CLAUDE.md。本次任务:处理路径模型变更的连带影响。
+
+Session 0 改了路径根，以下几处会跟着受影响，逐一处理。凡是「先评估再决定」的，
+把结论写进 docs/DECISIONS/ 下的对应文件，不要默默做了。
+
+1. 附件存储路径（R3）
+   - 附件挂到工作区下：{workspace}/.attachments/
+   - 确认上游 attachment-local 的路径假设是否被打破
+
+2. 会话与查询（R4）
+   - 会话持久化目录随工作区分层
+   - session-query 增加工作区维度过滤
+   - 确认跨工作区查询被拒绝，而不是靠调用方自觉
+
+3. storage-scoped 是否需要工作区维度（R5，先评估）
+   - 存储键的语义是「租户数据」还是「工作区数据」？两者都有可能
+   - 评估结论写入 docs/DECISIONS/storage-workspace-scoping.md
+   - 若结论是不需要，说明理由，不要为了对称而加
+
+4. Gateway 端点如何携带 workspaceId（R6，先评估）
+   - 选项 A：查询参数 ?workspaceId=
+   - 选项 B：路径段 /v1/workspaces/{id}/sessions
+   - 关键约束：V0.2.0 的 /v1 契约已冻结，任何变更需按契约冻结检查显式声明兼容性
+   - 评估结论写入 docs/DECISIONS/workspace-in-api.md，并给出兼容性声明
+
+5. 配额模型扩展（R7）
+   - 每用户工作区数上限
+   - 单工作区容量上限
+   - 与 V0.4.0 已完成的 policy / metering 对齐，不要另起一套
+
+== 测试 ==
+- 附件在正确的工作区目录下
+- 跨工作区的会话查询被拒绝
+- 超出工作区数上限时创建被拒绝
+- 契约冻结检查通过（若改了 OpenAPI）
+```
+
+验证:
+
+- 两份决策文档已写,契约兼容性已声明
+- `/publish feat: {v} session 1 multi-workspace ripple effects`
+
+---
+### ✅ Session 2: 文档、profile 与 V0.1.0 发布准备
+
+```
+读取 CLAUDE.md（第三节 文档瘦身、第四节 版本号统一更新）。
+
+本次任务:收尾并为 V0.1.0 发布做准备。
+
+1. 文档
+   - fs-tenant 的 README 更新路径模型说明
+   - 隔离模型章节补一句：同一用户的不同工作区之间也是隔离的，
+     但隔离级别与租户间相同——逻辑隔离仅适用于互相信任的场景
+   - ARCHITECTURE.md 的隔离模型章节同步
+
+2. profiles/
+   - single-user.yml / team.yml / enterprise.yml 补工作区相关配置
+   - single-user.yml 必须保持对照基线语义：单用户单工作区行为与原生 dsh 一致
+
+3. V0.1.0 发布前检查（本 Session 的真正目的）
+   - 版本号一致性检查通过（scripts/check-version）
+   - 全部契约测试双 profile 跑绿
+   - PR 自查 grep 全为 0
+   - 从空目录安装 npm 包并跑通 examples/minimal-server
+   - 确认安装包/构建产物中不含任何闭源组件
+     （这是 SignPath Foundation 的资格条件，也是 open-core 边界）
+
+4. 报告
+   - 明确回答：V0.1.0 现在是否可以发布？若否，列出阻塞项
+
+== 测试 ==
+- check-version 通过
+- 双 profile 契约测试全绿
+- 空目录安装可跑通
+```
+
+验证:
+
+- V0.1.0 具备发布条件
+- `/publish docs: {v} session 2 multi-workspace docs and release readiness`
+
+---
+
+---
+
 ## M0.4.5 · supervisor 进程隔离(Session 0-4)
 
 ### ⚠️ 开工前的一处更正:动机里不含「解决无 cancel」
