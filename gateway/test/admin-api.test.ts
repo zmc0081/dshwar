@@ -178,11 +178,33 @@ describe('未配置后端的部署回落 501', () => {
     expect(res.headers.get('x-dshwar-planned-version')).toBe('V0.4.0')
   })
 
-  // ★ V0.4.0 的里程碑:契约先行策略走完了 —— v1 里定义的每个端点都有实现
-  it('契约里不再有任何 planned 端点', async () => {
+  /**
+   * planned 端点必须**真的**返回 501。
+   *
+   * ## 这条断言在 V0.5.5 变了形状,而那是**加强不是放宽**
+   *
+   * 原本是 `expect(planned.length).toBe(0)` —— V0.4.0 的**里程碑记录**:
+   * 「契约先行策略走完了,每个端点都有实现」。它底下的循环从那天起就是
+   * **死代码**:`planned` 恒为空数组,循环一次都不执行。
+   *
+   * V0.5.5 新增了 `/v1/attachments`(契约已定,Session 4 实现),
+   * planned 不再为空 —— **于是那个循环第一次真的跑起来了**。
+   *
+   * ⚠️ 里程碑记录与安全不变式是两回事:
+   * - 「现在没有 planned 端点」是**某一刻的事实**,会随版本变化
+   * - 「planned 端点必须返回 501 而不是 404 或 500」是**不变式**,永远成立
+   *
+   * 把前者当门禁,代价是每次合法地新增 planned 端点都要「放宽」它 ——
+   * 而那种放宽会训练人把真正的不变式也一起放宽。所以这里保留不变式,
+   * 里程碑改成注释里的一句历史。
+   */
+  it('★ planned 端点真的返回 501(而不是 404 或 500)', async () => {
     const { ROUTES } = await import('@dshwar/api-contract')
     const planned = ROUTES.filter((r) => r.status === 'planned')
-    expect(planned.length).toBe(0)
+
+    // 断言循环不是空跑 —— 否则这条测试会在 planned 清零的那天悄悄失去意义,
+    // 而输出里看不出任何差别。这正是上一版那个循环踩过的坑。
+    expect(planned.length, '没有 planned 端点时本条无意义,应改回里程碑断言').toBeGreaterThan(0)
 
     for (const route of planned) {
       const path = route.path.replace('{id}', alice.id)

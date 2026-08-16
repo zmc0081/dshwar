@@ -83,3 +83,24 @@ export type { OpenApiDocument } from './openapi.ts'
 
 export { breakingChanges, diffContract } from './freeze.ts'
 export type { ContractChange, ContractChangeCode } from './freeze.ts'
+
+// ---- 工作台契约(V0.5.5)----
+export {
+  Attachment,
+  CreateAttachmentResponse,
+  CreateJobRequest,
+  CreateWorkspaceRequest,
+  Deliverable,
+  GetJobResponse,
+  GetWorkspacePolicyResponse,
+  GetWorkspaceResponse,
+  Job,
+  JobStatus,
+  ListAttachmentsResponse,
+  ListDeliverablesResponse,
+  ListJobsResponse,
+  ListWorkspacesResponse,
+  UpdateWorkspacePolicyRequest,
+  Workspace,
+  WorkspacePolicy,
+} from './workbench.ts'

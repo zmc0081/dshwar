@@ -21,6 +21,18 @@ import {
 } from './admin.ts'
 import { ErrorResponse, PaginationQuery, SessionId, SubjectId } from './common.ts'
 import {
+  CreateJobRequest,
+  CreateWorkspaceRequest,
+  GetJobResponse,
+  GetWorkspacePolicyResponse,
+  GetWorkspaceResponse,
+  ListAttachmentsResponse,
+  ListDeliverablesResponse,
+  ListJobsResponse,
+  ListWorkspacesResponse,
+  UpdateWorkspacePolicyRequest,
+} from './workbench.ts'
+import {
   CreateSessionRequest,
   CreateSessionResponse,
   CreateTurnRequest,
@@ -88,6 +100,8 @@ const NOT_FOUND: RouteResponse = {
 
 const SessionIdParam = z.object({ id: SessionId })
 const SubjectIdParam = z.object({ id: SubjectId })
+/** 工作台资源的 id 参数。工作区 / 作业共用 —— 两者都是不透明字符串。 */
+const ResourceIdParam = z.object({ id: z.string() })
 
 // ---------------------------------------------------------------------------
 // 运行时 API
@@ -370,5 +384,181 @@ const ADMIN_ROUTES: readonly RouteDef[] = [
   },
 ]
 
+/**
+ * 工作台路由(V0.5.5)。
+ *
+ * ⚠️ **全部是新增路径(`path.added`),不动任何既有路径的形状** ——
+ * 契约冻结检查据此判定为相容变更。V0.2.0 的 501 占位里没有这四类端点
+ * (2026-08-16 查证),所以本版本是契约新增而不是「把 501 换成实现」。
+ */
+const WORKBENCH_ROUTES: readonly RouteDef[] = [
+  {
+    method: 'get',
+    path: '/v1/workspaces',
+    operationId: 'listWorkspaces',
+    summary: '列出我的工作区',
+    tags: ['workbench', 'workspaces'],
+    auth: 'runtime',
+    status: 'implemented',
+    query: PaginationQuery,
+    responses: {
+      200: { description: '工作区列表', schema: ListWorkspacesResponse },
+      ...COMMON_ERRORS,
+    },
+  },
+  {
+    method: 'post',
+    path: '/v1/workspaces',
+    operationId: 'createWorkspace',
+    summary: '建一个工作区',
+    tags: ['workbench', 'workspaces'],
+    auth: 'runtime',
+    status: 'implemented',
+    body: CreateWorkspaceRequest,
+    responses: {
+      201: { description: '已建', schema: GetWorkspaceResponse },
+      ...COMMON_ERRORS,
+    },
+  },
+  {
+    method: 'get',
+    path: '/v1/workspaces/{id}',
+    pathParams: ResourceIdParam,
+    operationId: 'getWorkspace',
+    summary: '取一个工作区',
+    tags: ['workbench', 'workspaces'],
+    auth: 'runtime',
+    status: 'implemented',
+    responses: {
+      200: { description: '工作区', schema: GetWorkspaceResponse },
+      ...COMMON_ERRORS,
+    },
+  },
+  {
+    method: 'delete',
+    path: '/v1/workspaces/{id}',
+    pathParams: ResourceIdParam,
+    operationId: 'deleteWorkspace',
+    summary: '删一个工作区',
+    tags: ['workbench', 'workspaces'],
+    auth: 'runtime',
+    status: 'implemented',
+    responses: {
+      204: { description: '已删' },
+      ...COMMON_ERRORS,
+    },
+  },
+  {
+    method: 'get',
+    path: '/v1/workspaces/{id}/deliverables',
+    pathParams: ResourceIdParam,
+    operationId: 'listDeliverables',
+    summary: '浏览工作区里的文件(产物即文件,无独立模型)',
+    tags: ['workbench', 'deliverables'],
+    auth: 'runtime',
+    status: 'implemented',
+    query: PaginationQuery,
+    responses: {
+      200: { description: '文件列表', schema: ListDeliverablesResponse },
+      ...COMMON_ERRORS,
+    },
+  },
+  {
+    method: 'get',
+    path: '/v1/workspaces/{id}/policy',
+    pathParams: ResourceIdParam,
+    operationId: 'getWorkspacePolicy',
+    summary: '工作区的执行策略(预授权,非运行时弹窗)',
+    tags: ['workbench', 'policy'],
+    auth: 'runtime',
+    status: 'implemented',
+    responses: {
+      200: { description: '策略', schema: GetWorkspacePolicyResponse },
+      ...COMMON_ERRORS,
+    },
+  },
+  {
+    method: 'patch',
+    path: '/v1/workspaces/{id}/policy',
+    pathParams: ResourceIdParam,
+    operationId: 'updateWorkspacePolicy',
+    summary: '改工作区的执行策略',
+    tags: ['workbench', 'policy'],
+    auth: 'runtime',
+    status: 'implemented',
+    body: UpdateWorkspacePolicyRequest,
+    responses: {
+      200: { description: '已更新', schema: GetWorkspacePolicyResponse },
+      ...COMMON_ERRORS,
+    },
+  },
+  {
+    method: 'get',
+    path: '/v1/jobs',
+    operationId: 'listJobs',
+    summary: '列出作业',
+    tags: ['workbench', 'jobs'],
+    auth: 'runtime',
+    status: 'implemented',
+    query: PaginationQuery,
+    responses: {
+      200: { description: '作业列表', schema: ListJobsResponse },
+      ...COMMON_ERRORS,
+    },
+  },
+  {
+    method: 'post',
+    path: '/v1/jobs',
+    operationId: 'createJob',
+    summary: '提交一个作业',
+    tags: ['workbench', 'jobs'],
+    auth: 'runtime',
+    status: 'implemented',
+    body: CreateJobRequest,
+    responses: {
+      201: { description: '已入队', schema: GetJobResponse },
+      ...COMMON_ERRORS,
+    },
+  },
+  {
+    method: 'get',
+    path: '/v1/jobs/{id}',
+    pathParams: ResourceIdParam,
+    operationId: 'getJob',
+    summary: '取一个作业',
+    tags: ['workbench', 'jobs'],
+    auth: 'runtime',
+    status: 'implemented',
+    responses: {
+      200: { description: '作业', schema: GetJobResponse },
+      ...COMMON_ERRORS,
+    },
+  },
+  {
+    method: 'get',
+    path: '/v1/attachments',
+    operationId: 'listAttachments',
+    summary: '列出附件',
+    tags: ['workbench', 'attachments'],
+    auth: 'runtime',
+    // ⚠️ Session 4 才实现。契约先定 —— 它与产物的边界(agent 写出的 vs
+    // 用户传入的)必须在有人接进来之前说清。
+    status: 'planned',
+    plannedVersion: '0.5.5',
+    query: PaginationQuery,
+    responses: {
+      200: { description: '附件列表', schema: ListAttachmentsResponse },
+      // ★ planned 端点必须宣告 501 —— 契约要说清它现在会返回什么。
+      //   少了这一条,第三方拿着 OpenAPI 生成的客户端不会处理 501,
+      //   而 501 恰恰是它现在唯一会返回的东西。
+      501: {
+        description: '契约已定,实现在计划中(见 x-dshwar-planned-version)',
+        schema: ErrorResponse,
+      },
+      ...COMMON_ERRORS,
+    },
+  },
+]
+
 /** v1 的全部路由。 */
-export const ROUTES: readonly RouteDef[] = [...RUNTIME_ROUTES, ...ADMIN_ROUTES]
+export const ROUTES: readonly RouteDef[] = [...RUNTIME_ROUTES, ...ADMIN_ROUTES, ...WORKBENCH_ROUTES]

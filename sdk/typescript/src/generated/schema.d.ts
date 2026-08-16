@@ -242,6 +242,129 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 列出我的工作区 */
+        get: operations["listWorkspaces"];
+        put?: never;
+        /** 建一个工作区 */
+        post: operations["createWorkspace"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 取一个工作区 */
+        get: operations["getWorkspace"];
+        put?: never;
+        post?: never;
+        /** 删一个工作区 */
+        delete: operations["deleteWorkspace"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{id}/deliverables": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 浏览工作区里的文件(产物即文件,无独立模型) */
+        get: operations["listDeliverables"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{id}/policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 工作区的执行策略(预授权,非运行时弹窗) */
+        get: operations["getWorkspacePolicy"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** 改工作区的执行策略 */
+        patch: operations["updateWorkspacePolicy"];
+        trace?: never;
+    };
+    "/v1/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 列出作业 */
+        get: operations["listJobs"];
+        put?: never;
+        /** 提交一个作业 */
+        post: operations["createJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/jobs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 取一个作业 */
+        get: operations["getJob"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/attachments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 列出附件 */
+        get: operations["listAttachments"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -487,6 +610,127 @@ export interface components {
             nextCursor: string | null;
             /** @description 与服务端日志和审计记录对得上的调用标识 */
             requestId: string;
+        };
+        Capacity: {
+            isolationLevel: string;
+            maxProcesses: number | null;
+            memberCap: number;
+            memberCount: number;
+            rssPerProcessMb: number;
+            basis: string;
+            /** @description 与服务端日志和审计记录对得上的调用标识 */
+            requestId: string;
+        };
+        Workspace: {
+            id: string;
+            name: string;
+            subjectId: string;
+            tenantId: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        CreateWorkspaceRequest: {
+            name: string;
+        };
+        ListWorkspacesResponse: {
+            data: components["schemas"]["Workspace"][];
+            nextCursor: string | null;
+            /** @description 与服务端日志和审计记录对得上的调用标识 */
+            requestId: string;
+        };
+        GetWorkspaceResponse: {
+            workspace: components["schemas"]["Workspace"];
+            /** @description 与服务端日志和审计记录对得上的调用标识 */
+            requestId: string;
+        };
+        Deliverable: {
+            path: string;
+            size: number;
+            /** @enum {string} */
+            kind: "file" | "directory";
+            /** Format: date-time */
+            modifiedAt: string;
+        };
+        ListDeliverablesResponse: {
+            data: components["schemas"]["Deliverable"][];
+            nextCursor: string | null;
+            /** @description 与服务端日志和审计记录对得上的调用标识 */
+            requestId: string;
+        };
+        /** @enum {string} */
+        JobStatus: "queued" | "running" | "succeeded" | "failed" | "interrupted" | "cancelled";
+        Job: {
+            id: string;
+            workspaceId: string;
+            subjectId: string;
+            tenantId: string;
+            status: components["schemas"]["JobStatus"];
+            kind: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            finishedAt: string | null;
+            error: string | null;
+        };
+        CreateJobRequest: {
+            workspaceId: string;
+            kind: string;
+        };
+        ListJobsResponse: {
+            data: components["schemas"]["Job"][];
+            nextCursor: string | null;
+            /** @description 与服务端日志和审计记录对得上的调用标识 */
+            requestId: string;
+        };
+        GetJobResponse: {
+            job: components["schemas"]["Job"];
+            /** @description 与服务端日志和审计记录对得上的调用标识 */
+            requestId: string;
+        };
+        Attachment: {
+            id: string;
+            filename: string;
+            size: number;
+            contentType: string;
+            subjectId: string;
+            tenantId: string;
+            sessionId: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        ListAttachmentsResponse: {
+            data: components["schemas"]["Attachment"][];
+            nextCursor: string | null;
+            /** @description 与服务端日志和审计记录对得上的调用标识 */
+            requestId: string;
+        };
+        CreateAttachmentResponse: {
+            attachment: components["schemas"]["Attachment"];
+            /** @description 与服务端日志和审计记录对得上的调用标识 */
+            requestId: string;
+        };
+        WorkspacePolicy: {
+            workspaceId: string;
+            allowedTools: string[];
+            writablePaths: string[];
+            allowedHosts: string[];
+            allowShell: boolean;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        GetWorkspacePolicyResponse: {
+            policy: components["schemas"]["WorkspacePolicy"];
+            /** @description 与服务端日志和审计记录对得上的调用标识 */
+            requestId: string;
+        };
+        UpdateWorkspacePolicyRequest: {
+            allowedTools?: string[];
+            writablePaths?: string[];
+            allowedHosts?: string[];
+            allowShell?: boolean;
         };
     };
     responses: never;
@@ -1416,16 +1660,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        isolationLevel: string;
-                        maxProcesses: number | null;
-                        memberCap: number;
-                        memberCount: number;
-                        rssPerProcessMb: number;
-                        basis: string;
-                        /** @description 与服务端日志和审计记录对得上的调用标识 */
-                        requestId: string;
-                    };
+                    "application/json": components["schemas"]["Capacity"];
                 };
             };
             /** @description 请求体或参数不满足 schema */
@@ -1584,6 +1819,683 @@ export interface operations {
             /** @description 服务端内部错误 */
             500: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listWorkspaces: {
+        parameters: {
+            query?: {
+                /** @description 本页最多返回多少条 */
+                limit?: number;
+                /** @description 上一页返回的 nextCursor;首页省略 */
+                cursor?: string;
+                /** @description 排序字段,前缀 `-` 表示降序(如 `-createdAt`) */
+                sort?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 工作区列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListWorkspacesResponse"];
+                };
+            };
+            /** @description 请求体或参数不满足 schema */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 凭证缺失、无效或已过期 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 触发限流 */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 服务端内部错误 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createWorkspace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateWorkspaceRequest"];
+            };
+        };
+        responses: {
+            /** @description 已建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GetWorkspaceResponse"];
+                };
+            };
+            /** @description 请求体或参数不满足 schema */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 凭证缺失、无效或已过期 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 触发限流 */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 服务端内部错误 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getWorkspace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 工作区 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GetWorkspaceResponse"];
+                };
+            };
+            /** @description 请求体或参数不满足 schema */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 凭证缺失、无效或已过期 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 触发限流 */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 服务端内部错误 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteWorkspace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 请求体或参数不满足 schema */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 凭证缺失、无效或已过期 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 触发限流 */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 服务端内部错误 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listDeliverables: {
+        parameters: {
+            query?: {
+                /** @description 本页最多返回多少条 */
+                limit?: number;
+                /** @description 上一页返回的 nextCursor;首页省略 */
+                cursor?: string;
+                /** @description 排序字段,前缀 `-` 表示降序(如 `-createdAt`) */
+                sort?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 文件列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListDeliverablesResponse"];
+                };
+            };
+            /** @description 请求体或参数不满足 schema */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 凭证缺失、无效或已过期 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 触发限流 */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 服务端内部错误 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getWorkspacePolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 策略 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GetWorkspacePolicyResponse"];
+                };
+            };
+            /** @description 请求体或参数不满足 schema */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 凭证缺失、无效或已过期 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 触发限流 */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 服务端内部错误 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateWorkspacePolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateWorkspacePolicyRequest"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GetWorkspacePolicyResponse"];
+                };
+            };
+            /** @description 请求体或参数不满足 schema */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 凭证缺失、无效或已过期 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 触发限流 */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 服务端内部错误 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listJobs: {
+        parameters: {
+            query?: {
+                /** @description 本页最多返回多少条 */
+                limit?: number;
+                /** @description 上一页返回的 nextCursor;首页省略 */
+                cursor?: string;
+                /** @description 排序字段,前缀 `-` 表示降序(如 `-createdAt`) */
+                sort?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 作业列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListJobsResponse"];
+                };
+            };
+            /** @description 请求体或参数不满足 schema */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 凭证缺失、无效或已过期 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 触发限流 */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 服务端内部错误 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateJobRequest"];
+            };
+        };
+        responses: {
+            /** @description 已入队 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GetJobResponse"];
+                };
+            };
+            /** @description 请求体或参数不满足 schema */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 凭证缺失、无效或已过期 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 触发限流 */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 服务端内部错误 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 作业 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GetJobResponse"];
+                };
+            };
+            /** @description 请求体或参数不满足 schema */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 凭证缺失、无效或已过期 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 触发限流 */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 服务端内部错误 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAttachments: {
+        parameters: {
+            query?: {
+                /** @description 本页最多返回多少条 */
+                limit?: number;
+                /** @description 上一页返回的 nextCursor;首页省略 */
+                cursor?: string;
+                /** @description 排序字段,前缀 `-` 表示降序(如 `-createdAt`) */
+                sort?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 附件列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListAttachmentsResponse"];
+                };
+            };
+            /** @description 请求体或参数不满足 schema */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 凭证缺失、无效或已过期 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 触发限流 */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 服务端内部错误 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 契约已定,实现在计划中(见 x-dshwar-planned-version) */
+            501: {
+                headers: {
+                    /** @description 计划实现该端点的版本 */
+                    "x-dshwar-planned-version"?: "0.5.5";
                     [name: string]: unknown;
                 };
                 content: {

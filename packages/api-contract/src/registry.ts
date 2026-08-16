@@ -12,6 +12,7 @@
 import { z } from 'zod'
 import {
   AuditEntry,
+  Capacity,
   CredentialDescriptor,
   GetQuotaResponse,
   GetSubjectResponse,
@@ -38,6 +39,25 @@ import {
   ListSessionsResponse,
   Session,
 } from './runtime.ts'
+import {
+  Attachment,
+  CreateAttachmentResponse,
+  CreateJobRequest,
+  CreateWorkspaceRequest,
+  Deliverable,
+  GetJobResponse,
+  GetWorkspacePolicyResponse,
+  GetWorkspaceResponse,
+  Job,
+  JobStatus,
+  ListAttachmentsResponse,
+  ListDeliverablesResponse,
+  ListJobsResponse,
+  ListWorkspacesResponse,
+  UpdateWorkspacePolicyRequest,
+  Workspace,
+  WorkspacePolicy,
+} from './workbench.ts'
 
 /**
  * 全部命名 schema。**新增 schema 必须在此登记** —— 漏登记的会在生成时
@@ -73,6 +93,25 @@ export const SCHEMA_REGISTRY: Readonly<Record<string, z.ZodType>> = {
   ListPoliciesResponse,
   AuditEntry,
   ListAuditResponse,
+  Capacity,
+  // 工作台(V0.5.5)
+  Workspace,
+  CreateWorkspaceRequest,
+  ListWorkspacesResponse,
+  GetWorkspaceResponse,
+  Deliverable,
+  ListDeliverablesResponse,
+  JobStatus,
+  Job,
+  CreateJobRequest,
+  ListJobsResponse,
+  GetJobResponse,
+  Attachment,
+  ListAttachmentsResponse,
+  CreateAttachmentResponse,
+  WorkspacePolicy,
+  GetWorkspacePolicyResponse,
+  UpdateWorkspacePolicyRequest,
 }
 
 /** OpenAPI 里引用某个命名 schema 的 `$ref`。 */
