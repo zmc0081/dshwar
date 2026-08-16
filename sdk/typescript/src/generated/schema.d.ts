@@ -1559,17 +1559,6 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description 端点已在契约中定义,但本版本尚未实现。响应头 `x-dshwar-planned-version` 指出计划版本 */
-            501: {
-                headers: {
-                    /** @description 计划实现该端点的版本 */
-                    "x-dshwar-planned-version"?: "V0.3.0";
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
         };
     };
 }

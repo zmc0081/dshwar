@@ -48,6 +48,33 @@ export interface AdminRouteOptions {
    * 这两个端点在缺席时回落到 501 —— 与「契约先行,实现分期」的既有语义一致。
    */
   readonly subjectStore?: SubjectMirrorReader
+  /**
+   * 审计存储(V0.4.0 Session 1)。`/v1/admin/audit` 从这里读。
+   * 与 subjectStore 同款:结构性只读子集,缺席回落 501。
+   */
+  readonly auditStore?: AuditReaderLike
+}
+
+/** `@dshwar/audit` 的 `AuditStore` 里本模块只读的那一小块。 */
+export interface AuditReaderLike {
+  query(filter: {
+    tenantId: string
+    cursor?: string
+    limit?: number
+  }): Promise<{ data: StoredAuditRecord[]; nextCursor: string | null }>
+}
+
+/** 审计记录里本模块用到的字段。 */
+export interface StoredAuditRecord {
+  readonly id: string
+  readonly at: string
+  readonly actor: string
+  readonly tenantId: string
+  readonly action: string
+  readonly target: string
+  readonly before: unknown
+  readonly after: unknown
+  readonly requestId: string
 }
 
 /**
@@ -204,6 +231,44 @@ export function registerAdminRoutes(options: AdminRouteOptions) {
       })
 
       return c.json({ subject: toWireSubject(subject), requestId })
+    })
+
+    // ---- 审计查询(V0.4.0 Session 1,由 planned 转实现)----
+    const auditStore = options.auditStore
+
+    app.get('/v1/admin/audit', async (c) => {
+      if (auditStore === undefined) throw notImplemented('V0.4.0')
+      const admin = c.get('admin')!
+      const requestId = c.get('requestId')
+
+      const parsed = PaginationQuery.safeParse(c.req.query())
+      if (!parsed.success) {
+        throw new ApiError('invalid_request', parsed.error.issues[0]?.message ?? 'invalid query')
+      }
+
+      // 租户由 Admin Key 决定,不接受查询参数指定 —— 可指定的过滤键
+      // 等于把跨租户查询做成了一个参数
+      const { data, nextCursor } = await auditStore.query({
+        tenantId: admin.tenantId,
+        limit: parsed.data.limit,
+        ...(parsed.data.cursor === undefined ? {} : { cursor: parsed.data.cursor }),
+      })
+
+      // 契约 AuditEntry 的八个字段,不多不少 —— tenantId 是过滤键,不在线上形状里
+      return c.json({
+        data: data.map((r) => ({
+          id: r.id,
+          at: r.at,
+          actor: r.actor,
+          action: r.action,
+          target: r.target,
+          before: r.before ?? null,
+          after: r.after ?? null,
+          requestId: r.requestId,
+        })),
+        nextCursor,
+        requestId,
+      })
     })
 
     // ---- planned 端点:从契约里读,不手写清单 ----

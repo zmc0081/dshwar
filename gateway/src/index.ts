@@ -45,7 +45,9 @@ export type { SequencedEvent, TranslateOptions, UpstreamSessionEvent } from './s
 export { registerAdminRoutes } from './admin/routes.ts'
 export type {
   AdminRouteOptions,
+  AuditReaderLike,
   MirrorSubject,
+  StoredAuditRecord,
   SubjectLookup,
   SubjectMirrorReader,
 } from './admin/routes.ts'
@@ -53,7 +55,7 @@ export type {
 export { InMemoryScimTokenResolver } from './scim-keys.ts'
 export type { ScimIdentity, ScimTokenResolver } from './scim-keys.ts'
 
-export { ConsoleAuditSink, NullAuditSink } from './admin/audit.ts'
+export { ConsoleAuditSink, NullAuditSink, StoreAuditSink } from './admin/audit.ts'
 export type { AuditRecord, AuditSink } from './admin/audit.ts'
 
 export { assembleRuntime, DELIBERATELY_OMITTED, GATEWAY_PLUGINS } from './runtime.ts'

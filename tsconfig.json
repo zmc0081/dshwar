@@ -20,6 +20,7 @@
     { "path": "./packages/auth-oidc" },
     { "path": "./packages/scim-server" },
     { "path": "./packages/webhooks" },
+    { "path": "./packages/audit" },
     { "path": "./adapters/dsh-0.1.0" },
     { "path": "./gateway" },
     { "path": "./sdk/typescript" },

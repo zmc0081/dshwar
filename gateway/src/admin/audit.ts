@@ -46,6 +46,32 @@ export class ConsoleAuditSink implements AuditSink {
   }
 }
 
+/**
+ * 落进 `@dshwar/audit` 的 AuditStore(结构性子集,不硬依赖那个包)。
+ *
+ * ⚠️ **追加失败不抛。** 审计是治理组件不是安全闸门 —— 它挂了不该把 Admin
+ * 操作也拖挂;但失败必须可见,退化到 console 让日志系统兜底。
+ */
+export class StoreAuditSink implements AuditSink {
+  private readonly store: {
+    append(input: AuditRecord & { before: unknown; after: unknown }): Promise<unknown>
+  }
+
+  constructor(store: StoreAuditSink['store']) {
+    this.store = store
+  }
+
+  record(entry: AuditRecord): void {
+    void this.store
+      .append({ ...entry, before: entry.before ?? null, after: entry.after ?? null })
+      .catch((cause: unknown) => {
+        console.error(
+          JSON.stringify({ kind: 'dshwar.audit.append-failed', entry, cause: String(cause) }),
+        )
+      })
+  }
+}
+
 /** 丢弃一切。仅测试用。 */
 export class NullAuditSink implements AuditSink {
   readonly entries: AuditRecord[] = []

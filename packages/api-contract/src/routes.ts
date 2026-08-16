@@ -210,7 +210,6 @@ const RUNTIME_ROUTES: readonly RouteDef[] = [
 // Admin API
 // ---------------------------------------------------------------------------
 
-const PLANNED_V3 = 'V0.3.0'
 const PLANNED_V4 = 'V0.4.0'
 
 const ADMIN_ROUTES: readonly RouteDef[] = [
@@ -361,12 +360,11 @@ const ADMIN_ROUTES: readonly RouteDef[] = [
     summary: '审计查询',
     tags: ['admin', 'audit'],
     auth: 'admin',
-    status: 'planned',
-    plannedVersion: PLANNED_V3,
+    // V0.4.0 Session 1 转正(原计划 V0.3.0,当时未实现)。schema 未动。
+    status: 'implemented',
     query: PaginationQuery,
     responses: {
       200: { description: '审计记录', schema: ListAuditResponse },
-      501: NOT_IMPLEMENTED,
       ...COMMON_ERRORS,
     },
   },

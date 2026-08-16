@@ -207,7 +207,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 
 ---
 
-### ⬜ Session 1: `@dshwar/audit` —— 仅追加审计
+### ✅ Session 1: `@dshwar/audit` —— 仅追加审计
 
 ```
 本次任务:把网关里的 AuditSink 接口升级成真正的审计包。
