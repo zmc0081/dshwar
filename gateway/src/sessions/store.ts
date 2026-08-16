@@ -57,8 +57,30 @@ export interface GatewaySession {
  * ⚠️ **`get` 必须传 principal。** 把归属判定做成参数而不是「取出来再判断」,
  * 是因为后者可以被忘记 —— 而忘记的后果是跨主体读到别人的会话。
  */
+/** 一次可计量的用量观测。由会话簿在 `assistant/message` 事件上发出。 */
+export interface UsageObservation {
+  readonly session: GatewaySession
+  readonly turn: number
+  readonly step: number
+  /** 上游报的用量;适配器没报时 `undefined`(计 0 并标 unreported,不估算)。 */
+  readonly usage:
+    | {
+        readonly inputTokens: number
+        readonly outputTokens: number
+        readonly cacheReadTokens?: number
+        readonly cacheWriteTokens?: number
+        readonly reasoningTokens?: number
+      }
+    | undefined
+}
+
 export class GatewaySessionStore {
   private readonly sessions = new Map<string, GatewaySession>()
+  private readonly onUsage: ((observation: UsageObservation) => void) | undefined
+
+  constructor(options: { onUsage?: (observation: UsageObservation) => void } = {}) {
+    this.onUsage = options.onUsage
+  }
 
   /**
    * 登记一个新会话,并开始把上游事件翻译进缓冲。
@@ -81,6 +103,24 @@ export class GatewaySessionStore {
 
     const dispose = input.handle.agent.ctx.on('session/event', (_session, event) => {
       const upstream = asUpstreamEvent(event)
+
+      // ---- 计量采集(V0.4.0)----
+      // 挂在翻译**之前**:assistant/message 不在对外事件词表里(translate 会丢掉它),
+      // 但它正是上游携带用量的那个事件(REPORT-V4 §1:用量与消息同行,没有独立记录)。
+      // try/catch 是红线 1:观测不阻断 —— 计量回调炸了,SSE 与会话照常。
+      if (this.onUsage !== undefined && upstream.type === 'assistant/message') {
+        try {
+          this.onUsage({
+            session,
+            turn: upstream.data?.turn ?? 0,
+            step: upstream.data?.step ?? 0,
+            usage: upstream.data?.usage,
+          })
+        } catch {
+          // 刻意吞掉:丢一条用量记录是账目问题,断一次会话是事故
+        }
+      }
+
       const translated = translateEvent(upstream, {
         includeReasoning: input.includeReasoning,
       })

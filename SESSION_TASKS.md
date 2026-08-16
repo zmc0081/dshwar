@@ -240,7 +240,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 
 ---
 
-### ⬜ Session 2: `@dshwar/metering` —— 用量归属
+### ✅ Session 2: `@dshwar/metering` —— 用量归属
 
 ```
 本次任务:把上游报的用量按 principal 归属并可查询。

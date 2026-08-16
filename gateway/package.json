@@ -65,6 +65,7 @@
     "@dshwar/credentials-multiuser": "workspace:*",
     "@dshwar/example-sdk-session": "workspace:*",
     "@dshwar/fs-tenant": "workspace:*",
+    "@dshwar/metering": "workspace:*",
     "@dshwar/scim-server": "workspace:*",
     "@dshwar/storage-scoped": "workspace:*",
     "@dshwar/subject": "workspace:*",

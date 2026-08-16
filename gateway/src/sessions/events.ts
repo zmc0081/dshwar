@@ -32,6 +32,14 @@ export interface UpstreamSessionEvent {
     readonly name?: string
     readonly isError?: boolean
     readonly cancelled?: unknown
+    /** assistant/message 独有:上游把用量随消息一起发(REPORT-V4 §1)。 */
+    readonly usage?: {
+      readonly inputTokens: number
+      readonly outputTokens: number
+      readonly cacheReadTokens?: number
+      readonly cacheWriteTokens?: number
+      readonly reasoningTokens?: number
+    }
   }
 }
 

@@ -37,7 +37,7 @@ export { registerRuntimeRoutes } from './sessions/routes.ts'
 export type { AgentFactoryFn, RuntimeRouteOptions, UserMessageFactory } from './sessions/routes.ts'
 
 export { GatewaySessionStore } from './sessions/store.ts'
-export type { AgentHandleLike, GatewaySession } from './sessions/store.ts'
+export type { AgentHandleLike, GatewaySession, UsageObservation } from './sessions/store.ts'
 
 export { EventBuffer, translateEvent } from './sessions/events.ts'
 export type { SequencedEvent, TranslateOptions, UpstreamSessionEvent } from './sessions/events.ts'
@@ -50,6 +50,8 @@ export type {
   StoredAuditRecord,
   SubjectLookup,
   SubjectMirrorReader,
+  UsageReaderLike,
+  UsageRowLike,
 } from './admin/routes.ts'
 
 export { InMemoryScimTokenResolver } from './scim-keys.ts'

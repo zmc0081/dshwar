@@ -53,6 +53,30 @@ export interface AdminRouteOptions {
    * 与 subjectStore 同款:结构性只读子集,缺席回落 501。
    */
   readonly auditStore?: AuditReaderLike
+  /**
+   * 用量读取(V0.4.0 Session 2)。`/v1/admin/usage*` 从这里读。
+   * 返回的行已是契约 `UsageRecord` 的按日聚合形状 —— 聚合与计价在
+   * `@dshwar/metering` 里做,端点只分页,不再碰口径。
+   */
+  readonly usageReader?: UsageReaderLike
+}
+
+/** `@dshwar/metering` 聚合结果的只读入口。 */
+export interface UsageReaderLike {
+  daily(filter: { tenantId: string; subjectId?: string }): Promise<UsageRowLike[]>
+}
+
+/** 契约 `UsageRecord` 的行形状。 */
+export interface UsageRowLike {
+  readonly subjectId: string
+  readonly tenantId: string
+  readonly date: string
+  readonly provider: string
+  readonly model: string
+  readonly inputTokens: number
+  readonly outputTokens: number
+  readonly costMinorUnits: number
+  readonly currency: string
 }
 
 /** `@dshwar/audit` 的 `AuditStore` 里本模块只读的那一小块。 */
@@ -231,6 +255,62 @@ export function registerAdminRoutes(options: AdminRouteOptions) {
       })
 
       return c.json({ subject: toWireSubject(subject), requestId })
+    })
+
+    // ---- 用量(V0.4.0 Session 2,由 planned 转实现)----
+    const usage = options.usageReader
+
+    /** 两个 usage 端点共用的分页;行键 = date|subjectId|provider|model。 */
+    const usagePage = (rows: UsageRowLike[], cursor: string | undefined, limit: number) => {
+      const keyOf = (r: UsageRowLike) => `${r.date}|${r.subjectId}|${r.provider}|${r.model}`
+      const start = cursor === undefined ? 0 : rows.findIndex((r) => keyOf(r) === cursor) + 1
+      const page = rows.slice(start, start + limit)
+      const nextCursor =
+        start + limit < rows.length
+          ? page.at(-1) === undefined
+            ? null
+            : keyOf(page.at(-1)!)
+          : null
+      return { page, nextCursor }
+    }
+
+    app.get('/v1/admin/usage', async (c) => {
+      if (usage === undefined) throw notImplemented('V0.4.0')
+      const admin = c.get('admin')!
+      const requestId = c.get('requestId')
+
+      const parsed = PaginationQuery.safeParse(c.req.query())
+      if (!parsed.success) {
+        throw new ApiError('invalid_request', parsed.error.issues[0]?.message ?? 'invalid query')
+      }
+
+      const rows = await usage.daily({ tenantId: admin.tenantId })
+      const { page, nextCursor } = usagePage(rows, parsed.data.cursor, parsed.data.limit)
+      return c.json({ data: page, nextCursor, requestId })
+    })
+
+    app.get('/v1/admin/subjects/:id/usage', async (c) => {
+      if (usage === undefined) throw notImplemented('V0.4.0')
+      const admin = c.get('admin')!
+      const requestId = c.get('requestId')
+      const subjectId = c.req.param('id')
+
+      const parsed = PaginationQuery.safeParse(c.req.query())
+      if (!parsed.success) {
+        throw new ApiError('invalid_request', parsed.error.issues[0]?.message ?? 'invalid query')
+      }
+
+      // 有镜像就走 404/403 语义(与 getSubject 一致);没有镜像时行本身已按
+      // 租户过滤,查不到只会得到空表,不会跨租户泄漏
+      if (options.subjectStore !== undefined) {
+        const subject = await options.subjectStore.get(subjectId)
+        if (subject === undefined) throw new ApiError('not_found', 'subject not found')
+        assertTenant(admin, subject.tenantId)
+      }
+
+      const rows = await usage.daily({ tenantId: admin.tenantId, subjectId })
+      const { page, nextCursor } = usagePage(rows, parsed.data.cursor, parsed.data.limit)
+      return c.json({ data: page, nextCursor, requestId })
     })
 
     // ---- 审计查询(V0.4.0 Session 1,由 planned 转实现)----
