@@ -22,7 +22,7 @@ import { forkLauncher, Supervisor, AtCapacityError } from '@dshwar/supervisor'
 const supervisor = new Supervisor({
   launcher: forkLauncher('./worker.mjs'),
   profile: 'enterprise',
-  maxProcesses: 64,        // 58 MB/进程 —— 这是必需项,不是调优项
+  maxProcesses: 64, // 58 MB/进程 —— 这是必需项,不是调优项
   idleTimeoutMs: 300_000,
   onEvent: (e) => audit.record(e),
 })
@@ -32,9 +32,9 @@ const lease = supervisor.acquire(createPrincipal({ id: 'u-alice', tenantId: 'acm
 const off = lease.onMessage((m) => console.log(m.kind, m.payload))
 lease.send({ prompt: '你好' })
 
-lease.cancel()   // 只取消本路会话,不波及同进程的其他会话
+lease.cancel() // 只取消本路会话,不波及同进程的其他会话
 off()
-lease.release()  // 引用归零后开始计空闲
+lease.release() // 引用归零后开始计空闲
 ```
 
 ## 设计要点
@@ -80,10 +80,10 @@ lease.release()  // 引用归零后开始计空闲
 
 ## 隔离三档里的位置
 
-| 档       | 是否经过本包 | 说明                                        |
-| -------- | ------------ | ------------------------------------------- |
-| 逻辑     | ❌           | 就是 V0.2.0 以来的进程内驱动,加一层只多一次往返 |
-| **进程** | ✅           | 本包                                        |
+| 档       | 是否经过本包 | 说明                                                  |
+| -------- | ------------ | ----------------------------------------------------- |
+| 逻辑     | ❌           | 就是 V0.2.0 以来的进程内驱动,加一层只多一次往返       |
+| **进程** | ✅           | 本包                                                  |
 | 容器     | 留接口       | 自定义 `ProcessLauncher` 即可 —— 池逻辑与创建方式正交 |
 
 容器编排是部署方的 Kubernetes / Nomad 的事,在这里自造一套只会和它们打架(V0.4.5 红线 4)。

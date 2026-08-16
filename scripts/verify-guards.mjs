@@ -508,7 +508,9 @@ try {
       expect(
         '9c 枚举加值被放行(前提:契约规定客户端须有 default 分支)',
         added.ok && /enum.value.added/.test(added.output),
-        added.ok ? undefined : `契约冻结检查仍在拦枚举加值:
+        added.ok
+          ? undefined
+          : `契约冻结检查仍在拦枚举加值:
 ${added.output.slice(0, 400)}`,
       )
 
@@ -618,9 +620,8 @@ ${added.output.slice(0, 400)}`,
     const unlisted = runGuards()
     expect(
       '18 scripts 项目未登记进根 tsconfig.scripts.json 被拦住',
-      !unlisted.ok && /未登记 packages\/__guard_fixture__\/tsconfig\.scripts\.json/.test(
-        unlisted.output,
-      ),
+      !unlisted.ok &&
+        /未登记 packages\/__guard_fixture__\/tsconfig\.scripts\.json/.test(unlisted.output),
       unlisted.ok ? 'check-guards 放行了未登记的脚本项目' : undefined,
     )
 
@@ -667,7 +668,11 @@ ${added.output.slice(0, 400)}`,
     writeFixture(
       'packages/__guard_fixture4__/tsconfig.test.json',
       JSON.stringify(
-        { extends: './tsconfig.json', compilerOptions: { noEmit: true }, include: ['test/**/*.ts'] },
+        {
+          extends: './tsconfig.json',
+          compilerOptions: { noEmit: true },
+          include: ['test/**/*.ts'],
+        },
         null,
         2,
       ) + '\n',

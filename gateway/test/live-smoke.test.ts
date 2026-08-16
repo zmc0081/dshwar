@@ -155,7 +155,10 @@ describe.skipIf(API_KEY === undefined || API_KEY === '')(
 
       console.log(`    [live smoke] 真实模型回复:${text.slice(0, 80)}`)
 
-      expect(events.some((e) => e.type === 'error'), 'SSE 里出现了 error 事件').toBe(false)
+      expect(
+        events.some((e) => e.type === 'error'),
+        'SSE 里出现了 error 事件',
+      ).toBe(false)
       expect(text.length, '真实模型没有产出任何正文').toBeGreaterThan(0)
     }, 120_000)
   },

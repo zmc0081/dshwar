@@ -55,15 +55,15 @@ agent 执行时(agent.ctx)→ {root}/anonymous/anonymous/default/note.txt
 
 判据是「principal 从哪来」——读环境的受影响,读会话上存的字段的不受影响。
 
-| 消费方                       | principal 来源                    | 受影响 | 失败形态                          |
-| ---------------------------- | --------------------------------- | ------ | --------------------------------- |
-| `credentials-multiuser:99`   | `ctx.principal.current()`         | ✅     | fail closed → 拿不到凭据(拒绝服务) |
-| **`fs-tenant:125`**          | `ctx.principal.current()`         | ✅     | ⚠️ **静默写进 `anonymous/anonymous/`,跨租户共用** |
-| `storage-scoped:120`         | `ctx.principal.current()`         | ✅     | 同上;当前默认不装配,V0.5.5 会装配 |
-| `metering`                   | `obs.session.subjectId`           | ❌     | —                                 |
-| `policy`(配额)               | `session.subjectId`               | ❌     | —                                 |
-| `policy`(模型准入)           | 建会话时的 `principal.id`         | ❌     | —                                 |
-| `audit`                      | Admin Key 的 `admin.label`        | ❌     | —                                 |
+| 消费方                     | principal 来源             | 受影响 | 失败形态                                          |
+| -------------------------- | -------------------------- | ------ | ------------------------------------------------- |
+| `credentials-multiuser:99` | `ctx.principal.current()`  | ✅     | fail closed → 拿不到凭据(拒绝服务)                |
+| **`fs-tenant:125`**        | `ctx.principal.current()`  | ✅     | ⚠️ **静默写进 `anonymous/anonymous/`,跨租户共用** |
+| `storage-scoped:120`       | `ctx.principal.current()`  | ✅     | 同上;当前默认不装配,V0.5.5 会装配                 |
+| `metering`                 | `obs.session.subjectId`    | ❌     | —                                                 |
+| `policy`(配额)             | `session.subjectId`        | ❌     | —                                                 |
+| `policy`(模型准入)         | 建会话时的 `principal.id`  | ❌     | —                                                 |
+| `audit`                    | Admin Key 的 `admin.label` | ❌     | —                                                 |
 
 **严重性的差别在于失败方向。** 凭据 fail closed —— 拒绝服务,吵闹但不泄漏。
 `fs-tenant` 与 `storage-scoped` **不 fail closed**:它们老老实实在 `anonymous`
@@ -81,9 +81,8 @@ agent 执行时(agent.ctx)→ {root}/anonymous/anonymous/default/note.txt
 在建会话时**捕获** principal,消费点显式重新进入它的作用域:
 
 ```ts
-const bound = principal                    // 建会话时捕获
-resolveApiKey: () => runWithPrincipal(ctx, bound, (scoped) =>
-  scoped.credentials.resolve(ref))
+const bound = principal // 建会话时捕获
+resolveApiKey: () => runWithPrincipal(ctx, bound, (scoped) => scoped.credentials.resolve(ref))
 ```
 
 已实测可行:
@@ -196,12 +195,12 @@ B 是当前唯一验证过可行的修法,它的唯一缺陷(依赖人记得)由
 进程档答案干净(根上一个值)。逻辑档是一个 runtime 多个 principal、
 **一个 `fs-tenant` 实例**,它的方法被调用时要能分辨这次操作属于谁。逐条测:
 
-| # | 问题                                          | 结果 |
-| - | --------------------------------------------- | ---- |
-| ① | 两个 agent 的 ctx 是不同对象吗                | ✅ 是,且都不是根 |
-| ② | 服务方法里的 `this.ctx` 按 agent 不同吗       | ✅ 不同 —— **原则上分得开** |
-| ③ | 能不能在**每个 agent 的 ctx 上** provide       | ❌ 见下 |
-| ④ | 能不能沿 fiber 链把 `this.ctx` 走回所属 agent | ❌ 见下 |
+| #   | 问题                                          | 结果                        |
+| --- | --------------------------------------------- | --------------------------- |
+| ①   | 两个 agent 的 ctx 是不同对象吗                | ✅ 是,且都不是根            |
+| ②   | 服务方法里的 `this.ctx` 按 agent 不同吗       | ✅ 不同 —— **原则上分得开** |
+| ③   | 能不能在**每个 agent 的 ctx 上** provide      | ❌ 见下                     |
+| ④   | 能不能沿 fiber 链把 `this.ctx` 走回所属 agent | ❌ 见下                     |
 
 **③ 的失败方式值得单记**:
 
@@ -249,10 +248,10 @@ principal)。这比「三个小回调」重,但比「服务生命周期全面改
 
 ### 因此:逻辑档的判据分两层
 
-| 层 | 时机 | 判据 | 动作 |
-| --- | --- | --- | --- |
-| **配置层**(主) | 启动时,确定性 | 逻辑档 + 任何多用户 auth(`auth-oidc` / `auth-jwt` / `auth-static` 多于一个 token) | **拒绝启动** |
-| **运行时**(兜底) | 出现第二个不同的 principal | 防御深度 | **拒绝该会话** |
+| 层               | 时机                       | 判据                                                                              | 动作           |
+| ---------------- | -------------------------- | --------------------------------------------------------------------------------- | -------------- |
+| **配置层**(主)   | 启动时,确定性              | 逻辑档 + 任何多用户 auth(`auth-oidc` / `auth-jwt` / `auth-static` 多于一个 token) | **拒绝启动**   |
+| **运行时**(兜底) | 出现第二个不同的 principal | 防御深度                                                                          | **拒绝该会话** |
 
 ⚠️ **兜底层绝不能杀进程。** 逻辑档下杀进程 = 第二个用户能干掉第一个用户的
 运行时,那是 DoS 向量。**拒绝会话,不拒绝服务。**
@@ -277,11 +276,11 @@ B 靠人记得,所以必须有机器兜底:**`ctx.principal.current()` 的调用
 
 三组对照:
 
-| 形态                                   | `agent.ctx` 的 principal 绑定 |
-| -------------------------------------- | ----------------------------- |
-| 作用域外建 agent                       | `anonymous`                   |
+| 形态                                  | `agent.ctx` 的 principal 绑定 |
+| ------------------------------------- | ----------------------------- |
+| 作用域外建 agent                      | `anonymous`                   |
 | 作用域内建 agent(followup 在作用域外) | `anonymous`                   |
-| 全程在作用域内,await 到底              | `anonymous`                   |
+| 全程在作用域内,await 到底             | `anonymous`                   |
 
 **副产物:一个值得单独记住的教训。** 第一版探针在适配器里读**根 ctx** 的
 `principal.current()`,那当然永远是匿名 —— 无论作用域有没有生效。

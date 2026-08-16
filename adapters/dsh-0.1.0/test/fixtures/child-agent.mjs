@@ -142,9 +142,10 @@ async function start(msg) {
     // 上游的 SessionEvent 是个大联合,每个成员的 data 形状都不同。
     // 这里只读我们关心的那几个字段,收窄集中在这一处 —— 与
     // gateway/src/sessions/events.ts 的 asUpstreamEvent 同款做法。
-    const data = /** @type {{ turn?: number, step?: number, chunk?: { type?: string, text?: string }, usage?: unknown } | undefined} */ (
-      event.data
-    )
+    const data =
+      /** @type {{ turn?: number, step?: number, chunk?: { type?: string, text?: string }, usage?: unknown } | undefined} */ (
+        event.data
+      )
     process.send?.({
       type: 'event',
       name: event.type,

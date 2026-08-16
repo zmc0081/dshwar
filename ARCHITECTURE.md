@@ -173,11 +173,11 @@ adapters/dsh-0.1.0/  ★ 唯一允许 import 上游内部实现的目录
 
 Harness agent 能执行 shell、读写文件系统。这决定了隔离级别不是配置偏好,是安全等级。
 
-| 级别     | 形态                                | 适用                   | 状态          | 实测代价                                        |
-| -------- | ----------------------------------- | ---------------------- | ------------- | ----------------------------------------------- |
-| **逻辑** | 单进程,per-session principal 作用域 | 🚨 **仅限单 principal** | ✅ 默认        | 多 principal 时**根本没有隔离**,见下           |
-| **进程** | 一 principal 一 dsh 进程            | 跨信任边界             | ✅ **V0.4.5** | 冷启动 ~115 ms、常驻 ~58 MB/进程;取消需重新实现 |
-| **容器** | 进程 + OS 沙箱                      | 多租户 SaaS            | 📋 仅配置位   | 由部署方的编排系统承担                          |
+| 级别     | 形态                                | 适用                    | 状态          | 实测代价                                        |
+| -------- | ----------------------------------- | ----------------------- | ------------- | ----------------------------------------------- |
+| **逻辑** | 单进程,per-session principal 作用域 | 🚨 **仅限单 principal** | ✅ 默认       | 多 principal 时**根本没有隔离**,见下            |
+| **进程** | 一 principal 一 dsh 进程            | 跨信任边界              | ✅ **V0.4.5** | 冷启动 ~115 ms、常驻 ~58 MB/进程;取消需重新实现 |
+| **容器** | 进程 + OS 沙箱                      | 多租户 SaaS             | 📋 仅配置位   | 由部署方的编排系统承担                          |
 
 代价栏的数字是实测值,不是估算:见 `docs/FEASIBILITY-REPORT-V45.md` §6(五次采样)。
 冷启动里**九成花在进程创建与模块加载上**,插件装配只占 13 ms —— 所以优化装配代码
@@ -190,12 +190,12 @@ principal 的绑定活在 cordis 上下文槽位上,而 **agent 拿到的是 `Ag
 插件 fiber 派生的自有 ctx**。一个 runtime 多个 principal 时,没有任何公开 API
 能让服务在操作时分辨「现在是谁在问」:
 
-| 试过的路 | 结果 |
-| --- | --- |
-| 根上 provide | ✅ 但对**所有** agent 生效 —— 把 bob 算成 alice |
-| 每个 agent 的 ctx 上 provide | ❌ 第一个成功,第二个报 `already registered`;错误被吞则 B 静默继承 A 的身份 |
-| 沿 fiber 链把 `this.ctx` 走回 agent | ❌ `cannot get property "ctx" without inject` |
-| 给每个 agent 装一份服务实例(遮蔽) | ❌ `service "fs" has been registered at <TenantFileSystem>` |
+| 试过的路                            | 结果                                                                       |
+| ----------------------------------- | -------------------------------------------------------------------------- |
+| 根上 provide                        | ✅ 但对**所有** agent 生效 —— 把 bob 算成 alice                            |
+| 每个 agent 的 ctx 上 provide        | ❌ 第一个成功,第二个报 `already registered`;错误被吞则 B 静默继承 A 的身份 |
+| 沿 fiber 链把 `this.ctx` 走回 agent | ❌ `cannot get property "ctx" without inject`                              |
+| 给每个 agent 装一份服务实例(遮蔽)   | ❌ `service "fs" has been registered at <TenantFileSystem>`                |
 
 **判别信息是在的**(服务方法里的 `this.ctx` 按 agent 不同),
 **但没有公开 API 把它解回身份**。所以这是**架构限制而非待办**:

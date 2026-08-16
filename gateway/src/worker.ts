@@ -43,7 +43,12 @@ interface Incoming {
 }
 
 type Op =
-  | { readonly op: 'create'; readonly sessionId: string; readonly model?: string; readonly provider?: string }
+  | {
+      readonly op: 'create'
+      readonly sessionId: string
+      readonly model?: string
+      readonly provider?: string
+    }
   | { readonly op: 'followup'; readonly text: string }
   | { readonly op: 'dispose' }
 

@@ -306,7 +306,12 @@ export class Supervisor {
     })
 
     this.pool.set(principal.id, pooled)
-    this.config.onEvent?.({ kind: 'spawn', principalId: principal.id, tenantId: principal.tenantId, pid: child.pid })
+    this.config.onEvent?.({
+      kind: 'spawn',
+      principalId: principal.id,
+      tenantId: principal.tenantId,
+      pid: child.pid,
+    })
     return pooled
   }
 

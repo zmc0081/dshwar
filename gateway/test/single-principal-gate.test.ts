@@ -69,17 +69,32 @@ describe('运行时兜底(防御深度)—— 拒绝会话,不拒绝服务', () 
     const bob = createPrincipal({ id: 'bob-a2b3', tenantId: 'globex' })
 
     await expect(
-      isolated.createAgent({ sessionId: 's1', model: undefined, provider: undefined, principal: alice }),
+      isolated.createAgent({
+        sessionId: 's1',
+        model: undefined,
+        provider: undefined,
+        principal: alice,
+      }),
     ).resolves.toBeDefined()
 
     await expect(
-      isolated.createAgent({ sessionId: 's2', model: undefined, provider: undefined, principal: bob }),
+      isolated.createAgent({
+        sessionId: 's2',
+        model: undefined,
+        provider: undefined,
+        principal: bob,
+      }),
     ).rejects.toThrow(/只支持单主体/)
 
     // ⚠️ 关键:进程没死,第一个主体照常能继续开会话。
     // 逻辑档下杀进程 = 第二个用户能干掉第一个用户的运行时,是白送的 DoS 向量。
     await expect(
-      isolated.createAgent({ sessionId: 's3', model: undefined, provider: undefined, principal: alice }),
+      isolated.createAgent({
+        sessionId: 's3',
+        model: undefined,
+        provider: undefined,
+        principal: alice,
+      }),
     ).resolves.toBeDefined()
   }, 20_000)
 
@@ -90,7 +105,12 @@ describe('运行时兜底(防御深度)—— 拒绝会话,不拒绝服务', () 
 
     for (const id of ['a', 'b', 'c']) {
       await expect(
-        isolated.createAgent({ sessionId: id, model: undefined, provider: undefined, principal: alice }),
+        isolated.createAgent({
+          sessionId: id,
+          model: undefined,
+          provider: undefined,
+          principal: alice,
+        }),
       ).resolves.toBeDefined()
     }
   }, 20_000)

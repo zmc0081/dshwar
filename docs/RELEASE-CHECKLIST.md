@@ -11,18 +11,18 @@
 
 ## 状态
 
-| 步骤                                                   | 状态                         | 阻塞原因                      |
-| ------------------------------------------------------ | ---------------------------- | ----------------------------- |
-| README(契约表 / 示例 / 隔离警告 / 兼容矩阵 / 开源边界) | ✅ 完成                      | —                             |
-| LICENSE(MIT)+ 商标声明                                 | ✅ 完成                      | —                             |
-| `docs/DECISIONS/naming.md`                             | ✅ 已记录                    | ⚠️ **法务复核未完成**         |
-| CONTRIBUTING.md + good-first-issue 契约签名            | ✅ 完成                      | —                             |
-| CHANGELOG.md                                           | ✅ 完成                      | —                             |
-| 包可从空目录安装并跑通                                 | ✅ **已验证**                | 见下                          |
-| 版本号一致性                                           | ✅ `pnpm check:version` 通过 | —                             |
-| npm publish                                            | 🟠 **待执行**                | npm 组织 `@dshwar` 未注册占名 |
-| GitHub Release                                         | 🟠 **待执行**                | 仓库未创建,本地无 remote      |
-| 上游仓库开 issue                                       | 🟠 **待执行**                | 对外动作,需所有者决定         |
+| 步骤                                                   | 状态                         | 阻塞原因                  |
+| ------------------------------------------------------ | ---------------------------- | ------------------------- |
+| README(契约表 / 示例 / 隔离警告 / 兼容矩阵 / 开源边界) | ✅ 完成                      | —                         |
+| LICENSE(MIT)+ 商标声明                                 | ✅ 完成                      | —                         |
+| `docs/DECISIONS/naming.md`                             | ✅ 已记录                    | ⚠️ **法务复核未完成**     |
+| CONTRIBUTING.md + good-first-issue 契约签名            | ✅ 完成                      | —                         |
+| CHANGELOG.md                                           | ✅ 完成                      | —                         |
+| 包可从空目录安装并跑通                                 | ✅ **已验证**                | 见下                      |
+| 版本号一致性                                           | ✅ `pnpm check:version` 通过 | —                         |
+| npm publish                                            | 🟠 **待执行**                | 组织已注册占名,包尚未发布 |
+| GitHub Release                                         | 🟠 **待执行**                | 仓库与 remote 已就绪      |
+| 上游仓库开 issue                                       | 🟠 **待执行**                | 对外动作,需所有者决定     |
 
 ## 已验证:从空目录安装可跑通
 
@@ -133,9 +133,16 @@ package.json → 0.4.1  (没被提升)
 
 ### 1. 占名与建仓(前置)
 
-- [ ] 注册 npm 组织 `@dshwar`
-- [ ] 创建 GitHub 仓库 `dshwar`,`dshwar-console` 建空仓占位
-- [ ] `git remote add origin …` 并**只推 `main`**
+- [x] 注册 npm 组织 `@dshwar` —— ✅ 2026-08-16 完成,CLI 已登录(`star-zm`)
+- [x] 创建 GitHub 仓库 —— ✅ <https://github.com/zmc0081/dshwar>(Public)。
+      `dshwar-console` 空仓占位仍待建
+- [x] `git remote add origin …` 并**只推 `main`**
+
+  > **首次 CI 复盘(2026-08-16)。** 第一次在真实 runner 上跑就红了,
+  > 而它抓到的东西本地一条都看不见 —— 因为**本地的 `check:all` 与 CI 跑的
+  > 不是同一组检查**,两边各有对方没有的项。这类漂移只会越拉越大,
+  > 所以修法不是补那一条,而是把两边**对齐成同一组**并写进本清单:
+  > **改门禁时必须同时改 `package.json` 的 `check:all` 与 `.github/workflows/ci.yml`。**
 
   > ⚠️ 曾写「推送 `main` 与 `feature/v0.1.0`」。那条已失效:`feature/v0.1.0`
   > 早已合并进 `main` 并删除。**`main` 是唯一的主干**,feature 分支合并后即删,

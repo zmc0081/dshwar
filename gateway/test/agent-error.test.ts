@@ -113,7 +113,10 @@ describe('网关自持序号 —— 合成事件不再需要「借号」', () =>
     const ids = events.filter((e) => e.id !== undefined).map((e) => Number(e.id))
 
     expect(ids.length).toBeGreaterThan(1)
-    expect(ids.every((v, i) => i === 0 || v > ids[i - 1]!), `id 序列回退:${ids}`).toBe(true)
+    expect(
+      ids.every((v, i) => i === 0 || v > ids[i - 1]!),
+      `id 序列回退:${ids}`,
+    ).toBe(true)
     // 密集而非稀疏 —— 自持序号的副产物。上游 seq 是稀疏的(翻译会丢掉一半)
     expect(ids[0]).toBe(0)
   }, 15_000)

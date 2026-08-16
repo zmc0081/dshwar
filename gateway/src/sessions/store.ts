@@ -27,10 +27,7 @@ import { asUpstreamEvent, EventBuffer, translateEvent } from './events.ts'
  * 真实的 `Context` 结构上满足本接口,所以进程内驱动一行不用改。
  */
 export interface SessionEventSource {
-  on(
-    event: 'session/event',
-    listener: (session: unknown, event: unknown) => void,
-  ): () => unknown
+  on(event: 'session/event', listener: (session: unknown, event: unknown) => void): () => unknown
   /**
    * agent 执行出错。
    *

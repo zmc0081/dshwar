@@ -5,8 +5,19 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-> **开发者预览 · V0.4.7。** 运行时、API 平面、身份互操作、计量治理与**进程隔离**
-> 均已可用;控制平面在 V0.5.0。
+## ⚠️ 开发者预览 · V0.4.7
+
+运行时、API 平面、身份互操作、计量治理与**进程隔离**均已可用;控制平面在 V0.5.0。
+
+**在评估采用之前,请先读完这三条:**
+
+|                                                 |                                                                                                                                                                                                                               |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 📦 **npm 包尚未发布**                           | `@dshwar/*` 在 npm 上还不存在。现在只能从源码构建。本文中的 `pnpm add` 示例是**发布后**的用法                                                                                                                                 |
+| 📊 **性能数字取自 Windows 开发机,Linux 复测中** | 下文的**约 115 ms 冷启动 / 58 MB 常驻**测于 Windows 11 + Node 22。规模对照表、`maxProcesses` 默认值、示例配置全部由这两个数推出 —— **Linux 上若不同,那三处都要改**。在复测结果落地之前,请把它们当作数量级参考而非容量规划依据 |
+| ⚖️ **项目名的商标复核进行中**                   | "DSHWAR" 尚未完成商标检索与法务意见。**名称可能变更。** 不要把它写进合同、域名或对外品牌                                                                                                                                      |
+
+本项目**非 DeepSeek 官方产品,与 DeepSeek 无隶属关系**。对上游的引用限于指名性使用。
 
 ---
 
@@ -74,11 +85,11 @@ console.log('(匿名)', '→', await callModel(ctx)) // → undefined，fail clo
 Harness agent **能执行 shell、能读写文件系统**。这决定了隔离级别不是配置偏好,
 **是安全等级**。
 
-| 级别     | 形态                                | 适用                           | 状态          | 已知可越界的手法                     |
-| -------- | ----------------------------------- | ------------------------------ | ------------- | ------------------------------------ |
-| **逻辑** | 单进程,per-session principal 作用域 | 🚨 **仅限单 principal** —— 见下 | ✅ 默认        | 提示词注入、恶意 MCP、被污染的 skill |
-| **进程** | 一 principal 一 dsh 进程            | 跨信任边界                     | ✅ **V0.4.5** | 进程逃逸、内核提权、资源耗尽         |
-| **容器** | 进程 + OS 沙箱                      | 多租户 SaaS                    | 📋 仅配置位   | 内核提权                             |
+| 级别     | 形态                                | 适用                            | 状态          | 已知可越界的手法                     |
+| -------- | ----------------------------------- | ------------------------------- | ------------- | ------------------------------------ |
+| **逻辑** | 单进程,per-session principal 作用域 | 🚨 **仅限单 principal** —— 见下 | ✅ 默认       | 提示词注入、恶意 MCP、被污染的 skill |
+| **进程** | 一 principal 一 dsh 进程            | 跨信任边界                      | ✅ **V0.4.5** | 进程逃逸、内核提权、资源耗尽         |
+| **容器** | 进程 + OS 沙箱                      | 多租户 SaaS                     | 📋 仅配置位   | 内核提权                             |
 
 **逻辑隔离不构成强边界。** `fs-tenant` 的路径钉死抬高了越界成本,但一个能跑 `bash`
 的 agent 不受它约束。跨信任边界请开进程隔离(`@dshwar/supervisor`,V0.4.5 起可用)。
@@ -103,12 +114,12 @@ Harness agent **能执行 shell、能读写文件系统**。这决定了隔离�
 **逻辑档只支持单 principal,所以多租户现在只剩进程隔离一档。**
 它的代价不再是可选的调优项,而是承重结构:
 
-| 团队规模 | 活跃进程 | 常驻内存 |
-| -------- | -------- | -------- |
-| 5 人     | 5        | ≈ 290 MB |
-| 20 人    | 20       | ≈ 1.2 GB |
-| **50 人**| **50**   | **≈ 2.9 GB** |
-| 200 人   | 200      | ≈ 11.6 GB |
+| 团队规模  | 活跃进程 | 常驻内存     |
+| --------- | -------- | ------------ |
+| 5 人      | 5        | ≈ 290 MB     |
+| 20 人     | 20       | ≈ 1.2 GB     |
+| **50 人** | **50**   | **≈ 2.9 GB** |
+| 200 人    | 200      | ≈ 11.6 GB    |
 
 口径:**冷启动 ~115 ms、常驻 ~58 MB/进程**,11 插件全集实测五次采样。
 「活跃」指未被空闲回收的 principal —— 不是注册用户数。
@@ -148,12 +159,12 @@ principal 的传播用的是 **cordis 的上下文槽位**,绑定只存在于派
 **逻辑档修不了 —— 这是架构限制,不是待办。** 一个 runtime 多个 principal 时,
 四条路全部走不通:
 
-| 试过的路 | 结果 |
-| --- | --- |
-| 根上 provide | ✅ 但对**所有** agent 生效 —— 把 bob 算成 alice |
-| 每个 agent 的 ctx 上 provide | ❌ 第一个成功,第二个 `already registered` |
-| 沿 fiber 链把 `this.ctx` 走回 agent | ❌ `cannot get property "ctx" without inject` |
-| 给每个 agent 装一份服务实例 | ❌ `service "fs" has been registered` |
+| 试过的路                            | 结果                                            |
+| ----------------------------------- | ----------------------------------------------- |
+| 根上 provide                        | ✅ 但对**所有** agent 生效 —— 把 bob 算成 alice |
+| 每个 agent 的 ctx 上 provide        | ❌ 第一个成功,第二个 `already registered`       |
+| 沿 fiber 链把 `this.ctx` 走回 agent | ❌ `cannot get property "ctx" without inject`   |
+| 给每个 agent 装一份服务实例         | ❌ `service "fs" has been registered`           |
 
 判别信息是在的(服务方法里的 `this.ctx` 按 agent 不同),但**没有公开 API
 把它解回身份**。已向上游提 issue(见 [`docs/UPSTREAM-ISSUE-agent-ctx.md`](docs/UPSTREAM-ISSUE-agent-ctx.md));
@@ -183,27 +194,27 @@ principal 的传播用的是 **cordis 的上下文槽位**,绑定只存在于派
 
 ### 包
 
-| 包                                                                | 作用                        | 状态      |
-| ----------------------------------------------------------------- | --------------------------- | --------- |
-| [`@dshwar/principal`](packages/principal)                         | principal 传播              | ✅ V0.1.0 |
-| [`@dshwar/auth`](packages/auth)                                   | 认证契约                    | ✅ V0.1.0 |
-| [`@dshwar/auth-static`](packages/auth-static)                     | 静态 token(开发用,禁止部署) | ✅ V0.1.0 |
-| [`@dshwar/credentials-multiuser`](packages/credentials-multiuser) | per-principal 凭据          | ✅ V0.1.0 |
-| [`@dshwar/fs-tenant`](packages/fs-tenant)                         | 工作区按租户+工作区钉死     | ✅ V0.4.1 |
-| [`@dshwar/storage-scoped`](packages/storage-scoped)               | 租户前缀键                  | ✅ V0.1.0 |
-| [`@dshwar/api-contract`](packages/api-contract)                   | API v1 契约(Zod 单一事实源) | ✅ V0.2.0 |
-| [`@dshwar/gateway`](gateway)                                      | API 平面服务(Hono)          | ✅ V0.2.0 |
-| [`@dshwar/sdk`](sdk/typescript)                                   | TS SDK(由 OpenAPI 生成)     | ✅ V0.2.0 |
-| [`@dshwar/subject`](packages/subject)                             | 身份镜像(停用在此生效)      | ✅ V0.3.0 |
-| [`@dshwar/tenant-map`](packages/tenant-map)                       | 租户映射,映射不出即拒       | ✅ V0.3.0 |
-| [`@dshwar/auth-jwt`](packages/auth-jwt)                           | JWKS 验签,验签通过≠放行     | ✅ V0.3.0 |
-| [`@dshwar/auth-oidc`](packages/auth-oidc)                         | 填一个 issuer URL 即接入    | ✅ V0.3.0 |
-| [`@dshwar/scim-server`](packages/scim-server)                     | SCIM 2.0 子集,双路停用      | ✅ V0.3.0 |
-| [`@dshwar/webhooks`](packages/webhooks)                           | 出站事件,签名可独立验证     | ✅ V0.3.0 |
-| [`@dshwar/audit`](packages/audit)                                 | 仅追加审计                  | ✅ V0.4.0 |
-| [`@dshwar/metering`](packages/metering)                           | 用量归属与成本核算          | ✅ V0.4.0 |
-| [`@dshwar/policy`](packages/policy)                               | 配额判定(判定/执行分离)     | ✅ V0.4.0 |
-| [`@dshwar/model-router`](packages/model-router)                   | 模型准入与预算降级          | ✅ V0.4.0 |
+| 包                                                                | 作用                          | 状态      |
+| ----------------------------------------------------------------- | ----------------------------- | --------- |
+| [`@dshwar/principal`](packages/principal)                         | principal 传播                | ✅ V0.1.0 |
+| [`@dshwar/auth`](packages/auth)                                   | 认证契约                      | ✅ V0.1.0 |
+| [`@dshwar/auth-static`](packages/auth-static)                     | 静态 token(开发用,禁止部署)   | ✅ V0.1.0 |
+| [`@dshwar/credentials-multiuser`](packages/credentials-multiuser) | per-principal 凭据            | ✅ V0.1.0 |
+| [`@dshwar/fs-tenant`](packages/fs-tenant)                         | 工作区按租户+工作区钉死       | ✅ V0.4.1 |
+| [`@dshwar/storage-scoped`](packages/storage-scoped)               | 租户前缀键                    | ✅ V0.1.0 |
+| [`@dshwar/api-contract`](packages/api-contract)                   | API v1 契约(Zod 单一事实源)   | ✅ V0.2.0 |
+| [`@dshwar/gateway`](gateway)                                      | API 平面服务(Hono)            | ✅ V0.2.0 |
+| [`@dshwar/sdk`](sdk/typescript)                                   | TS SDK(由 OpenAPI 生成)       | ✅ V0.2.0 |
+| [`@dshwar/subject`](packages/subject)                             | 身份镜像(停用在此生效)        | ✅ V0.3.0 |
+| [`@dshwar/tenant-map`](packages/tenant-map)                       | 租户映射,映射不出即拒         | ✅ V0.3.0 |
+| [`@dshwar/auth-jwt`](packages/auth-jwt)                           | JWKS 验签,验签通过≠放行       | ✅ V0.3.0 |
+| [`@dshwar/auth-oidc`](packages/auth-oidc)                         | 填一个 issuer URL 即接入      | ✅ V0.3.0 |
+| [`@dshwar/scim-server`](packages/scim-server)                     | SCIM 2.0 子集,双路停用        | ✅ V0.3.0 |
+| [`@dshwar/webhooks`](packages/webhooks)                           | 出站事件,签名可独立验证       | ✅ V0.3.0 |
+| [`@dshwar/audit`](packages/audit)                                 | 仅追加审计                    | ✅ V0.4.0 |
+| [`@dshwar/metering`](packages/metering)                           | 用量归属与成本核算            | ✅ V0.4.0 |
+| [`@dshwar/policy`](packages/policy)                               | 配额判定(判定/执行分离)       | ✅ V0.4.0 |
+| [`@dshwar/model-router`](packages/model-router)                   | 模型准入与预算降级            | ✅ V0.4.0 |
 | [`@dshwar/supervisor`](packages/supervisor)                       | 进程隔离(一 principal 一进程) | ✅ V0.4.5 |
 
 📋 = 已立项,契约签名见 [CONTRIBUTING.md](CONTRIBUTING.md) 的 good-first-issue 列表。
@@ -338,13 +349,13 @@ V0.3.0 解决了「谁能进来」,V0.4.0 解决「进来之后用了多少、�
 **全部是治理层,一行不碰模型引擎** —— `model-router` 不路由请求,
 它只在 `createAgent` 入口裁决用哪个模型,真正的调用仍是上游 `dsh-llm` 的事。
 
-| 能力     | 关键性质                                                                                 |
-| -------- | ---------------------------------------------------------------------------------------- |
-| **计量** | 计费口径按 DISJOINT 加(直接用 `inputTokens` 会少计费);**观测不阻断** —— 计量挂了会话照常 |
+| 能力     | 关键性质                                                                                                 |
+| -------- | -------------------------------------------------------------------------------------------------------- |
+| **计量** | 计费口径按 DISJOINT 加(直接用 `inputTokens` 会少计费);**观测不阻断** —— 计量挂了会话照常                 |
 | **配额** | 判定与执行分离,超限 429;**两段判定**(建会话读快照准入、发轮现算计费);计量不可用时 **fail open** 并落审计 |
-| **准入** | opt-in,没配策略默认放行;清单外 **403 不静默换**                                          |
-| **降级** | 显式配置且**三处可见**:响应头、会话记录、审计 —— 用户有权知道自己被换了模型              |
-| **审计** | **仅追加**,类型层没有 update/delete;按租户强制过滤;凭据类操作绝不记录值                  |
+| **准入** | opt-in,没配策略默认放行;清单外 **403 不静默换**                                                          |
+| **降级** | 显式配置且**三处可见**:响应头、会话记录、审计 —— 用户有权知道自己被换了模型                              |
+| **审计** | **仅追加**,类型层没有 update/delete;按租户强制过滤;凭据类操作绝不记录值                                  |
 
 配置与陷阱(尤其是**价格表必须配全** —— 查不到价计 0 是"没配价"不是"免费")
 见 [`docs/GOVERNANCE.md`](docs/GOVERNANCE.md)。

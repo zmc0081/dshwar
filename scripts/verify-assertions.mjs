@@ -69,6 +69,17 @@ function expect(name, passed, detail) {
 /**
  * 篡改一个文件、跑测试、无条件还原。
  *
+ * ⚠️ **锚点是源码的精确字符串匹配,所以 Prettier 一改排版它就失配。**
+ * 首次 CI(2026-08-16)正是这么暴露的:`check:all` 当时没有 `format:check`,
+ * 于是本地长期带着未格式化的源码全绿;补跑 `pnpm format` 之后 Prettier
+ * 把 `packages/policy` 里的一个三元折成一行,探针 3 的锚点当场失配。
+ *
+ * **这不是设计缺陷,是它按设计工作了**:`unchanged` 被判为**失败**而不是通过,
+ * 所以锚点腐烂会立刻显形,而不会变成一条永远「通过」的空探针 ——
+ * 后者恰恰是本脚本存在的理由。
+ *
+ * 根因已经堵上:`format:check` 进了 `check:all`,源码不再可能处于未格式化状态。
+ *
  * @param {string} rel 仓库相对路径
  * @param {(source: string) => string} mutate 篡改函数
  * @param {string[]} targets 要跑的测试
@@ -125,7 +136,8 @@ console.log('DSHWAR · 断言有效性探针\n')
 {
   const r = withMutation(
     'packages/fs-tenant/src/path.ts',
-    (s) => s.replace('resolvePath(root, tenant, user, workspace)', 'resolvePath(root, tenant, user)'),
+    (s) =>
+      s.replace('resolvePath(root, tenant, user, workspace)', 'resolvePath(root, tenant, user)'),
     ['packages/fs-tenant'],
   )
   expect(
@@ -141,7 +153,7 @@ console.log('DSHWAR · 断言有效性探针\n')
     'packages/policy/src/index.ts',
     (s) =>
       s.replace(
-        'return exhausted\n      ? { kind: \'deny\', reason: \'quota_exhausted\', quota }\n      : { kind: \'allow\', quota }',
+        "return exhausted ? { kind: 'deny', reason: 'quota_exhausted', quota } : { kind: 'allow', quota }",
         "return { kind: 'allow', quota }",
       ),
     ['packages/policy'],
@@ -198,7 +210,11 @@ console.log('DSHWAR · 断言有效性探针\n')
 {
   const r = withMutation(
     'gateway/test/harness.ts',
-    (s) => s.replace("const tokens = this.options.tokens ?? ['你好', ',', '世界']", "const tokens = (this.options.tokens ?? ['你好', ',', '世界']).slice(0, -1)"),
+    (s) =>
+      s.replace(
+        "const tokens = this.options.tokens ?? ['你好', ',', '世界']",
+        "const tokens = (this.options.tokens ?? ['你好', ',', '世界']).slice(0, -1)",
+      ),
     ['gateway/test/runtime-api.test.ts'],
   )
   expect(
@@ -214,10 +230,7 @@ console.log('DSHWAR · 断言有效性探针\n')
   const r = withMutation(
     'gateway/test/harness.ts',
     (s) =>
-      s.replace(
-        "for (const think of this.options.reasoning ?? []) {",
-        'for (const think of []) {',
-      ),
+      s.replace('for (const think of this.options.reasoning ?? []) {', 'for (const think of []) {'),
     ['gateway/test/runtime-api.test.ts'],
   )
   expect(
@@ -243,9 +256,7 @@ console.log('DSHWAR · 断言有效性探针\n')
   expect(
     '8 拿掉根上的 principal provide → 真实路径冒烟变红',
     r.red,
-    r.unchanged
-      ? '锚点没匹配上'
-      : '★ 进程档下 principal 不再抵达执行层,而端到端冒烟竟然还是绿的',
+    r.unchanged ? '锚点没匹配上' : '★ 进程档下 principal 不再抵达执行层,而端到端冒烟竟然还是绿的',
   )
 }
 
@@ -264,7 +275,10 @@ console.log('DSHWAR · 断言有效性探针\n')
     const src = readFileSync(p('scripts/check-guards.mjs'), 'utf8')
     writeFileSync(
       p('scripts/check-guards.mjs'),
-      src.replace("    file: 'packages/fs-tenant/src/index.ts',", "    file: 'packages/__none__.ts',"),
+      src.replace(
+        "    file: 'packages/fs-tenant/src/index.ts',",
+        "    file: 'packages/__none__.ts',",
+      ),
       'utf8',
     )
     try {

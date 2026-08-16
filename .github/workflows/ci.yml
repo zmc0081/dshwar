@@ -10,6 +10,12 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# CI 只读代码,不写任何东西。显式钉死而不是靠仓库设置的默认值:
+# 那个默认值**不在版本控制里**,改动无痕、不经 review,而且组织级策略
+# 也可能把它调宽。发布相关的写权限将来由 release.yml 单独申请。
+permissions:
+  contents: read
+
 jobs:
   # 守卫先跑、单独成 job:边界与锁版违规不该等 20 分钟的矩阵跑完才报出来,
   # 而且它们与 Node 版本无关,跑两遍是浪费。
@@ -93,6 +99,12 @@ jobs:
       - name: Typecheck(测试文件)
         run: pnpm typecheck:test
 
+      # scripts/ 下的 .mjs 走 tsconfig.scripts.json(allowJs + checkJs)。
+      # 首次 CI 复盘发现这一条从 V0.4.6 加进 check:all 起就没进过 workflow ——
+      # 于是 CI 一直比本地弱一条,而弱的那条恰恰盯着门禁脚本自己。
+      - name: Typecheck(scripts/)
+        run: pnpm typecheck:scripts
+
       - name: Lint(含 adapters 边界规则)
         run: pnpm lint
 
@@ -101,6 +113,64 @@ jobs:
 
       - name: 上游契约测试
         run: pnpm test:contract
+
+  # 断言有效性探针 —— V0.4.6 的核心产出,首次 CI 复盘时发现它从没进过 workflow。
+  #
+  # 单独成 job 而不是塞进 build:它要跑 8 次 vitest(每次篡改一处源码再还原),
+  # 比整套单测还慢,挂在矩阵里等于把两个 Node 版本各拖一遍。
+  #
+  # ⚠️ 它**会临时改写工作区里的源文件**,`finally` 还原。在 CI 上是一次性检出,
+  # 没有副作用;本地跑之前请确认没有未提交的改动。
+  assertions:
+    name: 断言有效性探针
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # 必须先构建:网关的测试经 dist 解析 @dshwar/*,不构建就是在测上一次的产物。
+      - name: 构建
+        run: pnpm build
+
+      - name: 故意弄坏实现,确认对应的测试真的变红
+        run: pnpm verify:assertions
+
+  # 进程隔离的代价 —— 常驻测量 + 上界门禁。
+  #
+  # 为什么它值得一个 job:README 的规模对照表、maxProcesses 的默认值、
+  # DEPLOYMENT.md 的容量规划,三处**全部**由这两个数推出,而采用者照着它们
+  # 买服务器。一次让内存翻倍的改动会让这三处同时变成谎话,
+  # **且不会让任何测试变红** —— 内存不在断言里。
+  #
+  # 阈值的定法见 docs/DECISIONS/process-cost-thresholds.md。
+  # 放宽它之前先读那份文档:阈值放宽一次,这道门禁就再也抓不到下一次翻倍。
+  process-cost:
+    name: 进程隔离代价(Linux 基线)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          # 固定 Node 22 而不是跟矩阵:这道门禁比的是**跨提交**的趋势,
+          # 换 Node 版本会让数字跳一档,那种红说明不了任何事。
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: 构建
+        run: pnpm build
+
+      # ⚠️ **本次刻意不带 `--assert`。** Linux 的阈值必须由 Linux 上的实测推出,
+      # 而不是照 Windows 的数猜一个 —— 猜一个宽松阈值即使绿了也没验证任何东西,
+      # 它只证明猜得够松。实测落地后这一行换成带 `--assert` 的版本。
+      # 过程与定法记在 docs/DECISIONS/process-cost-thresholds.md。
+      - name: 五次采样,与 V0.4.5 的 Windows 口径对齐
+        run: node scripts/measure-process-cost.mjs
 
   # PTY 相关契约测试只能在 Linux 跑:上游 dsh-subprocess-local 的 ProcessInspector
   # 只实现了 linux 与 darwin,win32 直接抛错。

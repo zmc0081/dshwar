@@ -301,7 +301,6 @@ function checkMissingTsconfig() {
   return out
 }
 
-
 /**
  * `ctx.principal.current()` 的登记白名单。
  *
@@ -473,9 +472,13 @@ if (unregistered.length === 0 && stale.length === 0) {
   console.log('  通过  principal.current() 调用点全部已登记')
 } else {
   failed += 1
-  console.log(`  违规  principal.current() 的登记白名单不同步  (${unregistered.length + stale.length} 处)`)
+  console.log(
+    `  违规  principal.current() 的登记白名单不同步  (${unregistered.length + stale.length} 处)`,
+  )
   console.log('        新增的 principal 消费方必须先回答:这个调用会不会发生在 agent loop 内?')
-  console.log('        loop 内读到的是 ANONYMOUS —— fs-tenant 那一类不 fail closed,会静默跨租户混放。')
+  console.log(
+    '        loop 内读到的是 ANONYMOUS —— fs-tenant 那一类不 fail closed,会静默跨租户混放。',
+  )
   console.log('        登记处见 scripts/check-guards.mjs 的 PRINCIPAL_CONSUMERS,')
   console.log('        背景见 docs/DECISIONS/principal-scope-binding.md')
   for (const h of [...unregistered, ...stale]) console.log(`        ${h.text}`)

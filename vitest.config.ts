@@ -25,8 +25,7 @@ export default defineConfig({
       //
       // 跑法:把 DEEPSEEK_API_KEY 放进 .env(已在 .gitignore 里),然后
       //   pnpm vitest run gateway/test/live-smoke.test.ts
-      ...(process.env['DEEPSEEK_API_KEY'] === undefined ||
-      process.env['DEEPSEEK_API_KEY'] === ''
+      ...(process.env['DEEPSEEK_API_KEY'] === undefined || process.env['DEEPSEEK_API_KEY'] === ''
         ? ['gateway/test/live-smoke.test.ts']
         : []),
     ],

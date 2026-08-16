@@ -7,9 +7,9 @@
 
 V0.4.5 引入了两个 `.mjs` 测试夹具:
 
-| 文件                                          | 用途                             |
-| --------------------------------------------- | -------------------------------- |
-| `packages/supervisor/test/fixtures/echo-child.mjs` | 进程池的最小子进程               |
+| 文件                                               | 用途                                |
+| -------------------------------------------------- | ----------------------------------- |
+| `packages/supervisor/test/fixtures/echo-child.mjs` | 进程池的最小子进程                  |
 | `adapters/dsh-0.1.0/test/fixtures/child-agent.mjs` | 跨进程驱动的子进程(装 harness 全集) |
 
 **它们必须是 `.mjs`。** 子进程由 `child_process.fork` 拉起,走 Node 原生模块解析,
@@ -50,11 +50,11 @@ V0.4.5 引入了两个 `.mjs` 测试夹具:
 
 开启后暴露 **31 处**类型错误,全部修完,分三类:
 
-| 类别                   | 处理                                        | 例                                                      |
-| ---------------------- | ------------------------------------------- | ------------------------------------------------------- |
-| 跨 IPC 边界的入参无类型 | 加 `@typedef` + `@param`                    | `process.on('message', (msg) => …)`                     |
-| 生成器 yield 的字面量推成 `string` | ★ 给 `stream()` 标 `@returns`      | `{ type: 'block-start' }` 的 type 被推成 `string`        |
-| 上游联合类型需要收窄    | 一处 `@type` 断言,与 `asUpstreamEvent` 同款 | `event.data?.turn`                                      |
+| 类别                               | 处理                                        | 例                                                |
+| ---------------------------------- | ------------------------------------------- | ------------------------------------------------- |
+| 跨 IPC 边界的入参无类型            | 加 `@typedef` + `@param`                    | `process.on('message', (msg) => …)`               |
+| 生成器 yield 的字面量推成 `string` | ★ 给 `stream()` 标 `@returns`               | `{ type: 'block-start' }` 的 type 被推成 `string` |
+| 上游联合类型需要收窄               | 一处 `@type` 断言,与 `asUpstreamEvent` 同款 | `event.data?.turn`                                |
 
 **最关键的一条是第二类。** 不标 `@returns`,每个 `yield` 的对象字面量都被推成
 `{ type: string, … }`,与 `StreamChunk` 的判别联合对不上 —— 报的是一个笼统的

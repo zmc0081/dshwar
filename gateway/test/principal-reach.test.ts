@@ -149,10 +149,9 @@ describe('进程隔离档:装配时把 principal 钉到根上就够了', () => {
     const second = await driveAndReadBinding(ctx, 's-multi-2')
 
     expect(first.id).toBe('alice-e6f1')
-    expect(
-      second.id,
-      '若这里不再等于 alice,说明 cordis 的绑定语义变了 —— 本条的警告需要重写',
-    ).toBe('alice-e6f1')
+    expect(second.id, '若这里不再等于 alice,说明 cordis 的绑定语义变了 —— 本条的警告需要重写').toBe(
+      'alice-e6f1',
+    )
   }, 30_000)
 })
 
@@ -185,10 +184,9 @@ describe('🪤 陷阱:per-agent provide 会让第二个 agent 静默继承第一
 
     // ★ 关键:错误被吞掉之后会发生什么 —— B 读到的是 A 的身份
     const seenByB = (b.agent.ctx.get(PRINCIPAL_BINDING) as Principal | undefined)?.id
-    expect(
-      seenByB,
-      'bob 的 agent 读到了 alice —— 这正是「看起来一切正常」的跨租户串号',
-    ).toBe('alice-e6f1')
+    expect(seenByB, 'bob 的 agent 读到了 alice —— 这正是「看起来一切正常」的跨租户串号').toBe(
+      'alice-e6f1',
+    )
   }, 30_000)
 
   it('per-agent 装第二份服务实例也不行 —— 遮蔽不成立', async () => {

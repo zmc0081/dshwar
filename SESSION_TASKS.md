@@ -48,22 +48,22 @@ DeepSeek Harness（npm 依赖 @deepseek-ai/dsh-*，精确锁版）
 
 ## 版本路线
 
-| 版本       | 内容                                                      | 周期 | 状态                                               |
-| ---------- | --------------------------------------------------------- | ---- | -------------------------------------------------- |
-| V0.1.0     | 运行时平面 MVP + 开源首发                                 | 3 周 | <span style="color:#d00000">开发完成,待发布</span> |
-| V0.2.0     | API 平面:OpenAPI v1 + Gateway + SDK + Admin 端点          | 4 周 | <span style="color:#d00000">开发完成</span>        |
-| V0.3.0     | 身份互操作:Subject Mirror + SCIM 2.0 + 租户映射 + Webhook | 2 周 | <span style="color:#d00000">开发完成</span>        |
-| V0.4.0     | 计量与治理:metering + policy + model-router + audit       | 3 周 | <span style="color:#d00000">开发完成</span>        |
-| V0.4.1     | `fs-tenant` 多工作区改造                                  | 3 天 | <span style="color:#d00000">开发完成</span>        |
-| V0.4.5     | supervisor 进程隔离                                       | 2 周 | <span style="color:#d00000">开发完成</span>        |
+| 版本       | 内容                                                      | 周期 | 状态                                                     |
+| ---------- | --------------------------------------------------------- | ---- | -------------------------------------------------------- |
+| V0.1.0     | 运行时平面 MVP + 开源首发                                 | 3 周 | <span style="color:#d00000">开发完成,待发布</span>       |
+| V0.2.0     | API 平面:OpenAPI v1 + Gateway + SDK + Admin 端点          | 4 周 | <span style="color:#d00000">开发完成</span>              |
+| V0.3.0     | 身份互操作:Subject Mirror + SCIM 2.0 + 租户映射 + Webhook | 2 周 | <span style="color:#d00000">开发完成</span>              |
+| V0.4.0     | 计量与治理:metering + policy + model-router + audit       | 3 周 | <span style="color:#d00000">开发完成</span>              |
+| V0.4.1     | `fs-tenant` 多工作区改造                                  | 3 天 | <span style="color:#d00000">开发完成</span>              |
+| V0.4.5     | supervisor 进程隔离                                       | 2 周 | <span style="color:#d00000">开发完成</span>              |
 | V0.4.6     | 测试有效性与门禁补强                                      | 1 周 | <span style="color:#d00000">开发完成(Session 1-4)</span> |
-| V0.4.7     | principal 抵达 agent 执行层(发布阻塞已解除)              | 3 天 | <span style="color:#d00000">开发完成</span>        |
-| V0.5.0     | 控制平面 / **企业自服务配置台**                           | 5 周 | 待启动                                             |
-| **V0.5.5** | **工作台后端**:工作区 / 产物 / 预授权 / 作业 / 附件       | 3 周 | 待启动                                             |
-| V0.6.0     | 支付:billing 契约 + local + 首个 hosted 实现              | 3 周 | 待启动                                             |
-| **V0.6.5** | **本地模型 + 离线能力**(Ollama / llama.cpp)               | 2 周 | 待启动                                             |
-| V0.7.0     | 端:Web 工作台 + Tauri 桌面壳(胖客户端)                    | 4 周 | 待启动                                             |
-| V0.8.0     | 移动端 SDK(Kotlin / Swift)                                | 2 周 | 待启动                                             |
+| V0.4.7     | principal 抵达 agent 执行层(发布阻塞已解除)               | 3 天 | <span style="color:#d00000">开发完成</span>              |
+| V0.5.0     | 控制平面 / **企业自服务配置台**                           | 5 周 | 待启动                                                   |
+| **V0.5.5** | **工作台后端**:工作区 / 产物 / 预授权 / 作业 / 附件       | 3 周 | 待启动                                                   |
+| V0.6.0     | 支付:billing 契约 + local + 首个 hosted 实现              | 3 周 | 待启动                                                   |
+| **V0.6.5** | **本地模型 + 离线能力**(Ollama / llama.cpp)               | 2 周 | 待启动                                                   |
+| V0.7.0     | 端:Web 工作台 + Tauri 桌面壳(胖客户端)                    | 4 周 | 待启动                                                   |
+| V0.8.0     | 移动端 SDK(Kotlin / Swift)                                | 2 周 | 待启动                                                   |
 
 ### 两条并行轨(不占 Session 编号,不阻塞开发)
 
@@ -180,11 +180,11 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 
 **范围**:三个消费方。
 
-| 包                      | 失败形态                             | 修法                                                             |
-| ----------------------- | ------------------------------------ | ---------------------------------------------------------------- |
-| `credentials-multiuser` | fail closed —— 拒绝服务,吵闹          | 消费点显式重入(已验证可行)                                       |
+| 包                      | 失败形态                             | 修法                                                                    |
+| ----------------------- | ------------------------------------ | ----------------------------------------------------------------------- |
+| `credentials-multiuser` | fail closed —— 拒绝服务,吵闹         | 消费点显式重入(已验证可行)                                              |
 | **`fs-tenant`**         | 🚨 **不 fail closed,跨租户共用目录** | 加 `principalOf?: () => Principal` 配置回调,与已有的 `workspaceOf` 同款 |
-| `storage-scoped`        | 同上;当前未装配,V0.5.5 会装配        | 同上 —— **必须赶在 V0.5.5 之前**                                  |
+| `storage-scoped`        | 同上;当前未装配,V0.5.5 会装配        | 同上 —— **必须赶在 V0.5.5 之前**                                        |
 
 **已定的事**:
 
@@ -197,7 +197,6 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 
 **验收**:一条在**真实时序下**(agent 执行时,不是测试里直接调)断言工作区落点
 正确的测试。V0.4.6 Session 3 的「作用域类探针」就是为它准备的。
-
 
 > 本节是**路线图**,不是任务书。每个版本在成为「正在开发版本」时,提升为完整版本块
 > 并补齐 Session prompt。此处只记录已定的决策与交付范围,避免为尚未定型的设计写死细节。
@@ -392,12 +391,12 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 
 **一组来自 V0.4.5 的顺带发现**(均非 V0.4.5 引入,是被它照出来的):
 
-| # | 发现                                                     | 症状                             |
-| - | -------------------------------------------------------- | -------------------------------- |
-| 1 | 契约映射表写着 `agent/error` → `error`,但那是 cordis Context 上的事件,`translateEvent` 永远看不到 | agent 报错时 SSE 流静默停住      |
-| 2 | `assembleRuntime()` 装了 `dsh-llm` 却从未注册任何 provider | 真实网关起得来,但发不出一轮对话 |
-| 3 | 配额判定挂在 `/turns`,而进程在建会话时就起来              | 配额耗尽的租户仍能占满进程槽位   |
-| 4 | 测试文件从未经过 `tsc`                                    | 一次会话踩了三个编译期可见的错误 |
+| #   | 发现                                                                                              | 症状                             |
+| --- | ------------------------------------------------------------------------------------------------- | -------------------------------- |
+| 1   | 契约映射表写着 `agent/error` → `error`,但那是 cordis Context 上的事件,`translateEvent` 永远看不到 | agent 报错时 SSE 流静默停住      |
+| 2   | `assembleRuntime()` 装了 `dsh-llm` 却从未注册任何 provider                                        | 真实网关起得来,但发不出一轮对话  |
+| 3   | 配额判定挂在 `/turns`,而进程在建会话时就起来                                                      | 配额耗尽的租户仍能占满进程槽位   |
+| 4   | 测试文件从未经过 `tsc`                                                                            | 一次会话踩了三个编译期可见的错误 |
 
 **另一组来自 typecheck 上线**(`b635a2d`,已于 2026-08-16 合并):
 它给全仓 19 个包各配了一份 `tsconfig.test.json`,并在纳入检查后修掉了
@@ -409,20 +408,20 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 
 **A 类:真失效 —— 测试当时确实没在测该测的东西**
 
-| 文件                                        | 问题                                                                 | 后果                                                       |
-| ------------------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------- |
-| `adapters/…/usage-observability.test.ts` + `gateway/test/harness.ts` | 假适配器吐 `reason: 'stop'`,而上游的 `FinishReason` 是对象 `{ kind: 'stop' }` | 下游读 `reason.kind` 拿到 `undefined` —— 假模型不忠实于上游,而契约测试的全部价值就在忠实 |
-| `packages/supervisor/test/pool.test.ts`   | `Partial<Parameters<typeof Supervisor.prototype.constructor>[0]>` —— `Supervisor.prototype.constructor` 的类型是 `Function`,`Parameters<Function>` 不给任何约束 | `make({ … })` 的选项**完全没有类型检查**,选项名写错会被静默忽略,测试照样绿 |
-| `packages/webhooks/test/webhooks.test.ts` | `statuses[i]` 在 `noUncheckedIndexedAccess` 下是 `number | undefined` | `new Response(null, { status: undefined })` **默认成 200** —— 重试测试可能一直在测 200,而不是它想测的状态码 |
-| `packages/auth-static/test/auth-static.test.ts` | `promise.catch(e => e as AuthError)` | `verify` 万一**没有**拒绝,成功的 `Principal` 会被原样递下去,后续断言在错误的对象上找 `.message` |
+| 文件                                                                 | 问题                                                                                                                                                            | 后果                                                                                            |
+| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `adapters/…/usage-observability.test.ts` + `gateway/test/harness.ts` | 假适配器吐 `reason: 'stop'`,而上游的 `FinishReason` 是对象 `{ kind: 'stop' }`                                                                                   | 下游读 `reason.kind` 拿到 `undefined` —— 假模型不忠实于上游,而契约测试的全部价值就在忠实        |
+| `packages/supervisor/test/pool.test.ts`                              | `Partial<Parameters<typeof Supervisor.prototype.constructor>[0]>` —— `Supervisor.prototype.constructor` 的类型是 `Function`,`Parameters<Function>` 不给任何约束 | `make({ … })` 的选项**完全没有类型检查**,选项名写错会被静默忽略,测试照样绿                      |
+| `packages/webhooks/test/webhooks.test.ts`                            | `statuses[i]` 在 `noUncheckedIndexedAccess` 下是 `number                                                                                                        | undefined`                                                                                      | `new Response(null, { status: undefined })` **默认成 200** —— 重试测试可能一直在测 200,而不是它想测的状态码 |
+| `packages/auth-static/test/auth-static.test.ts`                      | `promise.catch(e => e as AuthError)`                                                                                                                            | `verify` 万一**没有**拒绝,成功的 `Principal` 会被原样递下去,后续断言在错误的对象上找 `.message` |
 
 **B 类:类型层修正 —— 运行时本来就对,但掩盖了可读性或未来的坑**
 
-| 文件                                      | 问题                                                        |
-| ----------------------------------------- | ----------------------------------------------------------- |
-| `gateway/test/sdk-example.test.ts`      | `resolve: () => undefined` 应为 `async` —— `await undefined` 恰好也是 `undefined`,所以没炸 |
-| `packages/api-contract/test/freeze.test.ts` | `buildOpenApiDocument()` 漏了必填的 `version` —— 比对两侧都是 `undefined`,判定仍成立 |
-| `gateway/test/harness.ts`               | 重复读 `request.signal?.aborted` 被 TS 判成恒假 —— 运行时每次都重读,取消是有效的 |
+| 文件                                        | 问题                                                                                       |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `gateway/test/sdk-example.test.ts`          | `resolve: () => undefined` 应为 `async` —— `await undefined` 恰好也是 `undefined`,所以没炸 |
+| `packages/api-contract/test/freeze.test.ts` | `buildOpenApiDocument()` 漏了必填的 `version` —— 比对两侧都是 `undefined`,判定仍成立       |
+| `gateway/test/harness.ts`                   | 重复读 `request.signal?.aborted` 被 TS 判成恒假 —— 运行时每次都重读,取消是有效的           |
 
 ⚠️ **A 类的第 2 条是我在 V0.4.5 Session 1 写的。** 它意味着 supervisor 的 37 条
 测试里,凡是通过 `make({...})` 传选项的那些,**选项名从未被校验过**。
@@ -440,28 +439,28 @@ harness,而不是产品装配路径 `assembleRuntime()` —— 于是「网关�
 
 ### Session 状态
 
-| Session                    | 状态      | 说明                                      |
-| -------------------------- | --------- | ----------------------------------------- |
-| 0 端到端冒烟:真实路径      | ⬜ 未开始 | **最高优先级** —— 网关到底能不能发出对话  |
-| 1 `scripts/` 纳入类型检查  | ✅ 已完成 | 顺带堵掉两个同类盲区;守卫 23 条负向全绿   |
-| 2 配额两段判定             | ✅ 已完成 | 准入同步读快照,不引入新故障域             |
-| 3 断言有效性探针           | ✅ 已完成 | 7 条探针全过;两条被撤下并写明理由         |
-| 4 `agent/error` 送达 + `unavailable` | ✅ 已完成 | 映射表是承诺,不是描述                     |
+| Session                              | 状态      | 说明                                     |
+| ------------------------------------ | --------- | ---------------------------------------- |
+| 0 端到端冒烟:真实路径                | ⬜ 未开始 | **最高优先级** —— 网关到底能不能发出对话 |
+| 1 `scripts/` 纳入类型检查            | ✅ 已完成 | 顺带堵掉两个同类盲区;守卫 23 条负向全绿  |
+| 2 配额两段判定                       | ✅ 已完成 | 准入同步读快照,不引入新故障域            |
+| 3 断言有效性探针                     | ✅ 已完成 | 7 条探针全过;两条被撤下并写明理由        |
+| 4 `agent/error` 送达 + `unavailable` | ✅ 已完成 | 映射表是承诺,不是描述                    |
 
 图例:✅ 已完成 · 🔄 进行中 · ⬜ 未开始 · 🟠 代码就绪待外部资源
 
 ### 本次需求清单
 
-| 编号 | 需求                                                         | 所属 Session |
-| ---- | ------------------------------------------------------------ | ------------ |
+| 编号 | 需求                                                                   | 所属 Session |
+| ---- | ---------------------------------------------------------------------- | ------------ |
 | R0   | **真实路径冒烟**:真 `assembleRuntime()` + 真 provider + 真网关跑通一轮 | Session 0    |
-| R1   | `scripts/*.ts` 纳入类型检查,修既有错误                       | Session 1    |
-| R2   | `examples/minimal-server` 补 `tsconfig`                       | Session 1    |
-| R3   | **配额两段判定**:建会话用快照准入,`/turns` 用精确值计费      | Session 2    |
-| R4   | **断言有效性探针**:四处核心断言的负向测试,纳入 `check:all`   | Session 3    |
-| R5   | `agent/error` 送达 SSE 客户端                                | Session 4    |
-| R6   | `ErrorCode` 补 `unavailable`,池满改返 503                    | Session 4    |
-| R7   | 契约明确「客户端必须优雅处理未知枚举值」,冻结检查放行枚举新增 | Session 4    |
+| R1   | `scripts/*.ts` 纳入类型检查,修既有错误                                 | Session 1    |
+| R2   | `examples/minimal-server` 补 `tsconfig`                                | Session 1    |
+| R3   | **配额两段判定**:建会话用快照准入,`/turns` 用精确值计费                | Session 2    |
+| R4   | **断言有效性探针**:四处核心断言的负向测试,纳入 `check:all`             | Session 3    |
+| R5   | `agent/error` 送达 SSE 客户端                                          | Session 4    |
+| R6   | `ErrorCode` 补 `unavailable`,池满改返 503                              | Session 4    |
+| R7   | 契约明确「客户端必须优雅处理未知枚举值」,冻结检查放行枚举新增          | Session 4    |
 
 ### 三条已拍板的决策
 
@@ -501,10 +500,10 @@ V0.4.5 把进程池满映射成 `429`,理由是契约的 `ErrorCode` 是闭集�
 
 不是二选一。
 
-| 时机       | 数据源           | 目的                             | 失败模式                       |
-| ---------- | ---------------- | -------------------------------- | ------------------------------ |
-| 建会话     | **缓存快照**(几秒过期) | 准入,防 DoS 向量           | 略微滞后,允许极少量超额         |
-| `/turns`   | **精确值**       | 计费与限流                       | 无                             |
+| 时机     | 数据源                 | 目的             | 失败模式                |
+| -------- | ---------------------- | ---------------- | ----------------------- |
+| 建会话   | **缓存快照**(几秒过期) | 准入,防 DoS 向量 | 略微滞后,允许极少量超额 |
+| `/turns` | **精确值**             | 计费与限流       | 无                      |
 
 > ⚠️ **准入路径不能同步等计量。** `MeteringStore.query()` 是异步的,
 > 而建会话是热路径 —— 每次建会话都去查一遍计量,等于把计量组件放进了
@@ -536,7 +535,6 @@ V0.4.5 把进程池满映射成 `429`,理由是契约的 `ErrorCode` 是闭集�
 > 那条标准一直由 `createTestHarness()` 验证 —— 而 harness 自带假模型,
 > `assembleRuntime()` 不带。**两者的差异恰好落在没被测的那一格里。**
 
-
 ---
 
 ### ✅ Session 1: `scripts/` 纳入类型检查(范围已缩窄)
@@ -545,11 +543,11 @@ V0.4.5 把进程池满映射成 `429`,理由是契约的 `ErrorCode` 是闭集�
 >
 > **实际做的比计划多,因为查证时发现同一类洞有三个:**
 >
-> | 盲区                          | 谁漏了                          | 后果                        |
-> | ----------------------------- | ------------------------------- | --------------------------- |
-> | `scripts/*.ts` 不在任何项目里 | 两处构建脚本                    | `generate-openapi.ts` 的 `document.version`(应为 `.info.version`)—— 有 `?? manifest.version` 兜底且两值相等,肉眼与运行时都看不出来 |
-> | 完全没有 `tsconfig.json` 的包 | `examples/minimal-server`     | README 首屏那段代码,新人第一眼看到的东西,从 V0.1.0 起没被 tsc 看过 |
-> | `test/` 下的 `.mjs` 夹具    | 两个子进程夹具                  | `child-agent.mjs` 的 `reason: 'stop'` 活了一整个版本 |
+> | 盲区                          | 谁漏了                    | 后果                                                                                                                               |
+> | ----------------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+> | `scripts/*.ts` 不在任何项目里 | 两处构建脚本              | `generate-openapi.ts` 的 `document.version`(应为 `.info.version`)—— 有 `?? manifest.version` 兜底且两值相等,肉眼与运行时都看不出来 |
+> | 完全没有 `tsconfig.json` 的包 | `examples/minimal-server` | README 首屏那段代码,新人第一眼看到的东西,从 V0.1.0 起没被 tsc 看过                                                                 |
+> | `test/` 下的 `.mjs` 夹具      | 两个子进程夹具            | `child-agent.mjs` 的 `reason: 'stop'` 活了一整个版本                                                                               |
 >
 > ★ **三个洞是同一个形状**:守卫都从「**已经存在**的东西」出发遍历 ——
 > 有 tsconfig 的目录、`.ts` 文件 —— 于是「本该存在却不存在」的东西对它们
@@ -569,7 +567,6 @@ V0.4.5 把进程池满映射成 `429`,理由是契约的 `ErrorCode` 是闭集�
 > ⚠️ **`test/` 部分已经做完了,不在本 Session 范围内。** 立项时以为要一起做,
 > 但那份工作在 `b635a2d` 里独立完成并已合并(见本版本块开头的「合并进来的成果」)。
 > 本 Session 只剩 `scripts/`,**照 `tsconfig.test.json` 那套现成机制照搬即可**。
-
 
 ---
 
@@ -601,7 +598,6 @@ V0.4.5 把进程池满映射成 `429`,理由是契约的 `ErrorCode` 是闭集�
 > 另加一条两档一致性断言(红线 2):准入在 logical 与 process 下返回同样的 429 ——
 > 只在 process 档做准入会让两档分叉。
 
-
 ---
 
 ### ✅ Session 3: 断言有效性探针
@@ -611,11 +607,11 @@ V0.4.5 把进程池满映射成 `429`,理由是契约的 `ErrorCode` 是闭集�
 >
 > **三类探针,每一类对应一个真实踩过的坑:**
 >
-> | 类别 | 探针 | 对应的坑 |
-> | --- | --- | --- |
-> | 弄坏实现 | 取消失效 / 路径少钉一段 / 配额永远放行 / 准入永远放行 | 最直觉的一类 |
-> | 弄坏夹具 | 假模型少吐 token / 不吐推理增量 | `pool.test.ts` 的 `Parameters<Function>` —— 被测对象没坏,是喂给它的东西坏了 |
-> | 作用域 | `fs-tenant` 移出 principal 白名单 → 守卫变红 | V0.4.7 那个「靠人记得」的修法的兜底 |
+> | 类别     | 探针                                                  | 对应的坑                                                                    |
+> | -------- | ----------------------------------------------------- | --------------------------------------------------------------------------- |
+> | 弄坏实现 | 取消失效 / 路径少钉一段 / 配额永远放行 / 准入永远放行 | 最直觉的一类                                                                |
+> | 弄坏夹具 | 假模型少吐 token / 不吐推理增量                       | `pool.test.ts` 的 `Parameters<Function>` —— 被测对象没坏,是喂给它的东西坏了 |
+> | 作用域   | `fs-tenant` 移出 principal 白名单 → 守卫变红          | V0.4.7 那个「靠人记得」的修法的兜底                                         |
 >
 > ★ **探针跑出来两条红的,查清之后是探针自己的前提错了,不是测试有洞。**
 >
@@ -636,9 +632,7 @@ V0.4.5 把进程池满映射成 `429`,理由是契约的 `ErrorCode` 是闭集�
 > `turn.completed` 的 `reason` 字段(契约说客户端靠它区分「完成」与「已停止」,
 > 而全仓从未断言过它)、以及取消之后输出**真的截断**(不是只看接口返回 200)。
 
-
 ---
-
 
 ---
 
@@ -696,16 +690,13 @@ V0.4.5 把进程池满映射成 `429`,理由是契约的 `ErrorCode` 是闭集�
 > 等于教人写出下一版编译不过的代码。已改写成正确的形状 —— 认识的码逐一映射,
 > 不认识的走 `default` 兜底,并加一条「模拟服务端比客户端新」的断言。
 
-
 ---
-
 
 ---
 
 > 实现细节见 SESSION_TASKS_HISTORY.md
 
 ---
-
 
 ## <span style="color:#d00000">●</span> M0.4.5 · supervisor 进程隔离(Session 0-4) <span style="color:#d00000">[开发完成]</span>
 
@@ -725,17 +716,17 @@ V0.4.5 把进程池满映射成 `429`,理由是契约的 `ErrorCode` 是闭集�
 
 ### 交付内容(改了什么)
 
-| 交付                              | 说明                                                                  |
-| --------------------------------- | --------------------------------------------------------------------- |
-| `@dshwar/supervisor`(新包)       | 一 principal 一进程的进程池。租约模型、进程上限、空闲回收、两种健康检查、僵尸进程防护 |
-| `gateway/src/worker.ts`(新)      | 子进程入口。装配复用 `assembleRuntime()`,不重写一份                     |
-| `gateway/src/sessions/remote.ts`(新) | 跨进程 agent 句柄,戴与进程内句柄相同的 `AgentHandleLike` 面孔          |
-| `gateway/src/isolation.ts`(新)   | 三档隔离的**唯一**分派点                                               |
-| `GatewaySessionStore.fail()`     | 崩溃终结会话 → SSE 推 `error` 后收流,不静默丢失                        |
-| `AgentHandleLike.agent.ctx`      | 由 `CordisContext` 收窄为 `SessionEventSource`(只含 `on('session/event')`) |
-| `AgentFactoryFn`                 | 入参加 `principal` —— 进程按主体分配                                   |
-| `gateway.config.json`            | 新增 `isolation` 段,并真的接进 `server.ts`                            |
-| README / CLAUDE.md §7 / ARCHITECTURE.md §2.4 / DEPLOYMENT.md §2.5 | 隔离矩阵改写,新增「进程隔离仍然不是什么」 |
+| 交付                                                              | 说明                                                                                  |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `@dshwar/supervisor`(新包)                                        | 一 principal 一进程的进程池。租约模型、进程上限、空闲回收、两种健康检查、僵尸进程防护 |
+| `gateway/src/worker.ts`(新)                                       | 子进程入口。装配复用 `assembleRuntime()`,不重写一份                                   |
+| `gateway/src/sessions/remote.ts`(新)                              | 跨进程 agent 句柄,戴与进程内句柄相同的 `AgentHandleLike` 面孔                         |
+| `gateway/src/isolation.ts`(新)                                    | 三档隔离的**唯一**分派点                                                              |
+| `GatewaySessionStore.fail()`                                      | 崩溃终结会话 → SSE 推 `error` 后收流,不静默丢失                                       |
+| `AgentHandleLike.agent.ctx`                                       | 由 `CordisContext` 收窄为 `SessionEventSource`(只含 `on('session/event')`)            |
+| `AgentFactoryFn`                                                  | 入参加 `principal` —— 进程按主体分配                                                  |
+| `gateway.config.json`                                             | 新增 `isolation` 段,并真的接进 `server.ts`                                            |
+| README / CLAUDE.md §7 / ARCHITECTURE.md §2.4 / DEPLOYMENT.md §2.5 | 隔离矩阵改写,新增「进程隔离仍然不是什么」                                             |
 
 ### 核心改进要点
 
@@ -764,13 +755,13 @@ V0.4.5 把进程池满映射成 `429`,理由是契约的 `ErrorCode` 是闭集�
 
 ### Session 状态
 
-| Session                             | 状态      | 说明                               |
-| ----------------------------------- | --------- | ---------------------------------- |
+| Session                             | 状态      | 说明                                                                                 |
+| ----------------------------------- | --------- | ------------------------------------------------------------------------------------ |
 | 0 可行性证伪:跨进程驱动             | ✅ 已完成 | **止损未触发**;A/B/C/D 全绿,E 延至 Session 1;报告见 `docs/FEASIBILITY-REPORT-V45.md` |
-| 1 `@dshwar/supervisor` 契约与进程池 | ✅ 已完成 | 进程池 + 租约模型;37 条测试        |
-| 2 跨进程会话驱动                    | ✅ 已完成 | 逐条对照通过;红线 3 保住           |
-| 3 隔离级别与网关接线                | ✅ 已完成 | 三档就位,默认仍 logical            |
-| 4 文档与发布准备                    | ✅ 已完成 | 隔离矩阵改写,配置键真的生效        |
+| 1 `@dshwar/supervisor` 契约与进程池 | ✅ 已完成 | 进程池 + 租约模型;37 条测试                                                          |
+| 2 跨进程会话驱动                    | ✅ 已完成 | 逐条对照通过;红线 3 保住                                                             |
+| 3 隔离级别与网关接线                | ✅ 已完成 | 三档就位,默认仍 logical                                                              |
+| 4 文档与发布准备                    | ✅ 已完成 | 隔离矩阵改写,配置键真的生效                                                          |
 
 图例:✅ 已完成 · 🔄 进行中 · ⬜ 未开始 · 🟠 代码就绪待外部资源
 
@@ -848,23 +839,19 @@ V0.4.5 把进程池满映射成 `429`,理由是契约的 `ErrorCode` 是闭集�
 
 ### ✅ Session 0: 路径模型变更与逃逸测试重写
 
-
 ---
 
 ### ✅ Session 1: 连带影响面
 
-
 ---
 
 ### ✅ Session 2: 文档、profile 与 V0.1.0 发布准备
-
 
 ---
 
 > 实现细节见 SESSION_TASKS_HISTORY.md
 
 ---
-
 
 ## <span style="color:#d00000">●</span> M0.4.0 · 计量与治理(Session 0-5) <span style="color:#d00000">[未上线]</span>
 

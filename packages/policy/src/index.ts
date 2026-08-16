@@ -99,8 +99,7 @@ export interface PolicyServiceOptions {
 
 /** 准入判定的结果。刻意与 {@link QuotaDecision} 分开 —— 两者的数据来源不同。 */
 export type AdmissionDecision =
-  | { readonly kind: 'allow' }
-  | { readonly kind: 'deny'; readonly reason: 'quota_exhausted' }
+  { readonly kind: 'allow' } | { readonly kind: 'deny'; readonly reason: 'quota_exhausted' }
 
 interface AdmissionSnapshot {
   readonly exhausted: boolean
@@ -300,9 +299,7 @@ export class PolicyService {
     // 而不是各算各的。这也让「发过轮的主体」的快照总是新鲜的。
     this.snapshots.set(subjectId, { exhausted, at: now.getTime() })
 
-    return exhausted
-      ? { kind: 'deny', reason: 'quota_exhausted', quota }
-      : { kind: 'allow', quota }
+    return exhausted ? { kind: 'deny', reason: 'quota_exhausted', quota } : { kind: 'allow', quota }
   }
 }
 

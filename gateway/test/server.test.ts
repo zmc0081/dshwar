@@ -318,14 +318,14 @@ describe('隔离级别经配置文件生效', () => {
   it('配错级别时**拒绝启动**,不静默回退到默认', async () => {
     // 静默回退的后果:配置写错一个字母,部署方以为开了进程隔离,
     // 实际跑在逻辑隔离上。宁可起不来。
-    await expect(
-      startServer({ ...base(tmp), isolation: { level: 'proces' } }),
-    ).rejects.toThrow(/未知的隔离级别/)
+    await expect(startServer({ ...base(tmp), isolation: { level: 'proces' } })).rejects.toThrow(
+      /未知的隔离级别/,
+    )
   })
 
   it('container 档拒绝启动并指出正路(红线 4)', async () => {
-    await expect(
-      startServer({ ...base(tmp), isolation: { level: 'container' } }),
-    ).rejects.toThrow(/未实现/)
+    await expect(startServer({ ...base(tmp), isolation: { level: 'container' } })).rejects.toThrow(
+      /未实现/,
+    )
   })
 })

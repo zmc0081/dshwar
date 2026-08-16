@@ -144,9 +144,7 @@ describe('验证 B:流式事件完整回传', () => {
 
   it('文本增量逐字回传,不丢不乱序', async () => {
     const tokens = ['跨', '进', '程', '驱', '动']
-    const { events } = await drive({ tokens, delayMs: 0 }, (e) =>
-      e.some((x) => x.type === 'idle'),
-    )
+    const { events } = await drive({ tokens, delayMs: 0 }, (e) => e.some((x) => x.type === 'idle'))
 
     const deltas = events
       .filter((e) => e.type === 'event' && e.data?.chunkType === 'text-delta')
@@ -225,8 +223,7 @@ describe('进程边界:不同 principal 的状态互不可见', () => {
       e.some((x) => x.type === 'idle'),
     )
 
-    const seqOf = (r: typeof alice) =>
-      r.events.filter((e) => e.type === 'event').map((e) => e.seq!)
+    const seqOf = (r: typeof alice) => r.events.filter((e) => e.type === 'event').map((e) => e.seq!)
 
     // 两个进程从各自的 0 起算 —— 若是同一进程内的两个会话,第二个的 seq
     // 会接着第一个往上走。序列相同即证明它们是彼此独立的世界。
@@ -237,9 +234,13 @@ describe('进程边界:不同 principal 的状态互不可见', () => {
 
 describe('验证 D:崩溃可观测', () => {
   it('子进程非正常退出时,父进程拿得到退出码', async () => {
-    const { exitCode } = await drive({ tokens: ['a'], delayMs: 200 }, () => false, (c) => {
-      setTimeout(() => c.send({ type: 'crash' }), 50)
-    })
+    const { exitCode } = await drive(
+      { tokens: ['a'], delayMs: 200 },
+      () => false,
+      (c) => {
+        setTimeout(() => c.send({ type: 'crash' }), 50)
+      },
+    )
     // 区分「正常结束」与「崩溃」靠退出码 —— 崩溃恢复(R5)依赖这一条
     expect(exitCode).toBe(7)
   })

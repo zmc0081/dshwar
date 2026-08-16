@@ -128,9 +128,7 @@ export function assertSinglePrincipalCapable(
 export function parseIsolationLevel(value: string | undefined): IsolationLevel {
   if (value === undefined) return DEFAULT_ISOLATION_LEVEL
   if ((ISOLATION_LEVELS as readonly string[]).includes(value)) return value as IsolationLevel
-  throw new Error(
-    `未知的隔离级别 ${JSON.stringify(value)};可选:${ISOLATION_LEVELS.join(' / ')}`,
-  )
+  throw new Error(`未知的隔离级别 ${JSON.stringify(value)};可选:${ISOLATION_LEVELS.join(' / ')}`)
 }
 
 /** 进程内驱动的运行时。就是 `assembleRuntime()` 的产物。 */

@@ -141,17 +141,18 @@
 - `/publish feat: {v} session 0 real-path smoke test`
 
 ---
+
 ### ✅ Session 1: `scripts/` 纳入类型检查(范围已缩窄)
 
 > **交付**:`tsconfig.scripts.json` 机制 + 三条新守卫 + `.mjs` 夹具纳入检查。
 >
 > **实际做的比计划多,因为查证时发现同一类洞有三个:**
 >
-> | 盲区                          | 谁漏了                          | 后果                        |
-> | ----------------------------- | ------------------------------- | --------------------------- |
-> | `scripts/*.ts` 不在任何项目里 | 两处构建脚本                    | `generate-openapi.ts` 的 `document.version`(应为 `.info.version`)—— 有 `?? manifest.version` 兜底且两值相等,肉眼与运行时都看不出来 |
-> | 完全没有 `tsconfig.json` 的包 | `examples/minimal-server`     | README 首屏那段代码,新人第一眼看到的东西,从 V0.1.0 起没被 tsc 看过 |
-> | `test/` 下的 `.mjs` 夹具    | 两个子进程夹具                  | `child-agent.mjs` 的 `reason: 'stop'` 活了一整个版本 |
+> | 盲区                          | 谁漏了                    | 后果                                                                                                                               |
+> | ----------------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+> | `scripts/*.ts` 不在任何项目里 | 两处构建脚本              | `generate-openapi.ts` 的 `document.version`(应为 `.info.version`)—— 有 `?? manifest.version` 兜底且两值相等,肉眼与运行时都看不出来 |
+> | 完全没有 `tsconfig.json` 的包 | `examples/minimal-server` | README 首屏那段代码,新人第一眼看到的东西,从 V0.1.0 起没被 tsc 看过                                                                 |
+> | `test/` 下的 `.mjs` 夹具      | 两个子进程夹具            | `child-agent.mjs` 的 `reason: 'stop'` 活了一整个版本                                                                               |
 >
 > ★ **三个洞是同一个形状**:守卫都从「**已经存在**的东西」出发遍历 ——
 > 有 tsconfig 的目录、`.ts` 文件 —— 于是「本该存在却不存在」的东西对它们
@@ -174,11 +175,11 @@
 
 **开工前已复核的实际状态**(2026-08-16 实测,不是推测):
 
-| 目标                                   | 状态                                              |
-| -------------------------------------- | ------------------------------------------------- |
-| `sdk/typescript/scripts/`(generate + render) | ✅ **已经干净** —— `render.ts` 被 `b635a2d` 顺手修了,只需登记进机制 |
-| `packages/api-contract/scripts/generate-openapi.ts` | ❌ TS2339 **仍在**(第 40 行),是唯一已知的待修错误 |
-| `examples/minimal-server`            | ❌ 仍无 `tsconfig.json`(`examples/sdk-session` 有,照它配) |
+| 目标                                                | 状态                                                                |
+| --------------------------------------------------- | ------------------------------------------------------------------- |
+| `sdk/typescript/scripts/`(generate + render)        | ✅ **已经干净** —— `render.ts` 被 `b635a2d` 顺手修了,只需登记进机制 |
+| `packages/api-contract/scripts/generate-openapi.ts` | ❌ TS2339 **仍在**(第 40 行),是唯一已知的待修错误                   |
+| `examples/minimal-server`                           | ❌ 仍无 `tsconfig.json`(`examples/sdk-session` 有,照它配)           |
 
 ```
 读取 CLAUDE.md。本次任务:把 scripts/*.ts 纳入 tsc，机制与 test 相同。
@@ -224,6 +225,7 @@
 - `/publish chore: {v} session 1 typecheck scripts`
 
 ---
+
 ### ✅ Session 2: 配额两段判定
 
 > **交付**:`PolicyService.admit()`(同步、读快照)+ 网关建会话侧接线 + 11 条测试。
@@ -287,6 +289,7 @@
 - `/publish feat: {v} session 2 two-stage quota admission`
 
 ---
+
 ### ✅ Session 3: 断言有效性探针
 
 > **交付**:`scripts/verify-assertions.mjs`(7 条探针)+ 两条补上的断言,
@@ -294,11 +297,11 @@
 >
 > **三类探针,每一类对应一个真实踩过的坑:**
 >
-> | 类别 | 探针 | 对应的坑 |
-> | --- | --- | --- |
-> | 弄坏实现 | 取消失效 / 路径少钉一段 / 配额永远放行 / 准入永远放行 | 最直觉的一类 |
-> | 弄坏夹具 | 假模型少吐 token / 不吐推理增量 | `pool.test.ts` 的 `Parameters<Function>` —— 被测对象没坏,是喂给它的东西坏了 |
-> | 作用域 | `fs-tenant` 移出 principal 白名单 → 守卫变红 | V0.4.7 那个「靠人记得」的修法的兜底 |
+> | 类别     | 探针                                                  | 对应的坑                                                                    |
+> | -------- | ----------------------------------------------------- | --------------------------------------------------------------------------- |
+> | 弄坏实现 | 取消失效 / 路径少钉一段 / 配额永远放行 / 准入永远放行 | 最直觉的一类                                                                |
+> | 弄坏夹具 | 假模型少吐 token / 不吐推理增量                       | `pool.test.ts` 的 `Parameters<Function>` —— 被测对象没坏,是喂给它的东西坏了 |
+> | 作用域   | `fs-tenant` 移出 principal 白名单 → 守卫变红          | V0.4.7 那个「靠人记得」的修法的兜底                                         |
 >
 > ★ **探针跑出来两条红的,查清之后是探针自己的前提错了,不是测试有洞。**
 >
@@ -320,6 +323,7 @@
 > 而全仓从未断言过它)、以及取消之后输出**真的截断**(不是只看接口返回 200)。
 
 ---
+
 ### ✅ Session 4: `agent/error` 送达 + `unavailable`
 
 > **交付**:`agent/error` 接线(含跨进程)+ 网关自持序号 + `ErrorCode` 补
@@ -429,6 +433,7 @@
 - `/publish feat: {v} session 0 multi-workspace path model`
 
 ---
+
 ### ✅ Session 1: 连带影响面
 
 ```
@@ -475,6 +480,7 @@ Session 0 改了路径根，以下几处会跟着受影响，逐一处理。凡�
 - `/publish feat: {v} session 1 multi-workspace ripple effects`
 
 ---
+
 ### ✅ Session 2: 文档、profile 与 V0.1.0 发布准备
 
 ```

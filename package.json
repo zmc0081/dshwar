@@ -26,7 +26,7 @@
     "check:contract": "node --experimental-strip-types scripts/check-contract.mjs",
     "check:oss": "node scripts/check-oss-purity.mjs",
     "verify:guards": "node scripts/verify-guards.mjs",
-    "check:all": "pnpm check:version && pnpm check:guards && pnpm check:contract && pnpm check:oss && pnpm typecheck && pnpm typecheck:test && pnpm typecheck:scripts && pnpm lint && pnpm test && pnpm verify:assertions",
+    "check:all": "pnpm check:version && pnpm check:guards && pnpm check:contract && pnpm check:oss && pnpm typecheck && pnpm typecheck:test && pnpm typecheck:scripts && pnpm lint && pnpm format:check && pnpm test && pnpm test:contract && pnpm verify:guards && pnpm verify:assertions",
     "typecheck:scripts": "tsc -b tsconfig.scripts.json",
     "verify:assertions": "node scripts/verify-assertions.mjs"
   },
