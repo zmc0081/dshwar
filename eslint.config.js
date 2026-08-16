@@ -39,6 +39,10 @@ export default tseslint.config(
       'feasibility/**',
       'feasibility-v2/**',
       '.changeset/**',
+      // git worktree 在仓库内部展开时会带来一份完整副本,typescript-eslint
+      // 会因此看到两个候选的 tsconfig 根目录并直接拒绝解析。
+      // 那份副本有它自己的门禁,不该在这里被重复检查。
+      '.claude/worktrees/**',
     ],
   },
 

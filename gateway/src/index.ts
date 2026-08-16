@@ -36,6 +36,7 @@ export type { GatewayEnv, GatewayVariables } from './middleware.ts'
 export { registerRuntimeRoutes } from './sessions/routes.ts'
 export type {
   AgentFactoryFn,
+  AgentFactoryInput,
   ModelGateLike,
   QuotaCheckLike,
   RuntimeRouteOptions,
@@ -52,6 +53,20 @@ export type {
 
 // ---- 进程隔离(V0.4.5)----
 // 跨进程句柄戴的是与进程内句柄完全相同的面孔,所以路由、SSE、计量一行不改。
+// 三档隔离的分派**只在 isolation.ts 一处**发生。
+export {
+  auditSupervisorEvents,
+  createIsolatedRuntime,
+  DEFAULT_ISOLATION_LEVEL,
+  ISOLATION_LEVELS,
+  parseIsolationLevel,
+} from './isolation.ts'
+export type {
+  InProcessRuntime,
+  IsolatedRuntime,
+  IsolationConfig,
+  IsolationLevel,
+} from './isolation.ts'
 export { createRemoteAgent, remoteUserMessage } from './sessions/remote.ts'
 export type { RemoteAgentInput } from './sessions/remote.ts'
 export { parseWorkerArgs, runWorker } from './worker.ts'

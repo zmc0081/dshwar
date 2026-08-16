@@ -13,6 +13,10 @@ export default defineConfig({
       // Session 0 的验证脚本自成一套,不走 Vitest(见 feasibility/README.md)
       'feasibility/**',
       'feasibility-v2/**',
+      // git worktree 在仓库内部展开时会带来一份完整副本。跑进去的话,
+      // 会在一个没装依赖的树上执行整套测试 —— 红得毫无信息量。
+      // 那份副本在它自己的根目录下跑自己的门禁。
+      '.claude/worktrees/**',
     ],
   },
 })

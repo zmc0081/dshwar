@@ -14,6 +14,10 @@ const SKIP_DIRS = new Set([
   // Session 0 验证工作区不受产品代码纪律约束(各自的 README 有说明)
   'feasibility',
   'feasibility-v2',
+  // git worktree 在仓库内部展开时会带来一份完整副本。扫进去的话,守卫会把
+  // 副本里的每个包都报成「未登记进根 tsconfig」—— 而它们本来就登记在
+  // 副本自己的根 tsconfig 里。那份副本跑它自己的门禁。
+  '.claude',
 ])
 
 /**

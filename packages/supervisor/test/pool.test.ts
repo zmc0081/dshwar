@@ -273,6 +273,7 @@ describe('进程上限', () => {
     expect(events).toContainEqual({
       kind: 'rejected',
       principalId: 'u-carol',
+      tenantId: 'acme',
       reason: 'at_capacity',
     })
   })
@@ -322,6 +323,7 @@ describe('崩溃', () => {
     expect(events).toContainEqual({
       kind: 'crash',
       principalId: 'u-alice',
+      tenantId: 'acme',
       pid: children[0]!.pid,
       exitCode: 7,
       signal: null,

@@ -8,17 +8,22 @@ import type { ChildProcessLike, ProcessLauncher } from './launcher.ts'
 import { asChildMessage, HEALTH_LEASE, makeLeaseId, type ChildMessage } from './protocol.ts'
 
 /** 进程池的可观测事件。Session 3 把它接到 `@dshwar/audit`。 */
+export interface SupervisorEventBase {
+  readonly principalId: string
+  /** 审计按租户归档 —— 只有 principalId 的记录在控制平面里定位不到。 */
+  readonly tenantId: string
+}
+
 export type SupervisorEvent =
-  | { readonly kind: 'spawn'; readonly principalId: string; readonly pid: number | undefined }
-  | { readonly kind: 'reclaim'; readonly principalId: string; readonly pid: number | undefined }
-  | {
+  | (SupervisorEventBase & { readonly kind: 'spawn'; readonly pid: number | undefined })
+  | (SupervisorEventBase & { readonly kind: 'reclaim'; readonly pid: number | undefined })
+  | (SupervisorEventBase & {
       readonly kind: 'crash'
-      readonly principalId: string
       readonly pid: number | undefined
       readonly exitCode: number | null
       readonly signal: string | null
-    }
-  | { readonly kind: 'rejected'; readonly principalId: string; readonly reason: 'at_capacity' }
+    })
+  | (SupervisorEventBase & { readonly kind: 'rejected'; readonly reason: 'at_capacity' })
 
 export interface SupervisorConfig {
   readonly launcher: ProcessLauncher
@@ -113,6 +118,7 @@ export interface Lease {
 
 interface Pooled {
   readonly principalId: string
+  readonly tenantId: string
   readonly child: ChildProcessLike
   readonly listeners: Map<string, Set<(m: ChildMessage) => void>>
   /** 进程死亡的订阅者。见 {@link Lease.onDeath}。 */
@@ -178,6 +184,7 @@ export class Supervisor {
         this.config.onEvent?.({
           kind: 'rejected',
           principalId: principal.id,
+          tenantId: principal.tenantId,
           reason: 'at_capacity',
         })
         throw new AtCapacityError(principal.id, this.config.maxProcesses)
@@ -253,6 +260,7 @@ export class Supervisor {
 
     const pooled: Pooled = {
       principalId: principal.id,
+      tenantId: principal.tenantId,
       child,
       listeners: new Map(),
       deathListeners: new Set(),
@@ -282,6 +290,7 @@ export class Supervisor {
         this.config.onEvent?.({
           kind: 'crash',
           principalId: principal.id,
+          tenantId: principal.tenantId,
           pid: child.pid,
           exitCode: code,
           signal,
@@ -297,7 +306,7 @@ export class Supervisor {
     })
 
     this.pool.set(principal.id, pooled)
-    this.config.onEvent?.({ kind: 'spawn', principalId: principal.id, pid: child.pid })
+    this.config.onEvent?.({ kind: 'spawn', principalId: principal.id, tenantId: principal.tenantId, pid: child.pid })
     return pooled
   }
 
@@ -380,7 +389,12 @@ export class Supervisor {
       pooled.idleTimer = undefined
     }
 
-    this.config.onEvent?.({ kind: reason, principalId: pooled.principalId, pid: pooled.child.pid })
+    this.config.onEvent?.({
+      kind: reason,
+      principalId: pooled.principalId,
+      tenantId: pooled.tenantId,
+      pid: pooled.child.pid,
+    })
     if (this.pool.get(pooled.principalId) === pooled) this.pool.delete(pooled.principalId)
     pooled.alive = false
     pooled.child.kill('SIGTERM')

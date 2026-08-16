@@ -9,19 +9,28 @@ import { CreateSessionRequest, CreateTurnRequest, PaginationQuery } from '@dshwa
 // 缺省工作区名从 fs-tenant 引,不在这里另写一个字面量 —— 两处各写一个 'default'
 // 就是两个事实源,而它们迟早会分叉。
 import { DEFAULT_WORKSPACE_ID } from '@dshwar/fs-tenant'
+import type { Principal } from '@dshwar/principal'
 import type { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import { ApiError, notFound } from '../errors.ts'
 import type { GatewayEnv } from '../middleware.ts'
 import type { AgentHandleLike, GatewaySession, GatewaySessionStore } from './store.ts'
 
+/** 建一个 agent 所需的信息。 */
+export interface AgentFactoryInput {
+  readonly sessionId: string
+  readonly model: string | undefined
+  readonly provider: string | undefined
+  /**
+   * 发起者。**进程隔离按主体分配进程**(V0.4.5),所以工厂必须知道是谁 ——
+   * 进程内驱动用不到它,但少一个参数就等于把进程档挡在门外。
+   */
+  readonly principal: Principal
+}
+
 /** 网关如何向上游要一个 agent。由部署方注入 —— 网关不组装 harness。 */
 export interface AgentFactoryFn {
-  (input: {
-    sessionId: string
-    model: string | undefined
-    provider: string | undefined
-  }): Promise<AgentHandleLike>
+  (input: AgentFactoryInput): Promise<AgentHandleLike>
 }
 
 /** 把用户输入变成上游的 UserMessage。由部署方注入,避免网关依赖 dsh-llm。 */
@@ -133,6 +142,7 @@ export function registerRuntimeRoutes(options: RuntimeRouteOptions) {
         sessionId,
         model,
         provider,
+        principal,
       })
 
       const session = options.store.register({
