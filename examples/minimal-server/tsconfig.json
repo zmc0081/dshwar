@@ -1,0 +1,24 @@
+// README 首屏那段代码的可运行版本。
+//
+// **它被类型检查这件事本身就是验收的一部分**:README 承诺「消费方零改动」,
+// 而 `consumer.ts` 就是那个消费方。若这里编译不过,那句承诺就是空的。
+//
+// ⚠️ 这份 tsconfig 到 V0.4.6 才补上 —— 在那之前 `examples/minimal-server`
+// 从未被 tsc 看过,而它恰恰是 README 首屏、新人第一眼看到的代码。
+// `examples/sdk-session` 一直有,两者不一致却没人发现,因为守卫当时只查
+// 「有 tsconfig 的项目登记没登记」,不查「该有的项目缺不缺」。
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "tsBuildInfoFile": "./dist/.tsbuildinfo"
+  },
+  "references": [
+    { "path": "../../packages/principal" },
+    { "path": "../../packages/auth-static" },
+    { "path": "../../packages/credentials-multiuser" }
+  ],
+  "include": ["src/**/*.ts"],
+  "exclude": ["dist", "node_modules"]
+}

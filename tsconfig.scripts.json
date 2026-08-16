@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  // 构建脚本解决方案文件。与根 `tsconfig.json` / `tsconfig.test.json` 同构,
+  // 只是串的是各包的 `tsconfig.scripts.json`。
+  //
+  // 为什么要有这个文件:产品项目 `include: ["src/**/*.ts"]`,测试项目
+  // `include: ["test/**/*.ts"]` —— `scripts/` 两边都不在,于是构建脚本
+  // 从来没被 tsc 看过一眼。而它们不是无关紧要的边角料:
+  // `generate-openapi.ts` 生成的是对外契约,`sdk/typescript/scripts/` 生成的是
+  // 客户手里的 SDK 类型。它们出错的后果都落在仓库之外。
+  //
+  // 实证:纳入检查的第一次就抓出 `document.version`(应为 `document.info.version`)
+  // —— 那一行有 `?? manifest.version` 兜底且两值相等,所以肉眼与运行时都看不出来。
+  //
+  // 新增包时在此登记一行 —— 忘了登记由 `pnpm check:guards` 拦下。
+  "include": [],
+  "references": [
+    { "path": "./packages/api-contract/tsconfig.scripts.json" },
+    { "path": "./sdk/typescript/tsconfig.scripts.json" }
+  ]
+}

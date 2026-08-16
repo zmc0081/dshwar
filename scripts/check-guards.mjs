@@ -186,6 +186,121 @@ function checkTestTsconfigReferences() {
   return out
 }
 
+/**
+ * `test/` 下的 `.mjs` 夹具必须被 `checkJs` 覆盖。
+ *
+ * 上面那条 `checkTestTsconfigReferences` 只看 `.ts` —— 一个**只有** `.mjs`
+ * 夹具的包对它完全不可见。而 `.mjs` 夹具不是边角料:它们是 `fork` 出去的
+ * 子进程入口,承载着「跨进程行为与进程内一致」这类断言的全部可信度。
+ *
+ * 实证:`child-agent.mjs` 里 `reason: 'stop'`(正确写法 `{ kind: 'stop' }`)
+ * 活了一整个版本。同款错误在 7 个 `.ts` 测试文件里被类型检查一次抓出来,
+ * 而 `.mjs` 那份只能靠人看见。开了 `checkJs` 之后,它报的是
+ * `Type 'string' is not assignable to type 'FinishReason'`。
+ */
+function checkMjsFixtureCoverage() {
+  const isMjs = (f) => f.endsWith('.mjs')
+  const projectDirs = collectFiles(REPO, (f) => f.endsWith('tsconfig.json'))
+    .map((f) => repoPath(REPO, dirname(f)))
+    .filter((rel) => rel !== '' && rel !== '.')
+
+  const out = []
+  for (const rel of projectDirs) {
+    if (collectFiles(p(rel, 'test'), isMjs).length === 0) continue
+
+    const cfgPath = p(rel, 'tsconfig.test.json')
+    if (!existsSync(cfgPath)) {
+      out.push({ file: rel, line: 0, text: `${rel} 有 .mjs 夹具却没有 tsconfig.test.json` })
+      continue
+    }
+    let cfg
+    try {
+      cfg = JSON.parse(stripJsonComments(readFileSync(cfgPath, 'utf8')))
+    } catch {
+      out.push({ file: rel, line: 0, text: `${rel}/tsconfig.test.json 无法解析` })
+      continue
+    }
+    const opts = cfg.compilerOptions ?? {}
+    const includes = (cfg.include ?? []).some((g) => g.includes('.mjs'))
+    if (opts.checkJs !== true || opts.allowJs !== true || !includes) {
+      out.push({
+        file: `${rel}/tsconfig.test.json`,
+        line: 0,
+        text: `${rel} 的 .mjs 夹具未被 checkJs 覆盖(需 allowJs + checkJs + include 含 *.mjs)`,
+      })
+    }
+  }
+  return out
+}
+
+/** `scripts/` 版本的同款检查。构建脚本生成的是契约与 SDK 类型,出错落在仓库之外。 */
+function checkScriptsTsconfigReferences() {
+  const rootFile = p('tsconfig.scripts.json')
+  let root
+  try {
+    root = JSON.parse(stripJsonComments(readFileSync(rootFile, 'utf8')))
+  } catch {
+    return [{ file: 'tsconfig.scripts.json', line: 0, text: '根脚本解决方案文件缺失或无法解析' }]
+  }
+  const referenced = new Set(
+    (root.references ?? []).map((r) => r.path.replace(/^\.\//, '').replace(/\/$/, '')),
+  )
+
+  const projectDirs = collectFiles(REPO, (f) => f.endsWith('tsconfig.json'))
+    .map((f) => repoPath(REPO, dirname(f)))
+    .filter((rel) => rel !== '' && rel !== '.')
+
+  const out = []
+  for (const rel of projectDirs) {
+    const hasScripts = collectFiles(p(rel, 'scripts'), isTs).length > 0
+    const exists = existsSync(p(rel, 'tsconfig.scripts.json'))
+
+    if (hasScripts && !exists) {
+      out.push({
+        file: `${rel}/tsconfig.json`,
+        line: 0,
+        text: `${rel} 有 scripts/*.ts 却没有 tsconfig.scripts.json`,
+      })
+    } else if (exists && !referenced.has(`${rel}/tsconfig.scripts.json`)) {
+      out.push({
+        file: 'tsconfig.scripts.json',
+        line: 0,
+        text: `未登记 ${rel}/tsconfig.scripts.json`,
+      })
+    }
+  }
+  return out
+}
+
+/**
+ * 有 TS 源码却**完全没有** `tsconfig.json` 的 workspace 成员。
+ *
+ * ⚠️ 这条堵的是上面两条自己的洞。它们都从「有 tsconfig.json 的目录」出发遍历 ——
+ * 于是一个**根本没有** tsconfig 的包对它们完全不可见,悄悄躺在类型检查之外。
+ *
+ * `examples/minimal-server` 正是这样漏掉的:它是 README 首屏那段代码的可运行版本,
+ * 新人第一眼看到的东西,却从 V0.1.0 起就没被 tsc 看过。而隔壁
+ * `examples/sdk-session` 一直有 tsconfig —— 两者不一致,守卫却查不出来,
+ * 因为它只问「登记了没」,不问「该有的缺不缺」。
+ */
+function checkMissingTsconfig() {
+  const manifests = collectFiles(REPO, isPackageJson)
+    .map((f) => repoPath(REPO, dirname(f)))
+    .filter((rel) => rel !== '' && rel !== '.')
+
+  const out = []
+  for (const rel of manifests) {
+    if (collectFiles(p(rel, 'src'), isTs).length === 0) continue
+    if (existsSync(p(rel, 'tsconfig.json'))) continue
+    out.push({
+      file: `${rel}/package.json`,
+      line: 0,
+      text: `${rel} 有 src/*.ts 却没有 tsconfig.json —— 它整个在类型检查之外`,
+    })
+  }
+  return out
+}
+
 
 /**
  * `ctx.principal.current()` 的登记白名单。
@@ -316,6 +431,40 @@ if (testUnreferenced.length === 0) {
   console.log('        Vitest 用 esbuild 转译、不做类型检查,漏掉的测试文件里')
   console.log('        即便 import 了不存在的导出,门禁也全绿。见 pnpm typecheck:test')
   for (const h of testUnreferenced) console.log(`        ${h.text}`)
+}
+
+const mjsUncovered = checkMjsFixtureCoverage()
+if (mjsUncovered.length === 0) {
+  console.log('  通过  test/ 下的 .mjs 夹具都被 checkJs 覆盖')
+} else {
+  failed += 1
+  console.log(`  违规  有 .mjs 夹具在类型检查之外  (${mjsUncovered.length} 处)`)
+  console.log('        .mjs 夹具是 fork 出去的子进程入口 —— 跨进程断言的可信度全靠它们。')
+  console.log('        child-agent.mjs 的 finish reason 形状错误就这样活了一整个版本。')
+  console.log('        决策见 docs/DECISIONS/typecheck-mjs-fixtures.md')
+  for (const h of mjsUncovered) console.log(`        ${h.text}`)
+}
+
+const scriptsUnreferenced = checkScriptsTsconfigReferences()
+if (scriptsUnreferenced.length === 0) {
+  console.log('  通过  全部 scripts/ 已登记进根 tsconfig.scripts.json references')
+} else {
+  failed += 1
+  console.log(`  违规  有构建脚本未纳入类型检查  (${scriptsUnreferenced.length} 处)`)
+  console.log('        构建脚本生成的是对外契约与客户手里的 SDK 类型,')
+  console.log('        它们出错的后果落在仓库之外。见 pnpm typecheck:scripts')
+  for (const h of scriptsUnreferenced) console.log(`        ${h.text}`)
+}
+
+const noTsconfig = checkMissingTsconfig()
+if (noTsconfig.length === 0) {
+  console.log('  通过  有 TS 源码的包都有 tsconfig.json')
+} else {
+  failed += 1
+  console.log(`  违规  有包整个在类型检查之外  (${noTsconfig.length} 处)`)
+  console.log('        上面两条守卫都从「有 tsconfig 的目录」出发遍历,')
+  console.log('        所以一个根本没有 tsconfig 的包对它们不可见 —— 这条堵那个洞。')
+  for (const h of noTsconfig) console.log(`        ${h.text}`)
 }
 
 const unregistered = checkPrincipalConsumers()

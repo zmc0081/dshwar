@@ -28,6 +28,7 @@
     { "path": "./adapters/dsh-0.1.0" },
     { "path": "./gateway" },
     { "path": "./sdk/typescript" },
-    { "path": "./examples/sdk-session" }
+    { "path": "./examples/sdk-session" },
+    { "path": "./examples/minimal-server" }
   ]
 }

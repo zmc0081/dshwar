@@ -37,7 +37,11 @@ const planned = Object.values(document.paths).reduce(
 )
 
 console.log(`已生成 ${target}`)
-console.log(`  info.version : ${document.version ?? manifest.version}`)
+// `document.info.version`,不是 `document.version` —— 后者根本不存在,
+// 于是这一行一直在打 `manifest.version` 那个兜底值。看起来对,因为两者
+// 本来就相等;但它掩盖了一件事:**没人在验证生成出来的文档里那个字段真的写对了**。
+// 这个错误活到 V0.4.6 才被发现,因为 scripts/ 从未经过 tsc。
+console.log(`  info.version : ${document.info.version}`)
 console.log(`  路径         : ${pathCount}`)
 console.log(`  操作         : ${opCount}(其中 planned ${planned})`)
 console.log(`  schemas      : ${Object.keys(document.components.schemas).length}`)

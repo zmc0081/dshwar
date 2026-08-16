@@ -1,0 +1,25 @@
+// 构建脚本的类型检查项目。
+//
+// 与 `tsconfig.scripts.json` 的其余各份、以及 `tsconfig.test.json` 同构 ——
+// 刻意照抄,不另发明:那套配置已经过一轮实战,连守卫、CI 接线、负向测试都齐了。
+//
+// 为什么脚本也要检查:`scripts/generate-openapi.ts` 里有一行
+// `document.version`(正确写法是 `document.info.version`)一直没人发现,
+// 因为它恰好有个 `?? manifest.version` 兜底,而两者本来就相等。
+// V0.4.6 把 scripts/ 纳入 tsc 之后一次就抓出来了。
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rewriteRelativeImportExtensions": false,
+    "rootDir": ".",
+    "tsBuildInfoFile": "./dist/.tsbuildinfo.scripts"
+  },
+  "include": ["scripts/**/*.ts"],
+  "exclude": ["dist", "node_modules"],
+  "references": [
+    {
+      "path": "./tsconfig.json"
+    }
+  ]
+}

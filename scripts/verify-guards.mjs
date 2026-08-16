@@ -22,6 +22,10 @@
  *  15. 测试项目未登记进根测试解决方案  → 必须失败(同上)
  *  16. 未登记的 principal.current() 调用点 → 必须失败(V0.4.6)
  *  16b 测试文件里的 principal.current()    → **必须放行**(另一个方向)
+ *  17. scripts/*.ts 没有脚本 tsconfig      → 必须失败(V0.4.6 Session 1)
+ *  18. 脚本项目未登记进根解决方案          → 必须失败(同上)
+ *  19. 有 src/*.ts 却完全没有 tsconfig     → 必须失败(堵 17/18 自己的洞)
+ *  20. .mjs 夹具未被 checkJs 覆盖          → 必须失败(同上,另一个盲区)
  *
  * 退出码:全绿 0,任一守卫没拦住 1。
  */
@@ -549,6 +553,109 @@ try {
     )
 
     rmSync(p('packages/__guard_fixture2__'), { recursive: true, force: true })
+  }
+
+  // ---------------------------------------------------------------------
+  // 17. scripts/*.ts 没有对应的 tsconfig.scripts.json(V0.4.6 Session 1)
+  // 18. scripts 项目未登记进根解决方案(同上)
+  // 19. 有 src/*.ts 却完全没有 tsconfig.json —— 堵 17/18 自己的洞
+  // ---------------------------------------------------------------------
+  {
+    writeFixture(
+      'packages/__guard_fixture__/tsconfig.json',
+      JSON.stringify({ extends: '../../tsconfig.base.json', include: ['src/**/*.ts'] }, null, 2) +
+        '\n',
+    )
+    writeFixture(
+      'packages/__guard_fixture__/scripts/gen.ts',
+      '// 负向测试夹具:由 scripts/verify-guards.mjs 生成,跑完即删。\nexport const gen = 1\n',
+    )
+
+    const missing = runGuards()
+    expect(
+      '17 有 scripts/*.ts 却没有 tsconfig.scripts.json 被拦住',
+      !missing.ok && /有构建脚本未纳入类型检查/.test(missing.output),
+      missing.ok ? 'check-guards 放行了没有脚本 tsconfig 的包' : undefined,
+    )
+
+    // 补上 tsconfig.scripts.json 但不登记 → 换一种违规
+    writeFixture(
+      'packages/__guard_fixture__/tsconfig.scripts.json',
+      JSON.stringify({ extends: './tsconfig.json', include: ['scripts/**/*.ts'] }, null, 2) + '\n',
+    )
+
+    const unlisted = runGuards()
+    expect(
+      '18 scripts 项目未登记进根 tsconfig.scripts.json 被拦住',
+      !unlisted.ok && /未登记 packages\/__guard_fixture__\/tsconfig\.scripts\.json/.test(
+        unlisted.output,
+      ),
+      unlisted.ok ? 'check-guards 放行了未登记的脚本项目' : undefined,
+    )
+
+    rmSync(p('packages/__guard_fixture__'), { recursive: true, force: true })
+
+    // 19：有 src/*.ts、有 package.json，但完全没有 tsconfig.json。
+    //     这正是 examples/minimal-server 漏掉的形态 —— 前两条守卫从
+    //     「有 tsconfig 的目录」出发遍历，看不见它。
+    writeFixture(
+      'packages/__guard_fixture3__/package.json',
+      JSON.stringify({ name: '@dshwar/__guard_fixture3__', version: '0.0.0', private: true }) +
+        '\n',
+    )
+    writeFixture(
+      'packages/__guard_fixture3__/src/index.ts',
+      '// 负向测试夹具:由 scripts/verify-guards.mjs 生成,跑完即删。\nexport const x = 1\n',
+    )
+
+    const invisible = runGuards()
+    expect(
+      '19 有 src/*.ts 却完全没有 tsconfig.json 被拦住(堵 17/18 自己的洞)',
+      !invisible.ok && /有包整个在类型检查之外/.test(invisible.output),
+      invisible.ok
+        ? 'check-guards 看不见一个完全没有 tsconfig 的包 —— examples/minimal-server 就是这样漏了三个版本'
+        : undefined,
+    )
+
+    rmSync(p('packages/__guard_fixture3__'), { recursive: true, force: true })
+  }
+
+  // ---------------------------------------------------------------------
+  // 20. .mjs 夹具未被 checkJs 覆盖(V0.4.6 Session 1)
+  //
+  //     child-agent.mjs 的 finish reason 形状错误就是这样活了一整个版本 ——
+  //     同款错误在 7 个 .ts 文件里被一次抓出,而 .mjs 那份只能靠人看见。
+  // ---------------------------------------------------------------------
+  {
+    writeFixture(
+      'packages/__guard_fixture4__/tsconfig.json',
+      JSON.stringify({ extends: '../../tsconfig.base.json', include: ['src/**/*.ts'] }, null, 2) +
+        '\n',
+    )
+    // 有 .mjs 夹具,但 tsconfig.test.json 没开 checkJs
+    writeFixture(
+      'packages/__guard_fixture4__/tsconfig.test.json',
+      JSON.stringify(
+        { extends: './tsconfig.json', compilerOptions: { noEmit: true }, include: ['test/**/*.ts'] },
+        null,
+        2,
+      ) + '\n',
+    )
+    writeFixture(
+      'packages/__guard_fixture4__/test/fixtures/child.mjs',
+      '// 负向测试夹具:由 scripts/verify-guards.mjs 生成,跑完即删。\nexport const x = 1\n',
+    )
+
+    const uncovered = runGuards()
+    expect(
+      '20 .mjs 夹具未被 checkJs 覆盖被拦住',
+      !uncovered.ok && /有 \.mjs 夹具在类型检查之外/.test(uncovered.output),
+      uncovered.ok
+        ? 'check-guards 放行了不受检查的 .mjs 夹具 —— 那正是 finish reason 那个 bug 的藏身处'
+        : undefined,
+    )
+
+    rmSync(p('packages/__guard_fixture4__'), { recursive: true, force: true })
   }
 } finally {
   // 无条件清理,失败路径也不留垃圾

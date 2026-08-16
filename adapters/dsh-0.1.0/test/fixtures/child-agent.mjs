@@ -15,7 +15,14 @@
  *   { type: 'event', name, seq, data }
  *   { type: 'idle' }
  *   { type: 'error', message }
+ *
+ * ⚠️ 本文件受 `checkJs` 检查(见 `../../tsconfig.test.json`)。V0.4.6 之前它
+ * 完全在检查之外,于是 `reason: 'stop'` 这个形状错误活了一整个版本 ——
+ * 同款错误在 7 个 `.ts` 测试文件里是被类型检查一次抓出来的。
+ * JS 推断较弱,跨 IPC 边界的入参用 JSDoc 补形状,成本很低。
  */
+
+/** @typedef {{ type: 'start' | 'cancel' | 'crash', principalId?: string, tenantId?: string, tokens?: string[], delayMs?: number }} ParentMessage */
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -37,20 +44,39 @@ const t0 = Date.now()
 
 /** 可控速度的假模型 —— 慢到足以让父进程在中途发取消。 */
 class PacedAdapter extends LlmAdapter {
+  /**
+   * @param {string[]} tokens
+   * @param {number} delayMs
+   */
   constructor(tokens, delayMs) {
     super()
     this.tokens = tokens
     this.delayMs = delayMs
   }
 
+  /**
+   * ★ `@returns` 不能省。JS 会把 `{ type: 'block-start' }` 里的 type 推成
+   * `string` 而不是字面量 `'block-start'`,于是每个 yield 都与 `StreamChunk`
+   * 的判别联合对不上 —— **标上返回类型,判别才生效**,而那正是能抓住
+   * `reason: 'stop'` 这类形状错误的那道约束。
+   *
+   * @param {import('@deepseek-ai/dsh-llm').GenerateOptions} request
+   * @returns {AsyncGenerator<import('@deepseek-ai/dsh-llm').StreamChunk>}
+   */
   async *stream(request) {
+    // 包成函数调用而不是每处直接读 `request.signal?.aborted`:`aborted` 是
+    // readonly,TypeScript 认定它读过一次就不会变,于是 await 之后的第二次
+    // 检查被判成恒假。而这里要的恰恰是**重新读一次** —— 取消就发生在那个
+    // await 期间。与 gateway/test/harness.ts 同款处理。
+    const aborted = () => request.signal?.aborted === true
+
     yield { type: 'block-start', index: 0, blockType: 'text' }
     let text = ''
     for (const token of this.tokens) {
       // 严格遵守 signal —— 取消测试全靠这一条
-      if (request.signal?.aborted === true) return
+      if (aborted()) return
       if (this.delayMs > 0) await new Promise((r) => setTimeout(r, this.delayMs))
-      if (request.signal?.aborted === true) return
+      if (aborted()) return
       text += token
       yield { type: 'text-delta', index: 0, text: token }
     }
@@ -65,7 +91,9 @@ class PacedAdapter extends LlmAdapter {
   }
 }
 
+/** @type {Awaited<ReturnType<import('@deepseek-ai/dsh-agent').AgentRegistry['create']>> | undefined} */
 let handle
+/** @type {Context | undefined} */
 let ctx
 
 /**
@@ -75,13 +103,14 @@ let ctx
  * 会被 Session 4 的部署文档引用。少装 4 个插件量出来的数字偏乐观,
  * 而采用者据此做容量规划。
  */
+/** @param {ParentMessage} msg */
 async function start(msg) {
   const root = mkdtempSync(join(tmpdir(), 'dshwar-xproc-'))
   ctx = new Context()
 
   await ctx.plugin(PrincipalService)
   await ctx.plugin(StaticAuth, {
-    entries: [{ token: 'tok', id: msg.principalId, tenantId: msg.tenantId }],
+    entries: [{ token: 'tok', id: msg.principalId ?? '', tenantId: msg.tenantId ?? '' }],
     quiet: true,
   })
   // 不传 store —— 缺 principal 一律 fail closed(硬规则 6)
@@ -100,7 +129,7 @@ async function start(msg) {
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(AgentLoop, { agents: [] })
-  ctx.llm.registerAdapter(['fake'], new PacedAdapter(msg.tokens, msg.delayMs))
+  ctx.llm.registerAdapter(['fake'], new PacedAdapter(msg.tokens ?? [], msg.delayMs ?? 0))
 
   handle = await ctx.agents.create({
     sessionId: SessionId(`child-${msg.principalId}`),
@@ -110,16 +139,22 @@ async function start(msg) {
   // 事件挂在 agent 自己的 ctx 上 —— 与网关进程内驱动同一处挂载点,
   // 这样「跨进程与进程内事件序列一致」的对照才有意义
   handle.agent.ctx.on('session/event', (_session, event) => {
+    // 上游的 SessionEvent 是个大联合,每个成员的 data 形状都不同。
+    // 这里只读我们关心的那几个字段,收窄集中在这一处 —— 与
+    // gateway/src/sessions/events.ts 的 asUpstreamEvent 同款做法。
+    const data = /** @type {{ turn?: number, step?: number, chunk?: { type?: string, text?: string }, usage?: unknown } | undefined} */ (
+      event.data
+    )
     process.send?.({
       type: 'event',
       name: event.type,
       seq: event.seq,
       data: {
-        turn: event.data?.turn,
-        step: event.data?.step,
-        chunkType: event.data?.chunk?.type,
-        text: event.data?.chunk?.text,
-        usage: event.data?.usage,
+        turn: data?.turn,
+        step: data?.step,
+        chunkType: data?.chunk?.type,
+        text: data?.chunk?.text,
+        usage: data?.usage,
       },
     })
   })
@@ -140,14 +175,16 @@ async function start(msg) {
   process.send?.({ type: 'idle' })
 }
 
-process.on('message', (msg) => {
-  if (msg.type === 'start') {
-    start(msg).catch((e) => process.send?.({ type: 'error', message: String(e?.message ?? e) }))
-  } else if (msg.type === 'cancel') {
+process.on('message', (/** @type {ParentMessage} */ msg) => {
+  if (msg?.type === 'start') {
+    start(msg).catch((/** @type {unknown} */ e) =>
+      process.send?.({ type: 'error', message: e instanceof Error ? e.message : String(e) }),
+    )
+  } else if (msg?.type === 'cancel') {
     // 验证 C 的手段 a:IPC 发指令,子进程内部调进程内的 cancel
     handle?.agent.cancel({ kind: 'user' })
     process.send?.({ type: 'cancelled' })
-  } else if (msg.type === 'crash') {
+  } else if (msg?.type === 'crash') {
     // 验证 D:制造一次真崩溃(非正常退出)
     process.exit(7)
   }

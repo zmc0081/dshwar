@@ -14,11 +14,16 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": true,
+    // .mjs 夹具也要检查 —— 它们是 fork 出去的子进程入口,走 Node 原生解析,
+    // 不能改成 .ts。checkJs 是唯一不需要改运行时形态的办法。
+    // 决策与三方案比较见 docs/DECISIONS/typecheck-mjs-fixtures.md
+    "allowJs": true,
+    "checkJs": true,
     "rewriteRelativeImportExtensions": false,
     "rootDir": ".",
     "tsBuildInfoFile": "./dist/.tsbuildinfo.test"
   },
-  "include": ["test/**/*.ts"],
+  "include": ["test/**/*.ts", "test/**/*.mjs"],
   "exclude": ["dist", "node_modules"],
   "references": [
     {
