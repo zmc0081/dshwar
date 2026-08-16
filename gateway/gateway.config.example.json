@@ -47,7 +47,7 @@
   ],
   "heartbeatMs": 15000,
   "isolation": {
-    "level": "logical",
+    "level": "process",
     "maxProcesses": 64,
     "idleTimeoutMs": 300000
   },

@@ -55,11 +55,13 @@ export type {
 // 跨进程句柄戴的是与进程内句柄完全相同的面孔,所以路由、SSE、计量一行不改。
 // 三档隔离的分派**只在 isolation.ts 一处**发生。
 export {
+  assertSinglePrincipalCapable,
   auditSupervisorEvents,
   createIsolatedRuntime,
   DEFAULT_ISOLATION_LEVEL,
   ISOLATION_LEVELS,
   parseIsolationLevel,
+  LogicalIsolationMultiUserError,
 } from './isolation.ts'
 export type {
   InProcessRuntime,

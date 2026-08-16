@@ -45,6 +45,7 @@ import { InMemoryScimTokenResolver } from './scim-keys.ts'
 import { ConsoleAuditSink, StoreAuditSink, type AuditSink } from './admin/audit.ts'
 import { registerAdminRoutes } from './admin/routes.ts'
 import {
+  assertSinglePrincipalCapable,
   auditSupervisorEvents,
   createIsolatedRuntime,
   parseIsolationLevel,
@@ -282,6 +283,13 @@ export async function startServer(
   // ---- 隔离级别(V0.4.5)----
   // 分派只在这一处。红线 1:缺省 logical —— 升级不会自动改变隔离级别。
   const isolationLevel = parseIsolationLevel(config.isolation?.level)
+
+  // ★ V0.4.7 配置层闸门:逻辑档 + 多用户身份 = 没有隔离,拒绝启动。
+  // 放在装配之前 —— 起不来比「起得来但数据在混」好。
+  assertSinglePrincipalCapable(isolationLevel, {
+    staticTokenCount: config.authEntries.length,
+    hasScim: config.scim !== undefined,
+  })
   let supervisor: Supervisor | undefined
   if (isolationLevel === 'process') {
     supervisor = new Supervisor({

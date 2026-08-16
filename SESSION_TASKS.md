@@ -1,7 +1,7 @@
 # DSHWAR 开发 Session 任务清单
 
 > 项目对外名称:DSHWAR;npm 作用域 `@dshwar/*`;开源主仓 `dshwar`,控制平面仓 `dshwar-console`。
-> 当前版本(正在开发): **V0.4.6** —— 本行强制为"正在开发的版本号",随新版本规划立即更新(见第三部分强制约束)
+> 当前版本(正在开发): **V0.4.7** —— 本行强制为"正在开发的版本号",随新版本规划立即更新(见第三部分强制约束)
 
 ---
 
@@ -57,7 +57,7 @@ DeepSeek Harness（npm 依赖 @deepseek-ai/dsh-*，精确锁版）
 | V0.4.1     | `fs-tenant` 多工作区改造                                  | 3 天 | <span style="color:#d00000">开发完成</span>        |
 | V0.4.5     | supervisor 进程隔离                                       | 2 周 | <span style="color:#d00000">开发完成</span>        |
 | V0.4.6     | 测试有效性与门禁补强                                      | 1 周 | <span style="color:#d00000">开发完成(Session 1-4)</span> |
-| **V0.4.7** | **principal 抵达 agent 执行层**(🚨 发布阻塞)              | 1 周 | <span style="color:#d00000">待启动</span>          |
+| **V0.4.7** | **principal 抵达 agent 执行层**(🚨 发布阻塞)              | 3 天 | <span style="color:#d00000">开发中</span>          |
 | V0.5.0     | 控制平面 / **企业自服务配置台**                           | 5 周 | 待启动                                             |
 | **V0.5.5** | **工作台后端**:工作区 / 产物 / 预授权 / 作业 / 附件       | 3 周 | 待启动                                             |
 | V0.6.0     | 支付:billing 契约 + local + 首个 hosted 实现              | 3 周 | 待启动                                             |

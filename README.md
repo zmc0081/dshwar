@@ -5,7 +5,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-> **开发者预览 · V0.4.6。** 运行时、API 平面、身份互操作、计量治理与**进程隔离**
+> **开发者预览 · V0.4.7。** 运行时、API 平面、身份互操作、计量治理与**进程隔离**
 > 均已可用;控制平面在 V0.5.0。
 
 ---
@@ -98,6 +98,32 @@ Harness agent **能执行 shell、能读写文件系统**。这决定了隔离�
   代价说明:58 MB/进程)。这是刻意的,但意味着「按会话隔离」不成立。
 - **默认不开。** 升级到 V0.4.5 不会自动改变隔离级别,要在 profile 里显式选。
 
+### 💰 多租户的资源成本 —— 选型时就该知道
+
+**逻辑档只支持单 principal,所以多租户现在只剩进程隔离一档。**
+它的代价不再是可选的调优项,而是承重结构:
+
+| 团队规模 | 活跃进程 | 常驻内存 |
+| -------- | -------- | -------- |
+| 5 人     | 5        | ≈ 290 MB |
+| 20 人    | 20       | ≈ 1.2 GB |
+| **50 人**| **50**   | **≈ 2.9 GB** |
+| 200 人   | 200      | ≈ 11.6 GB |
+
+口径:**冷启动 ~115 ms、常驻 ~58 MB/进程**,11 插件全集实测五次采样。
+「活跃」指未被空闲回收的 principal —— 不是注册用户数。
+
+两个参数因此从调优项变成**必配项**:
+
+- `maxProcesses` —— 没有上限的进程池在流量尖峰下会把机器吃到 OOM,
+  而 OOM killer 挑中谁是随机的,可能是网关自己
+- `idleTimeoutMs` —— 决定「活跃」的窗口有多宽。调长了白占内存,
+  调短了让回头客反复付 115 ms 冷启动
+
+⚠️ **这组数字来自 Windows 开发机。** Linux 上 fork 更便宜,预期更低,
+但**尚未复测** —— 已列入 [发布清单](docs/RELEASE-CHECKLIST.md)。
+上生产前请在你自己的机型上量一遍。
+
 **面向公众的多租户 SaaS 仍需要容器档** —— 由部署方的 Kubernetes / Nomad 提供,
 接法见 `@dshwar/supervisor` 的 `ProcessLauncher`。
 
@@ -108,40 +134,36 @@ Harness agent **能执行 shell、能读写文件系统**。这决定了隔离�
 
 > 宁可劝退采用者,不要让他们从事故中学会。
 
-### 🚨 已知问题:上面这一整段,在 agent 执行路径上目前是失效的
+### principal 如何抵达 agent 执行层(V0.4.7 修复,附代价)
 
-**2026-08-16 实测。修复前请勿把本项目用于任何真实的多租户场景。**
+**这一段解释了「逻辑档为什么只支持单 principal」。**
 
-principal 的传播靠 **cordis 的上下文槽位**(`ctx.isolate(PRINCIPAL_BINDING)`),
-绑定只存在于那个派生出来的 context 对象上。而 **agent 拿到的是它自己的 ctx** ——
-由 `AgentRegistry` 插件的 fiber 派生,与调用方传进去的作用域无关。
+principal 的传播用的是 **cordis 的上下文槽位**,绑定只存在于派生出来的 context
+对象上。而 **agent 拿到的是它自己的 ctx** —— 由 `AgentRegistry` 插件的 fiber
+派生,与调用方传进去的作用域无关。工具与适配器都跑在那个 ctx 上。
 
-实测结果:
+**进程隔离档已修**:一进程一 principal,装配时把它钉在根上,agent.ctx 继承得到,
+文件落在正确的租户目录。实测通过。
 
-```
-从 scoped ctx 建 agent → agent.ctx 的 principal 绑定 = anonymous
-作用域外建 agent       → agent.ctx 的 principal 绑定 = anonymous
-```
+**逻辑档修不了 —— 这是架构限制,不是待办。** 一个 runtime 多个 principal 时,
+四条路全部走不通:
 
-工具与适配器都跑在 agent 自己的 ctx 上,于是:
+| 试过的路 | 结果 |
+| --- | --- |
+| 根上 provide | ✅ 但对**所有** agent 生效 —— 把 bob 算成 alice |
+| 每个 agent 的 ctx 上 provide | ❌ 第一个成功,第二个 `already registered` |
+| 沿 fiber 链把 `this.ctx` 走回 agent | ❌ `cannot get property "ctx" without inject` |
+| 给每个 agent 装一份服务实例 | ❌ `service "fs" has been registered` |
 
-```
-HTTP 请求内(scoped ctx)→ {root}/acme/alice-e6f1/default/note.txt
-agent 执行时(agent.ctx)→ {root}/anonymous/anonymous/default/note.txt   ← 所有租户共用
-```
+判别信息是在的(服务方法里的 `this.ctx` 按 agent 不同),但**没有公开 API
+把它解回身份**。已向上游提 issue(见 [`docs/UPSTREAM-ISSUE-agent-ctx.md`](docs/UPSTREAM-ISSUE-agent-ctx.md));
+在那之前,**逻辑档 + 多用户身份会被拒绝启动**,错误信息里带出路与代价。
 
-| 受影响           | 后果                                                         |
-| ---------------- | ------------------------------------------------------------ |
-| `fs-tenant`      | ⚠️ **agent 的文件操作全部落进 `anonymous/anonymous/`,跨租户共用一个目录** |
-| `credentials-multiuser` | 解析成匿名 → fail closed → agent 拿不到模型凭据(拒绝服务,不泄漏) |
-| `storage-scoped` | 同 `fs-tenant`;当前默认不装配,一旦装配即中招                 |
+单用户部署不受影响:一个人的文件落在 `anonymous` 目录下,路径难看但没有混放,
+`profiles/single-user.yml` 照常可用。
 
-**路径钉死本身没坏** —— `tenantWorkspaceRoot()` 的逐段校验、四步顺序、
-白名单编码全部正常工作。坏的是**喂给它的 principal**。`fs-tenant` 有 18 处
-工作区断言全绿,因为那些测试都在 HTTP 作用域里调。
-
-修复方向已定(见 [`docs/DECISIONS/principal-scope-binding.md`](docs/DECISIONS/principal-scope-binding.md)),
-排在 V0.4.7。**在那之前,本项目只适合单租户或评估用途。**
+全部实测与决策见
+[`docs/DECISIONS/principal-scope-binding.md`](docs/DECISIONS/principal-scope-binding.md)。
 
 ---
 
@@ -333,6 +355,7 @@ V0.3.0 解决了「谁能进来」,V0.4.0 解决「进来之后用了多少、�
 
 | DSHWAR | API 契约     | DeepSeek Harness (`@deepseek-ai/dsh-*`) | cordis | Node               | 状态           |
 | ------ | ------------ | --------------------------------------- | ------ | ------------------ | -------------- |
+| 0.4.7  | `/v1` + SCIM | 0.1.0-rc.6                              | 4.0.1  | ^22.19.0 \|\| >=24 | principal 抵达 |
 | 0.4.6  | `/v1` + SCIM | 0.1.0-rc.6                              | 4.0.1  | ^22.19.0 \|\| >=24 | 测试有效性     |
 | 0.4.5  | `/v1` + SCIM | 0.1.0-rc.6                              | 4.0.1  | ^22.19.0 \|\| >=24 | 进程隔离       |
 | 0.4.1  | `/v1` + SCIM | 0.1.0-rc.6                              | 4.0.1  | ^22.19.0 \|\| >=24 | 多工作区       |
@@ -388,9 +411,8 @@ V0.3.0 解决了「谁能进来」,V0.4.0 解决「进来之后用了多少、�
 
 老实说在前面,免得你从事故里发现:
 
-- 🚨 **principal 在 agent loop 内解析为匿名** —— 见上方「已知问题」。
-  这是当前最严重的一条:agent 的文件操作跨租户共用同一个目录。
-  修复排在 V0.4.7
+- **逻辑档只支持单 principal** —— 架构限制,非待办。多用户请用 `isolation: process`,
+  逻辑档 + 多用户身份会被拒绝启动。见上方隔离模型章节
 - **逻辑隔离不是强边界** —— 见上方警告;**进程隔离也不是容器**,同样见上方
 - **进程隔离的代价是实打实的** —— 冷启动 ~115 ms、常驻 ~58 MB/进程
   (实测见 [`docs/FEASIBILITY-REPORT-V45.md`](docs/FEASIBILITY-REPORT-V45.md) §6)。

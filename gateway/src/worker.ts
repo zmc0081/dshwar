@@ -27,6 +27,7 @@
  *
  * @module @dshwar/gateway/worker
  */
+import { createPrincipal } from '@dshwar/principal'
 import { argv } from 'node:process'
 import { pathToFileURL } from 'node:url'
 import { assembleRuntime, type AssembledRuntime, type RuntimeOptions } from './runtime.ts'
@@ -131,7 +132,14 @@ export function runWorker(
     }
 
     if (message.kind === 'bootstrap') {
-      runtime = await assembleRuntime(message.payload as WorkerBootstrap)
+      // ★ V0.4.7:一进程一 principal,把它钉在根上下文 —— 否则 agent 执行时
+      // 读到 ANONYMOUS,文件落进 anonymous/anonymous/。身份来自启动参数,
+      // 那是这个进程存在的理由。
+      const identity = parseWorkerArgs(argv)
+      runtime = await assembleRuntime({
+        ...(message.payload as WorkerBootstrap),
+        principal: createPrincipal({ id: identity.principalId, tenantId: identity.tenantId }),
+      })
       await options.onReady?.(runtime)
       const backlog = queued.splice(0, queued.length)
       for (const queuedMessage of backlog) await handle(queuedMessage)

@@ -1,6 +1,6 @@
 {
   "name": "@dshwar/principal",
-  "version": "0.4.6",
+  "version": "0.4.7",
   "description": "principal 传播 —— DSHWAR 引入的唯一新概念。其余包都是上游已有契约的替代实现。",
   "license": "MIT",
   "type": "module",

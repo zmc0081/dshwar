@@ -15,6 +15,7 @@
  *
  * @module @dshwar/gateway/isolation
  */
+import type { Principal } from '@dshwar/principal'
 import { AtCapacityError, type Supervisor, type SupervisorEvent } from '@dshwar/supervisor'
 import { ApiError } from './errors.ts'
 import { createRemoteAgent, remoteUserMessage } from './sessions/remote.ts'
@@ -35,6 +36,93 @@ export type IsolationLevel = (typeof ISOLATION_LEVELS)[number]
 
 /** 红线 1:默认逻辑隔离。 */
 export const DEFAULT_ISOLATION_LEVEL: IsolationLevel = 'logical'
+
+/**
+ * 逻辑档承载多主体时抛出 —— **配置层的第一道闸门**(V0.4.7)。
+ *
+ * ## 为什么这是永久设计而不是临时闸门
+ *
+ * 逻辑档下 principal 到不了 agent 执行层,而这不是「实现起来重」,
+ * 是当前上游 API 下**做不到**:四条路全部走不通(根上 provide 会把所有人
+ * 绑成一个人;per-agent provide 第一个成功第二个报错;fiber 链回溯被 inject
+ * 拦住;给每个 agent 装一份服务实例被 cordis 拒绝)。
+ * 详见 `docs/DECISIONS/principal-scope-binding.md` 与
+ * `ARCHITECTURE.md` §2.4 的四条路对照表。
+ *
+ * 后果不是「隔离强度不够」,是**根本没有隔离**:alice 与 bob 的 agent 往同一个
+ * `anonymous/anonymous/default/` 写,同名文件互相覆盖。**同事之间文件被覆盖
+ * 也是 bug** —— 所以「仅限互相信任的用户」这条边界在这里不适用。
+ *
+ * ## 错误信息必须给出路
+ *
+ * 一个没有出路的门禁,最后拦住的只有守规矩的人 —— 其余人直接把它注释掉。
+ * 所以这里把替代方案与它的代价一起说清楚。
+ */
+export class LogicalIsolationMultiUserError extends Error {
+  override readonly name = 'LogicalIsolationMultiUserError'
+  readonly userCount: number
+
+  constructor(detail: string, userCount: number) {
+    super(
+      [
+        `逻辑隔离档不支持多主体(检测到:${detail})。`,
+        '',
+        '原因:逻辑档下 principal 到不了 agent 执行层 —— 多个用户的 agent 会往',
+        '同一个 {root}/anonymous/anonymous/default/ 目录写文件,同名文件互相覆盖,',
+        '且没有任何报错。这是当前上游 API 下的架构限制,不是待办事项。',
+        '',
+        '出路:改用进程隔离。',
+        '  { "isolation": { "level": "process", "maxProcesses": 64 } }',
+        '',
+        '代价:每个活跃主体约 58 MB 常驻、首次请求约 115 ms 冷启动。',
+        '  50 人团队 ≈ 2.9 GB。maxProcesses 必须按机器内存设。',
+        '  详见 docs/DEPLOYMENT.md §2.5。',
+        '',
+        '单用户部署不受影响:匿名或单 token 的逻辑档没有这个问题,',
+        'profiles/single-user.yml 照常可用。',
+      ].join('\n'),
+    )
+    this.userCount = userCount
+  }
+}
+
+/**
+ * 配置层闸门:逻辑档 + 任何多用户身份组合 → 拒绝启动。
+ *
+ * **启动时就能确定性判断**,不必等到第二个用户真的来 —— 这是它相对
+ * 运行时兜底的价值:部署方在起服务的那一刻就知道配置不对,而不是上线三天后
+ * 从一份被覆盖的文件里发现。
+ *
+ * @param level 隔离级别
+ * @param identity 身份配置的形状(只看数量与是否接了 IdP,不看内容)
+ * @throws {LogicalIsolationMultiUserError} 逻辑档 + 多用户
+ */
+export function assertSinglePrincipalCapable(
+  level: IsolationLevel,
+  identity: {
+    /** 静态令牌条数。> 1 即多用户。 */
+    readonly staticTokenCount?: number
+    /** 是否接了 OIDC —— 接了就意味着任意多用户。 */
+    readonly hasOidc?: boolean
+    /** 是否接了 JWT 验签 —— 同上。 */
+    readonly hasJwt?: boolean
+    /** 是否接了 SCIM 供给 —— 供给系统会推进来任意多用户。 */
+    readonly hasScim?: boolean
+  },
+): void {
+  if (level !== 'logical') return
+
+  const reasons: string[] = []
+  const tokens = identity.staticTokenCount ?? 0
+  if (tokens > 1) reasons.push(`auth-static 配了 ${tokens} 个令牌`)
+  if (identity.hasOidc === true) reasons.push('接了 auth-oidc')
+  if (identity.hasJwt === true) reasons.push('接了 auth-jwt')
+  if (identity.hasScim === true) reasons.push('接了 SCIM 供给')
+
+  if (reasons.length > 0) {
+    throw new LogicalIsolationMultiUserError(reasons.join('、'), tokens)
+  }
+}
 
 /** 把配置里的字符串收窄成隔离级别。认不出就抛 —— 不猜。 */
 export function parseIsolationLevel(value: string | undefined): IsolationLevel {
@@ -100,13 +188,37 @@ export function createIsolatedRuntime(config: IsolationConfig): IsolatedRuntime 
       throw new Error('逻辑隔离需要一个进程内运行时(assembleRuntime 的产物)')
     }
     const runtime = config.inProcess
+
+    /**
+     * 运行时兜底:逻辑档下出现第二个不同的主体 → **拒绝该会话**(V0.4.7)。
+     *
+     * 配置层(`assertSinglePrincipalCapable`)是主闸门,启动时就能确定性判断。
+     * 这一层是**防御深度**:配置看起来是单用户,但实际来了第二个人 ——
+     * 比如 `auth-static` 只配一个令牌却被多人共用。
+     *
+     * ⚠️ **绝不杀进程。** 逻辑档下杀进程 = 第二个用户能干掉第一个用户的运行时,
+     * 那是个白送的 DoS 向量。**拒绝会话,不拒绝服务。**
+     */
+    let seen: Principal | undefined
     return {
-      createAgent: (input) =>
-        runtime.createAgent({
+      // `async` 不是装饰:`AgentFactoryFn` 声明返回 Promise,同步抛会让
+      // 用 `.catch()` 的调用方接不到 —— 接口说什么,就得真是什么。
+      createAgent: async (input) => {
+        if (seen === undefined) {
+          seen = input.principal
+        } else if (seen.id !== input.principal.id) {
+          throw new ApiError(
+            'forbidden',
+            `逻辑隔离档只支持单主体:本进程已绑定 ${seen.id},拒绝 ${input.principal.id} 的会话。` +
+              '多用户请改用 isolation: process(代价约 58 MB/主体),见 docs/DEPLOYMENT.md §2.5。',
+          )
+        }
+        return runtime.createAgent({
           sessionId: input.sessionId,
           model: input.model,
           provider: input.provider,
-        }),
+        })
+      },
       userMessage: (text) => runtime.userMessage(text),
     }
   }

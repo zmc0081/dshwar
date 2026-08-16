@@ -1,6 +1,6 @@
 {
   "name": "@dshwar/policy",
-  "version": "0.4.6",
+  "version": "0.4.7",
   "description": "配额判定。只回答「能不能」,429 由网关发 —— 判定与执行分离。",
   "license": "MIT",
   "type": "module",

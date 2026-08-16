@@ -88,16 +88,23 @@ async function driveAndReadBinding(ctx: Context, sessionId: string): Promise<Pri
 }
 
 describe('V0.4.7 验收门槛:真实驱动一轮之后的工作区落点', () => {
-  it('🚨【待修】现状落在 anonymous/anonymous —— 跨租户共用', async () => {
-    const { ctx, root } = await assemble()
-    const bound = await driveAndReadBinding(ctx, 's-now')
-    const landing = tenantWorkspaceRoot(root, bound)
+  // ✅ V0.4.7 已修:`assembleRuntime({ principal })` 在根上钉住本进程的主体。
+  // 本组从「断言坏掉的现状」翻转成「断言正确行为」。
+  it('★ 配了 principal 之后,真实一轮的落点在正确的租户目录', async () => {
+    const { ctx, root } = await assemble({ provideAtRoot: alice })
+    const bound = await driveAndReadBinding(ctx, 's-fixed')
 
-    expect(
-      bound.id,
-      'agent 驱动一轮之后读到的不再是匿名 —— **说明 V0.4.7 已修好,请翻转本组断言**',
-    ).toBe('anonymous')
-    expect(landing).toContain(join('anonymous', 'anonymous'))
+    expect(bound.id, 'agent 驱动一轮之后仍读到匿名 —— V0.4.7 的修法失效了').toBe('alice-e6f1')
+    expect(tenantWorkspaceRoot(root, bound)).toContain(join('acme', 'alice-e6f1'))
+  }, 30_000)
+
+  it('不配 principal 时仍落在 anonymous —— 这是单用户档的正常形态', async () => {
+    // 不是 bug:单用户部署里只有一个人,路径难看但没有混放。
+    // 多用户组合由配置层闸门拦住,不靠这里。
+    const { ctx, root } = await assemble()
+    const bound = await driveAndReadBinding(ctx, 's-anon')
+    expect(bound.id).toBe('anonymous')
+    expect(tenantWorkspaceRoot(root, bound)).toContain(join('anonymous', 'anonymous'))
   }, 30_000)
 
   it('正确的落点长什么样 —— 修好之后上面那条应当变成这个', async () => {

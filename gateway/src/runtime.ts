@@ -31,7 +31,7 @@ import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { StaticAuth } from '@dshwar/auth-static'
 import { MultiuserCredentials, type PrincipalCredentialStore } from '@dshwar/credentials-multiuser'
 import { TenantFileSystem } from '@dshwar/fs-tenant'
-import { PrincipalService } from '@dshwar/principal'
+import { PRINCIPAL_BINDING, PrincipalService, type Principal } from '@dshwar/principal'
 import type { AgentHandleLike } from './sessions/store.ts'
 
 /**
@@ -97,6 +97,26 @@ export interface RuntimeOptions {
   /** 默认模型与 provider。请求里没指定时用它。 */
   readonly defaultProvider: string
   readonly defaultModel: string
+  /**
+   * **本进程只服务这一个主体** —— 装配时把它钉在根上下文。
+   *
+   * ## 为什么这一行是必需的(V0.4.7)
+   *
+   * principal 的绑定活在 cordis 的上下文槽位上,而 **agent 拿到的是
+   * `AgentRegistry` 插件 fiber 派生的自有 ctx**,与调用方传进去的作用域无关。
+   * 于是工具与适配器在执行时读到的是 `ANONYMOUS` —— `fs-tenant` 会老老实实
+   * 往 `anonymous/anonymous/` 里写文件,**跨租户共用一个目录,且没有任何报错**。
+   *
+   * 实测:插件 fiber 派生自根,所以**在根上 provide 就够了** ——
+   * agent.ctx 继承得到,工具于是落在正确的租户目录。
+   * 顺序不要紧(装配前后都行),绑定读的是槽位当前值而非加载时快照。
+   *
+   * ⚠️ **只在进程隔离档下传它。** 一个进程多个主体时,根上的绑定对**每个**
+   * agent 都生效 —— 那不是修好了隔离,是把 bob 的会话算成 alice 的。
+   * 逻辑档必须留空,并由 {@link assertSinglePrincipalCapable} 在配置层拦住
+   * 多用户组合。全部实测钉在 `gateway/test/principal-reach.test.ts`。
+   */
+  readonly principal?: Principal
   /** 静默启动日志。测试用。 */
   readonly quiet?: boolean
 }
@@ -123,6 +143,12 @@ export async function assembleRuntime(options: RuntimeOptions): Promise<Assemble
   const ctx = new Context()
 
   await ctx.plugin(PrincipalService)
+
+  // ★ V0.4.7:进程隔离档在这里把本进程唯一的主体钉在根上。
+  // 不钉的话,agent 执行时读到的是 ANONYMOUS —— 见 RuntimeOptions.principal。
+  if (options.principal !== undefined) {
+    ctx.provide(PRINCIPAL_BINDING, options.principal)
+  }
   await ctx.plugin(StaticAuth, {
     entries: options.authEntries.map((e) => ({ ...e })),
     quiet: options.quiet ?? false,

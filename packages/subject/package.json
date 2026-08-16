@@ -1,6 +1,6 @@
 {
   "name": "@dshwar/subject",
-  "version": "0.4.6",
+  "version": "0.4.7",
   "description": "Subject Mirror:外部身份源的用户镜像。只接受供给方推来的记录,不新建用户、不存密码。",
   "license": "MIT",
   "type": "module",
