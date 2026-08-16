@@ -45,7 +45,9 @@ class MeteredFakeAdapter extends LlmAdapter {
         reasoningTokens: 0,
       },
     }
-    yield { type: 'finish', reason: 'stop' }
+    // 上游的 FinishReason 是对象而非字符串(`{ kind: 'stop' }`)——
+    // 写成 'stop' 时下游读 `reason.kind` 拿到的是 undefined
+    yield { type: 'finish', reason: { kind: 'stop' } }
   }
 }
 

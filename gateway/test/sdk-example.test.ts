@@ -38,7 +38,8 @@ beforeAll(async () => {
 
   const app = createGateway({
     ctx: harness.ctx,
-    adminKeys: { resolve: () => undefined },
+    // 本用例只走运行时 API,Admin 一律解析不出身份(fail closed)
+    adminKeys: { resolve: async () => undefined },
     runtimeRoutes: registerRuntimeRoutes({
       store,
       createAgent: harness.createAgent,

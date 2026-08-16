@@ -41,24 +41,32 @@ export class FakeLlmAdapter extends LlmAdapter {
     const tokens = this.options.tokens ?? ['你好', ',', '世界']
     const delayMs = this.options.delayMs ?? 0
 
+    // 包成函数调用而不是每处直接读 `request.signal?.aborted`:`aborted` 在
+    // AbortSignal 上是 readonly,TypeScript 认定它读过一次就不会变,于是 await
+    // 之后的第二次检查被判成「恒假」。而这里要的恰恰是**重新读一次** ——
+    // 取消就发生在那个 await 期间。
+    const aborted = (): boolean => request.signal?.aborted === true
+
     yield { type: 'block-start', index: 0, blockType: 'text' }
 
     for (const think of this.options.reasoning ?? []) {
-      if (request.signal?.aborted === true) return
+      if (aborted()) return
       yield { type: 'reasoning-delta', index: 0, text: think }
     }
 
     let text = ''
     for (const token of tokens) {
-      if (request.signal?.aborted === true) return
+      if (aborted()) return
       if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs))
-      if (request.signal?.aborted === true) return
+      if (aborted()) return
       text += token
       yield { type: 'text-delta', index: 0, text: token }
     }
 
     yield { type: 'block-end', index: 0, block: { type: 'text', text } }
-    yield { type: 'finish', reason: 'stop' }
+    // 上游的 FinishReason 是对象而非字符串(`{ kind: 'stop' }`)——
+    // 写成 'stop' 时下游读 `reason.kind` 拿到的是 undefined
+    yield { type: 'finish', reason: { kind: 'stop' } }
   }
 }
 

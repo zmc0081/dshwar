@@ -9,8 +9,13 @@ import { describe, expect, it } from 'vitest'
 import { breakingChanges, diffContract, type ContractChangeCode } from '../src/freeze.ts'
 import { buildOpenApiDocument } from '../src/openapi.ts'
 
-/** 真实契约 —— 规则要对真东西成立,而不只是对手搓的小样本。 */
-const REAL = buildOpenApiDocument()
+/**
+ * 真实契约 —— 规则要对真东西成立,而不只是对手搓的小样本。
+ *
+ * 版本号在这里无关紧要:比对的两侧都由同一次调用克隆而来,`info.version`
+ * 永远相等,判定只看结构。给个占位值即可,不必去读 package.json。
+ */
+const REAL = buildOpenApiDocument('0.0.0-freeze-test')
 
 /** 深拷贝,免得改动泄漏到别的用例。 */
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T

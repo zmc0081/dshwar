@@ -1,0 +1,31 @@
+// 测试文件的类型检查项目。
+//
+// 为什么不能直接把 test/ 并进同目录的 tsconfig.json:那个项目是 composite +
+// rootDir: "./src",把 test/ 纳入会把 rootDir 抬到包根,dist/ 里凭空多出
+// src/ 与 test/ 两层,发布出去的 types 路径全错。
+//
+// 所以另起一个 noEmit 项目:只检查、不产出,references 指向产品项目,
+// 测试里的 `../src/xxx.ts` 由 tsc --build 重定向到已构建的 .d.ts ——
+// 检查的是**对外暴露的那个类型**,而不是源码内部的形状。
+//
+// rewriteRelativeImportExtensions 必须关:它与「跨项目重定向」互斥
+// (TS2878),而这里 noEmit,本来就没有任何需要重写的产物。
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rewriteRelativeImportExtensions": false,
+    "rootDir": ".",
+    "tsBuildInfoFile": "./dist/.tsbuildinfo.test"
+  },
+  "include": ["test/**/*.ts"],
+  "exclude": ["dist", "node_modules"],
+  "references": [
+    {
+      "path": "./tsconfig.json"
+    },
+    {
+      "path": "../principal"
+    }
+  ]
+}
