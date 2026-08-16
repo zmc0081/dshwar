@@ -32,3 +32,12 @@ export {
   runtimeAuth,
 } from './middleware.ts'
 export type { GatewayEnv, GatewayVariables } from './middleware.ts'
+
+export { registerRuntimeRoutes } from './sessions/routes.ts'
+export type { AgentFactoryFn, RuntimeRouteOptions, UserMessageFactory } from './sessions/routes.ts'
+
+export { GatewaySessionStore } from './sessions/store.ts'
+export type { AgentHandleLike, GatewaySession } from './sessions/store.ts'
+
+export { EventBuffer, translateEvent } from './sessions/events.ts'
+export type { SequencedEvent, TranslateOptions, UpstreamSessionEvent } from './sessions/events.ts'

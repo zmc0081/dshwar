@@ -125,7 +125,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 | 0 可行性证伪             | ✅ 已完成 | **止损未触发**,32 条断言全过(Win + Linux);报告见 `docs/FEASIBILITY-REPORT-V2.md` |
 | 1 OpenAPI v1 契约        | ✅ 已完成 | Zod 单一事实源 → OpenAPI 3.1;redocly lint 零警告;29 个单测                       |
 | 2 Gateway 骨架与会话路由 | ✅ 已完成 | 分道鉴权在中间件层;22 个单测,含隔离槽位零增长                                    |
-| 3 运行时 API 与 SSE      | ⬜ 未开始 |                                                                                  |
+| 3 运行时 API 与 SSE      | ✅ 已完成 | 端到端对真实 harness;19 个单测,含断连释放度量与 Last-Event-ID                    |
 | 4 Admin API              | ⬜ 未开始 | 契约先行,实现分期                                                                |
 | 5 TS SDK                 | ⬜ 未开始 | 由 OpenAPI 生成,不手写                                                           |
 | 6 契约冻结与发布         | ⬜ 未开始 |                                                                                  |
@@ -322,7 +322,7 @@ docs/FEASIBILITY-REPORT-V2.md，包含：
 
 ---
 
-### ⬜ Session 3: 运行时 API 与 SSE
+### ✅ Session 3: 运行时 API 与 SSE
 
 ```
 本次任务:让第三方仅凭 HTTP 就能完成一次完整会话。
