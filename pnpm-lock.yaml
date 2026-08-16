@@ -126,9 +126,21 @@ importers:
       '@dshwar/api-contract':
         specifier: workspace:*
         version: link:../packages/api-contract
+      '@dshwar/audit':
+        specifier: workspace:*
+        version: link:../packages/audit
       '@dshwar/auth':
         specifier: workspace:*
         version: link:../packages/auth
+      '@dshwar/metering':
+        specifier: workspace:*
+        version: link:../packages/metering
+      '@dshwar/model-router':
+        specifier: workspace:*
+        version: link:../packages/model-router
+      '@dshwar/policy':
+        specifier: workspace:*
+        version: link:../packages/policy
       '@dshwar/principal':
         specifier: workspace:*
         version: link:../packages/principal
@@ -187,9 +199,6 @@ importers:
       '@deepseek-ai/dsh-tools':
         specifier: 0.1.0-rc.6
         version: 0.1.0-rc.6(f8724372086ccc1457fc84e7becee2e0)
-      '@dshwar/audit':
-        specifier: workspace:*
-        version: link:../packages/audit
       '@dshwar/auth-jwt':
         specifier: workspace:*
         version: link:../packages/auth-jwt
@@ -205,15 +214,6 @@ importers:
       '@dshwar/fs-tenant':
         specifier: workspace:*
         version: link:../packages/fs-tenant
-      '@dshwar/metering':
-        specifier: workspace:*
-        version: link:../packages/metering
-      '@dshwar/model-router':
-        specifier: workspace:*
-        version: link:../packages/model-router
-      '@dshwar/policy':
-        specifier: workspace:*
-        version: link:../packages/policy
       '@dshwar/scim-server':
         specifier: workspace:*
         version: link:../packages/scim-server

@@ -5,8 +5,8 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-> **开发者预览 · V0.4.0。** 运行时、API 平面与身份互操作已可用;
-> 计量与治理开发中,进程隔离 supervisor 在 V0.4.5。
+> **开发者预览 · V0.4.0。** 运行时、API 平面、身份互操作与计量治理均已可用;
+> 进程隔离 supervisor 在 V0.4.5,控制平面在 V0.5.0。
 
 ---
 
@@ -121,7 +121,10 @@ Harness agent **能执行 shell、能读写文件系统**。这决定了隔离�
 | [`@dshwar/auth-oidc`](packages/auth-oidc)                         | 填一个 issuer URL 即接入    | ✅ V0.3.0 |
 | [`@dshwar/scim-server`](packages/scim-server)                     | SCIM 2.0 子集,双路停用      | ✅ V0.3.0 |
 | [`@dshwar/webhooks`](packages/webhooks)                           | 出站事件,签名可独立验证     | ✅ V0.3.0 |
-| `@dshwar/metering` · `policy` · `model-router`                    | 计量与治理                  | 📋 V0.4.0 |
+| [`@dshwar/audit`](packages/audit)                                 | 仅追加审计                  | ✅ V0.4.0 |
+| [`@dshwar/metering`](packages/metering)                           | 用量归属与成本核算          | ✅ V0.4.0 |
+| [`@dshwar/policy`](packages/policy)                               | 配额判定(判定/执行分离)     | ✅ V0.4.0 |
+| [`@dshwar/model-router`](packages/model-router)                   | 模型准入与预算降级          | ✅ V0.4.0 |
 | `@dshwar/supervisor`                                              | 进程隔离                    | 📋 V0.4.5 |
 
 📋 = 已立项,契约签名见 [CONTRIBUTING.md](CONTRIBUTING.md) 的 good-first-issue 列表。
@@ -137,21 +140,31 @@ Harness agent **能执行 shell、能读写文件系统**。这决定了隔离�
 DSHWAR 的 API 平面补的就是这一层。**它是客户接进来之后换不掉的那部分** ——
 运行时插件可替换,控制面是标准 SaaS,只有这份契约是护城河。
 
-| 端点                                      | 作用                         | 状态       |
-| ----------------------------------------- | ---------------------------- | ---------- |
-| `POST /v1/sessions`                       | 建会话                       | ✅ V0.2.0  |
-| `GET /v1/sessions`                        | 列出当前主体的会话           | ✅ V0.2.0  |
-| `GET /v1/sessions/{id}`                   | 会话状态                     | ✅ V0.2.0  |
-| `POST /v1/sessions/{id}/turns`            | 发起一轮(不等跑完)           | ✅ V0.2.0  |
-| `GET /v1/sessions/{id}/stream`            | SSE 流式,支持断线续传        | ✅ V0.2.0  |
-| `DELETE /v1/sessions/{id}`                | 取消并释放                   | ✅ V0.2.0  |
-| `GET /v1/admin/subjects/{id}/credentials` | 凭据配置状态(**永不返回值**) | ✅ V0.2.0  |
-| `GET /v1/admin/subjects` · `/{id}`        | 用户镜像(SCIM 推进来的)      | ✅ V0.3.0  |
-| `/v1/admin/usage` · `quota` · `audit`     | 契约已定,返回 501            | 📋 V0.4.0+ |
+| 端点                                        | 作用                         | 状态      |
+| ------------------------------------------- | ---------------------------- | --------- |
+| `POST /v1/sessions`                         | 建会话                       | ✅ V0.2.0 |
+| `GET /v1/sessions`                          | 列出当前主体的会话           | ✅ V0.2.0 |
+| `GET /v1/sessions/{id}`                     | 会话状态                     | ✅ V0.2.0 |
+| `POST /v1/sessions/{id}/turns`              | 发起一轮(不等跑完)           | ✅ V0.2.0 |
+| `GET /v1/sessions/{id}/stream`              | SSE 流式,支持断线续传        | ✅ V0.2.0 |
+| `DELETE /v1/sessions/{id}`                  | 取消并释放                   | ✅ V0.2.0 |
+| `GET /v1/admin/subjects/{id}/credentials`   | 凭据配置状态(**永不返回值**) | ✅ V0.2.0 |
+| `GET /v1/admin/subjects` · `/{id}`          | 用户镜像(SCIM 推进来的)      | ✅ V0.3.0 |
+| `/v1/admin/usage` · `subjects/{id}/usage`   | 用量明细与聚合               | ✅ V0.4.0 |
+| `/v1/admin/subjects/{id}/quota` GET · PATCH | 配额读写                     | ✅ V0.4.0 |
+| `/v1/admin/audit`                           | 审计查询                     | ✅ V0.4.0 |
+| `/v1/admin/policies`                        | 模型准入与预算策略           | ✅ V0.4.0 |
 
-**契约完整,实现分期。** 未实现的端点返回 501 并在 OpenAPI 里标
-`x-dshwar-status: planned` —— 而不是 404。404 会让第三方以为路径写错了,
+**契约完整,实现分期 —— 这条策略在 V0.4.0 走完了。** v1 里定义的每个端点
+现在都有实现,`planned` 清零(有测试钉住)。
+
+这条策略当初的样子:未实现的端点返回 501 并在 OpenAPI 里标
+`x-dshwar-status: planned`,而不是 404 —— 404 会让第三方以为路径写错了,
 从而去猜别的路径。契约是换不掉的那一层,晚定一天成本高一天。
+机制仍在,将来加新端点时照旧可用。
+
+> 注:没配对应后端的部署仍会回落 501(比如没接 Subject Mirror 时的
+> `/v1/admin/subjects`)—— 那是**部署级降级**,不是契约未实现。
 
 契约以 Zod 为单一事实源,OpenAPI 3.1 由它生成,SDK 再由 OpenAPI 生成。
 **任何一处手写都会引入第二个事实源**,而两个事实源迟早分叉 ——
@@ -240,6 +253,25 @@ token 还没过期。JWT 是无状态的,单靠验签做不到这一点;`auth-jw
 
 ---
 
+## 计量与治理
+
+V0.3.0 解决了「谁能进来」,V0.4.0 解决「进来之后用了多少、该不该继续用」。
+**全部是治理层,一行不碰模型引擎** —— `model-router` 不路由请求,
+它只在 `createAgent` 入口裁决用哪个模型,真正的调用仍是上游 `dsh-llm` 的事。
+
+| 能力     | 关键性质                                                                                 |
+| -------- | ---------------------------------------------------------------------------------------- |
+| **计量** | 计费口径按 DISJOINT 加(直接用 `inputTokens` 会少计费);**观测不阻断** —— 计量挂了会话照常 |
+| **配额** | 判定与执行分离,超限 429;**余额不缓存**(提额立即生效);计量不可用时 **fail open** 并落审计 |
+| **准入** | opt-in,没配策略默认放行;清单外 **403 不静默换**                                          |
+| **降级** | 显式配置且**三处可见**:响应头、会话记录、审计 —— 用户有权知道自己被换了模型              |
+| **审计** | **仅追加**,类型层没有 update/delete;按租户强制过滤;凭据类操作绝不记录值                  |
+
+配置与陷阱(尤其是**价格表必须配全** —— 查不到价计 0 是"没配价"不是"免费")
+见 [`docs/GOVERNANCE.md`](docs/GOVERNANCE.md)。
+
+---
+
 ## 兼容矩阵
 
 | DSHWAR | API 契约     | DeepSeek Harness (`@deepseek-ai/dsh-*`) | cordis | Node               | 状态           |
@@ -303,6 +335,10 @@ token 还没过期。JWT 是无状态的,单靠验签做不到这一点;`auth-jw
 - **上游 `spawnTerminal` 在 Windows 不可用** —— 上游 `ProcessInspector` 只实现了
   linux / darwin;普通 `spawn` 不受影响
 - **`auth-static` 的 token 是明文配置** —— 只用于开发与测试,禁止部署
+- **治理的默认装配是内存实现** —— `server.ts` 里的审计/用量/配额重启即丢。
+  四个包都提供了走上游 `storage` 契约的实现,生产请换上;Postgres 实现随
+  V0.5.0 控制平面落地
+- **价格表不配全会静默少算账** —— 查不到价的模型成本计 0
 
 ---
 

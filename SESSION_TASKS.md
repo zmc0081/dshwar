@@ -99,7 +99,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 > 已发布版本的 Session 一律标 ✅;开发中版本按实际进度标记,每完成一个即更新。
 >
 > 已发布:(暂无)
-> 规划中(开发中,未上线):**V0.4.0(Session 0-5,当前)** · V0.3.0(Session 0-7,开发完成)
+> 规划中(开发中,未上线):**V0.4.0(Session 0-5,开发完成)** · V0.3.0(Session 0-7,开发完成)
 > · V0.2.0(Session 0-6,开发完成) · V0.1.0(Session 0-8,开发完成)** · V0.2.0(Session 0-6,开发完成)
 > · V0.1.0(Session 0-8,开发完成)
 
@@ -342,7 +342,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 
 ---
 
-### ⬜ Session 5: 治理链路串联与发布
+### ✅ Session 5: 治理链路串联与发布
 
 ```
 本次任务:端到端验收与收尾。

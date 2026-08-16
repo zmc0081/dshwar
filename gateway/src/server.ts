@@ -20,6 +20,15 @@
  * @module @dshwar/gateway/server
  */
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import { InMemoryAuditStore } from '@dshwar/audit'
+import {
+  aggregateDaily,
+  InMemoryMeteringStore,
+  safeRecord,
+  type PriceTable,
+} from '@dshwar/metering'
+import { InMemoryPolicyStore, ModelRouter, type ModelPolicy } from '@dshwar/model-router'
+import { InMemoryQuotaStore, PolicyService } from '@dshwar/policy'
 import { serve } from '@hono/node-server'
 import { InMemoryPrincipalCredentialStore } from '@dshwar/credentials-multiuser'
 import { createScimApp } from '@dshwar/scim-server'
@@ -32,7 +41,7 @@ import { pathToFileURL } from 'node:url'
 import { createGateway } from './app.ts'
 import { InMemoryAdminKeyResolver } from './admin-keys.ts'
 import { InMemoryScimTokenResolver } from './scim-keys.ts'
-import { ConsoleAuditSink } from './admin/audit.ts'
+import { ConsoleAuditSink, StoreAuditSink, type AuditSink } from './admin/audit.ts'
 import { registerAdminRoutes } from './admin/routes.ts'
 import { assembleRuntime, type StaticAuthEntry } from './runtime.ts'
 import { registerRuntimeRoutes } from './sessions/routes.ts'
@@ -66,6 +75,23 @@ export interface ServerConfig {
   }[]
   /** SSE 心跳间隔(毫秒)。默认 15000。 */
   readonly heartbeatMs?: number
+  /**
+   * 治理(V0.4.0)。整段可选 —— 计量、配额、准入都是 opt-in。
+   * ⚠️ pricing 必须把用到的每个模型配全:查不到价计 0,是「没配价」不是「免费」。
+   */
+  readonly governance?: {
+    readonly pricing?: {
+      currency: string
+      prices: Record<string, { inputPerMTokenMinor: number; outputPerMTokenMinor: number }>
+    }
+    readonly quotas?: readonly { subjectId: string; tokenLimit: number | null }[]
+    readonly modelPolicies?: readonly {
+      id: string
+      tenantId: string
+      allowedModels: string[]
+      fallbackModel: string | null
+    }[]
+  }
   /**
    * SCIM 供给(V0.3.0)。配了它,身份源就能把用户推进来。
    *
@@ -134,7 +160,70 @@ export async function startServer(
     await credentialStore.put(subject, credentialRef(entry.ref), entry.value)
   }
 
-  const store = new GatewaySessionStore()
+  // ---- 治理装配(V0.4.0)----
+  const audits = new InMemoryAuditStore()
+  const metering = new InMemoryMeteringStore()
+  const quotas = new InMemoryQuotaStore()
+  const pricing: PriceTable = config.governance?.pricing ?? { currency: 'CNY', prices: {} }
+  for (const q of config.governance?.quotas ?? []) {
+    await quotas.setLimit(q.subjectId, q.tokenLimit)
+  }
+  const modelPolicies = new InMemoryPolicyStore(
+    (config.governance?.modelPolicies ?? []).map((p) => ({
+      ...p,
+      updatedAt: new Date().toISOString(),
+    })) as ModelPolicy[],
+  )
+  const modelRouter = new ModelRouter({ policies: modelPolicies })
+  const policyService = new PolicyService({
+    quotas,
+    metering,
+    tenantOf: async (id) => config.authEntries.find((e) => e.id === id)?.tenantId,
+    onMeteringUnavailable: (d) =>
+      void audits
+        .append({
+          at: new Date().toISOString(),
+          actor: 'policy',
+          tenantId: '-',
+          action: 'policy.metering-unavailable',
+          target: '-',
+          before: null,
+          after: null,
+          requestId: d.slice(0, 200),
+        })
+        .catch(() => undefined),
+  })
+
+  const consoleAudit = new ConsoleAuditSink()
+  const storeAudit = new StoreAuditSink(audits)
+  const auditSink: AuditSink = {
+    record: (entry) => {
+      consoleAudit.record(entry)
+      storeAudit.record(entry)
+    },
+  }
+
+  const store = new GatewaySessionStore({
+    // 红线 1:观测不阻断 —— safeRecord 吞掉一切采集异常
+    onUsage: (obs) => {
+      void safeRecord(
+        metering,
+        {
+          subjectId: obs.session.subjectId,
+          tenantId: obs.session.tenantId,
+          sessionId: obs.session.id,
+          turn: obs.turn,
+          step: obs.step,
+          provider: obs.session.provider ?? config.defaultProvider,
+          model: obs.session.model ?? config.defaultModel,
+          usage: obs.usage ?? { inputTokens: 0, outputTokens: 0 },
+          unreported: obs.usage === undefined,
+          at: new Date().toISOString(),
+        },
+        (d) => console.error(JSON.stringify({ kind: 'dshwar.metering.failed', detail: d })),
+      )
+    },
+  })
   const adminKeys = new InMemoryAdminKeyResolver((config.adminKeys ?? []).map((k) => ({ ...k })))
 
   // Subject Mirror:静态令牌表的用户也进镜像,让 /v1/admin/subjects 有东西可看,
@@ -157,6 +246,39 @@ export async function startServer(
       createAgent: runtime.createAgent,
       userMessage: runtime.userMessage,
       heartbeatMs: config.heartbeatMs ?? 15_000,
+      quota: policyService,
+      models: {
+        resolve: async (input) => {
+          const requested = `${input.provider ?? config.defaultProvider}/${input.model ?? config.defaultModel}`
+          const quota = await policyService.quotaOf(input.subjectId)
+          const ratio =
+            quota === undefined || quota.tokenLimit === null || quota.tokenLimit === 0
+              ? undefined
+              : quota.tokenUsed / quota.tokenLimit
+          const decision = await modelRouter.resolve({
+            tenantId: input.tenantId,
+            requested,
+            ...(ratio === undefined ? {} : { budgetUsedRatio: ratio }),
+          })
+          if (decision.kind === 'deny') return { kind: 'deny' }
+          if (decision.downgraded) {
+            void audits
+              .append({
+                at: new Date().toISOString(),
+                actor: 'model-router',
+                tenantId: input.tenantId,
+                action: 'model.downgraded',
+                target: input.subjectId,
+                before: { model: requested },
+                after: { model: decision.model },
+                requestId: '-',
+              })
+              .catch(() => undefined)
+          }
+          const [provider, model] = decision.model.split('/') as [string, string]
+          return { kind: 'allow', provider, model, downgraded: decision.downgraded }
+        },
+      },
     }),
     ...(config.scim === undefined
       ? {}
@@ -167,15 +289,22 @@ export async function startServer(
               source: config.scim.source,
               subjects,
               tenantMap: config.scim.tenantMap,
-              onAudit: (r) =>
-                new ConsoleAuditSink().record({
-                  at: new Date().toISOString(),
-                  actor: `scim:${config.scim!.source}`,
-                  tenantId: '-',
-                  action: r.action,
-                  target: r.target,
-                  requestId: r.detail,
-                }),
+              // CLAUDE.md 第七节:所有 SCIM 调用进审计。
+              // tenantId 从镜像里查回来 —— 审计查询按租户过滤,写死 '-'
+              // 会让 SCIM 的记录对每个租户都不可见,等于没记。
+              onAudit: (r) => {
+                void (async () => {
+                  const subject = await subjects.get(r.target).catch(() => undefined)
+                  auditSink.record({
+                    at: new Date().toISOString(),
+                    actor: `scim:${config.scim!.source}`,
+                    tenantId: subject?.tenantId ?? '-',
+                    action: r.action,
+                    target: r.target,
+                    requestId: r.detail,
+                  })
+                })()
+              },
             }),
             tokens: new InMemoryScimTokenResolver([
               {
@@ -188,9 +317,35 @@ export async function startServer(
         }),
     adminRoutes: registerAdminRoutes({
       ctx: runtime.ctx,
-      audit: new ConsoleAuditSink(),
+      // 同时写两处:stdout 给日志管道(DEPLOYMENT.md 承诺的),store 给
+      // /v1/admin/audit 查询。只写 console 的话审计端点永远是空的 ——
+      // 这也是冒烟抓到的:PATCH 配额成功了,审计里却什么都没有。
+      audit: auditSink,
       credentialRefs: [...new Set((config.credentials ?? []).map((c) => c.ref))],
-      subjectStore: subjects,
+      // ⚠️ **两个 id 空间要在这里对上。**
+      //
+      // Subject Mirror 的内部 id 由 `(source, externalId)` 派生;而 auth-static
+      // 的 principal id 就是配置里那个 `id`。metering / quota 记的都是 principal id
+      // (会话簿存的是它),Admin URL 里的 `{id}` 却可能是任一种写法。
+      //
+      // 不做这层翻译的后果是运维查配额永远 404 —— 这个 bug 是编译产物冒烟时
+      // 抓到的:两侧单测各自都绿,因为它们没同时配 subjectStore 与 quotaAdmin。
+      //
+      // 接 OIDC/SCIM 的部署没有这个问题:auth-jwt 返回的 principal id 就是镜像 id。
+      subjectStore: {
+        get: async (id) =>
+          (await subjects.get(id)) ?? (await subjects.getByExternalId('static', id)),
+        list: (filter) => subjects.list(filter),
+      },
+      auditStore: audits,
+      usageReader: {
+        daily: async (filter) => aggregateDaily(await metering.query(filter), pricing),
+      },
+      quotaAdmin: {
+        quotaOf: (id) => policyService.quotaOf(id),
+        setLimit: (id, limit) => quotas.setLimit(id, limit),
+      },
+      modelPolicies,
       subjects: {
         find: async (subjectId) => {
           const entry = config.authEntries.find((e) => e.id === subjectId)

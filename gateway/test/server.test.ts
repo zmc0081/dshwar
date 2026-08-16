@@ -163,3 +163,97 @@ describe('startServer 真的能起来并服务请求', () => {
     await expect(startServer({ ...config(tmp), authEntries: [] })).rejects.toThrow(/authEntries/)
   })
 })
+
+// ============================================================================
+// V0.4.0 Session 5:治理接线的回归测试
+//
+// 下面两条都是**编译产物冒烟时抓到的真 bug**,分包单测各自都绿:
+// 前者因为没同时配 subjectStore 与 quotaAdmin,后者因为没查过审计端点。
+// 补在这里,因为它们是 server.ts 的装配问题,不是任何单个包的问题。
+// ============================================================================
+describe('治理接线(冒烟抓到的两个 bug)', () => {
+  let tmp2: string
+  let srv: { url: string; close: () => Promise<void> } | undefined
+
+  const govConfig = (root: string): ServerConfig => ({
+    host: '127.0.0.1',
+    port: 0,
+    workspaceRoot: join(root, 'workspaces'),
+    sessionRoot: join(root, 'sessions'),
+    defaultProvider: 'deepseek',
+    defaultModel: 'deepseek-chat',
+    authEntries: [{ token: 'dev-alice', id: 'alice-e6f1', tenantId: 'acme' }],
+    adminKeys: [{ key: 'admin-acme', label: 'acme ops', tenantId: 'acme' }],
+    governance: {
+      pricing: {
+        currency: 'CNY',
+        prices: {
+          'deepseek/deepseek-chat': { inputPerMTokenMinor: 200, outputPerMTokenMinor: 800 },
+        },
+      },
+      quotas: [{ subjectId: 'alice-e6f1', tokenLimit: 5000 }],
+      modelPolicies: [
+        {
+          id: 'p-acme',
+          tenantId: 'acme',
+          allowedModels: ['deepseek/deepseek-chat'],
+          fallbackModel: null,
+        },
+      ],
+    },
+  })
+
+  beforeEach(async () => {
+    tmp2 = await mkdtemp(join(tmpdir(), 'dshwar-gov-'))
+    srv = await startServer(govConfig(tmp2))
+  })
+
+  afterEach(async () => {
+    await srv?.close()
+    srv = undefined
+    await rm(tmp2, { recursive: true, force: true }).catch(() => undefined)
+  })
+
+  const ADMIN = { 'x-dshwar-admin-key': 'admin-acme' }
+
+  // bug ①:镜像 id 由 (source, externalId) 派生,而 auth-static 的 principal id
+  // 是条目 id —— 两个 id 空间不翻译的话,运维查配额永远 404
+  it('按 principal id 查配额能命中(两个 id 空间已对上)', async () => {
+    const res = await fetch(`${srv!.url}/v1/admin/subjects/alice-e6f1/quota`, { headers: ADMIN })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { quota: { tokenLimit: number } }
+    expect(body.quota.tokenLimit).toBe(5000)
+  })
+
+  // bug ②:audit sink 写 console 而端点读 store —— PATCH 成功但审计永远是空的
+  it('Admin 变更能从审计端点查回来(sink 与 store 是同一个去处)', async () => {
+    const patched = await fetch(`${srv!.url}/v1/admin/subjects/alice-e6f1/quota`, {
+      method: 'PATCH',
+      headers: { ...ADMIN, 'content-type': 'application/json' },
+      body: JSON.stringify({ tokenLimit: 9000 }),
+    })
+    expect(patched.status).toBe(200)
+
+    await new Promise((r) => setTimeout(r, 20))
+    const audit = await fetch(`${srv!.url}/v1/admin/audit`, { headers: ADMIN })
+    const body = (await audit.json()) as { data: { action: string; after: unknown }[] }
+
+    expect(body.data).toHaveLength(1)
+    expect(body.data[0]!.action).toBe('admin.updateSubjectQuota')
+    expect(body.data[0]!.after).toEqual({ tokenLimit: 9000 })
+  })
+
+  it('清单外的模型建会话 403', async () => {
+    const res = await fetch(`${srv!.url}/v1/sessions`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer dev-alice', 'content-type': 'application/json' },
+      body: JSON.stringify({ provider: 'openai', model: 'o3-pro' }),
+    })
+    expect(res.status).toBe(403)
+  })
+
+  it('policies 与 usage 端点在完整装配下可用', async () => {
+    expect((await fetch(`${srv!.url}/v1/admin/policies`, { headers: ADMIN })).status).toBe(200)
+    expect((await fetch(`${srv!.url}/v1/admin/usage`, { headers: ADMIN })).status).toBe(200)
+  })
+})
