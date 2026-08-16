@@ -1,0 +1,30 @@
+{
+  "name": "@dshwar/tenant-map",
+  "version": "0.3.0",
+  "description": "租户映射:从 OIDC claim / SCIM Group / issuer 裁决用户属于哪个租户。映射不出时默认拒绝。",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

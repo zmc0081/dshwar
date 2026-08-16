@@ -150,7 +150,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 | --------------------------- | --------- | ------------------------------------------------- |
 | 0 可行性证伪:SCIM 供给链    | ✅ 已完成 | **止损未触发**;验收基线由 Keycloak 换为 authentik |
 | 1 `@dshwar/subject`         | ✅ 已完成 | 内存与 storage 两个实现跑同一套断言;29 个单测     |
-| 2 `@dshwar/tenant-map`      | ⬜ 未开始 | 四种策略 + fallback reject                        |
+| 2 `@dshwar/tenant-map`      | ✅ 已完成 | 四种策略 + 歧义即拒;29 个单测,负向多于正向        |
 | 3 `@dshwar/auth-jwt`        | ⬜ 未开始 | JWKS 验签,替掉明文令牌表                          |
 | 4 `@dshwar/auth-oidc`       | ⬜ 未开始 | discovery + 与租户映射接合                        |
 | 5 `@dshwar/scim-server`     | ⬜ 未开始 | User + Group + PATCH                              |
@@ -268,7 +268,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 
 ---
 
-### ⬜ Session 2: `@dshwar/tenant-map` —— 租户映射
+### ✅ Session 2: `@dshwar/tenant-map` —— 租户映射
 
 ```
 本次任务:把 IDENTITY-INTEROP.md §5 的映射规则变成代码。

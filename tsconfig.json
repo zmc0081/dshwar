@@ -15,6 +15,7 @@
     { "path": "./packages/fs-tenant" },
     { "path": "./packages/storage-scoped" },
     { "path": "./packages/subject" },
+    { "path": "./packages/tenant-map" },
     { "path": "./adapters/dsh-0.1.0" },
     { "path": "./gateway" },
     { "path": "./sdk/typescript" },
