@@ -67,6 +67,15 @@ const { RSS_PER_PROCESS_MB } = await import('@dshwar/supervisor')
 // 依据与倍数的选法写在 docs/DECISIONS/process-cost-thresholds.md,
 // 改这里的数字之前请先读那份文档 —— 放宽阈值是这道门禁唯一的失效方式。
 // ---------------------------------------------------------------------------
+/**
+ * ⚠️ 类型写成 `Partial<Record<NodeJS.Platform, …>>` 而不是让它推断:
+ * 推断出来的类型只含 linux / win32 两个键,于是 `THRESHOLDS[process.platform]`
+ * 是类型错误(TS7053)—— 而**那正好说明了这张表的要点**:它是**不全**的,
+ * 缺条目时必须走「跳过判定」而不是回退到某个默认值。类型标注把这件事说出来。
+ * 这个错误是根 `scripts/` 首次纳入类型检查时抓出来的(V0.4.7)。
+ *
+ * @type {Partial<Record<NodeJS.Platform, { coldStartMs: number, rssMb: number }>>}
+ */
 const THRESHOLDS = {
   // 实测中位数 × 系数(冷启动 2.5 吸收 runner 噪声,RSS 1.5 —— 内存是稳的)。
   // linux:  86 ms / 63 MB —— GitHub ubuntu-latest, Node 22, 2026-08-16
@@ -153,11 +162,19 @@ function measureGatewayBaseline() {
   })
 }
 
-/** 中位数。偶数个取中间两个的均值。 */
+/**
+ * 中位数。偶数个取中间两个的均值。
+ * @param {number[]} values
+ */
 function median(values) {
   const sorted = [...values].sort((a, b) => a - b)
+  // 空数组返回 -1 而不是 NaN:调用方按「>0 才当数用」处理,NaN 会一路传进
+  // 阈值比较里变成'永远不超标'—— 那是最糟的失败形态。
+  if (sorted.length === 0) return -1
   const mid = Math.floor(sorted.length / 2)
-  return sorted.length % 2 === 0 ? Math.round((sorted[mid - 1] + sorted[mid]) / 2) : sorted[mid]
+  const hi = sorted[mid] ?? 0
+  const lo = sorted[mid - 1] ?? hi
+  return sorted.length % 2 === 0 ? Math.round((lo + hi) / 2) : hi
 }
 
 if (!existsSync(CHILD)) {

@@ -17,17 +17,24 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+/** @param {...string} seg */
 const p = (...seg) => join(REPO, ...seg)
 
+/** @param {string} file */
 const read = (file) => readFileSync(file, 'utf8')
 
-/** @type {{where: string, version: string | null, hint?: string}[]} */
+/**
+ * ⚠️ `hint` 写成 `string | undefined` 而不是 `hint?:` —— 本仓开了
+ * `exactOptionalPropertyTypes`,那两者不等价:后者不接受显式传 `undefined`,
+ * 而这里恰恰到处在写 `hint: m ? undefined : '…'`。
+ * @type {{where: string, version: string | null, hint: string | undefined}[]}
+ */
 const found = []
 
 // ---------- 1. root package.json(基准) ----------
 const rootPkg = JSON.parse(read(p('package.json')))
 const expected = rootPkg.version
-found.push({ where: 'package.json (root)', version: expected })
+found.push({ where: 'package.json (root)', version: expected, hint: undefined })
 
 // ---------- 2. 各 workspace 包 ----------
 for (const area of ['packages', 'adapters', 'gateway', 'sdk', 'examples']) {
@@ -59,10 +66,12 @@ for (const area of ['packages', 'adapters', 'gateway', 'sdk', 'examples']) {
 const CURRENT_VERSION_RE =
   /当前版本\s*[（(]\s*正在开发\s*[）)]\s*[:：]\s*\*\*\s*[Vv]?([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)\s*\*\*/
 
-for (const [file, label] of [
+/** @type {[string, string][]} */
+const CURRENT_VERSION_SITES = [
   ['CLAUDE.md', 'CLAUDE.md 顶部「当前版本」'],
   ['SESSION_TASKS.md', 'SESSION_TASKS.md 头部「当前版本」'],
-]) {
+]
+for (const [file, label] of CURRENT_VERSION_SITES) {
   const path = p(file)
   if (!existsSync(path)) {
     found.push({ where: label, version: null, hint: `${file} 不存在` })
@@ -71,7 +80,7 @@ for (const [file, label] of [
   const m = CURRENT_VERSION_RE.exec(read(path))
   found.push({
     where: label,
-    version: m ? m[1] : null,
+    version: m?.[1] ?? null,
     hint: m ? undefined : `未匹配到「当前版本(正在开发): **V<x.y.z>**」`,
   })
 }
@@ -95,7 +104,7 @@ for (const [file, label] of [
       : null
     found.push({
       where: 'README.md 兼容矩阵',
-      version: m ? m[1] : null,
+      version: m?.[1] ?? null,
       hint: m ? undefined : '未在「## 兼容矩阵」下找到 DSHWAR 版本行',
     })
   }
@@ -117,7 +126,7 @@ for (const candidate of [
   )
   found.push({
     where: `${candidate} (OpenAPI info.version)`,
-    version: m ? m[1] : null,
+    version: m?.[1] ?? null,
     hint: m ? undefined : '未解析到 info.version',
   })
 }
@@ -151,7 +160,7 @@ function checkFixedCoverage() {
   const patterns = groups.flat()
   const uncovered = publishable.filter(
     (name) =>
-      !patterns.some((pat) => {
+      !patterns.some((/** @type {string} */ pat) => {
         if (pat === name) return true
         if (!pat.includes('*')) return false
         const re = new RegExp(`^${pat.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`)

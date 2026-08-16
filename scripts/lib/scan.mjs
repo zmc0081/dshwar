@@ -27,6 +27,7 @@ const SKIP_DIRS = new Set([
  * @returns {string[]} 绝对路径列表
  */
 export function collectFiles(root, accept) {
+  /** @type {string[]} */
   const out = []
   let stat
   try {
@@ -36,6 +37,7 @@ export function collectFiles(root, accept) {
   }
   if (!stat.isDirectory()) return out
 
+  /** @param {string} dir */
   const walk = (dir) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       if (entry.isDirectory()) {
@@ -51,7 +53,11 @@ export function collectFiles(root, accept) {
   return out
 }
 
-/** 以正斜杠归一化仓库相对路径,好让规则在 Windows 与 Linux 上写法一致。 */
+/**
+ * 以正斜杠归一化仓库相对路径,好让规则在 Windows 与 Linux 上写法一致。
+ * @param {string} repoRoot
+ * @param {string} absolute
+ */
 export function repoPath(repoRoot, absolute) {
   return relative(repoRoot, absolute).split(sep).join('/')
 }
@@ -89,6 +95,7 @@ const ALLOW_MARKER = /dshwar-guard-allow:\s*(\S.*)$/
  * @returns {{file: string, line: number, text: string}[]}
  */
 export function grepFiles(files, pattern, repoRoot) {
+  /** @type {{file: string, line: number, text: string}[]} */
   const hits = []
   for (const file of files) {
     let content
@@ -109,6 +116,7 @@ export function grepFiles(files, pattern, repoRoot) {
   return hits
 }
 
-/** 常用的文件类型判定 */
+/** 常用的文件类型判定 @param {string} p */
 export const isTs = (p) => /\.(ts|tsx|mts|cts)$/.test(p) && !/\.d\.ts$/.test(p)
+/** @param {string} p */
 export const isPackageJson = (p) => p.endsWith('package.json')

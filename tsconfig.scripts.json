@@ -15,6 +15,7 @@
   // 新增包时在此登记一行 —— 忘了登记由 `pnpm check:guards` 拦下。
   "include": [],
   "references": [
+    { "path": "./scripts/tsconfig.scripts.json" },
     { "path": "./packages/api-contract/tsconfig.scripts.json" },
     { "path": "./sdk/typescript/tsconfig.scripts.json" }
   ]

@@ -1,0 +1,43 @@
+// 根 `scripts/` 的类型检查项目 —— **守卫脚本自己**的那一层。
+//
+// ## 为什么它到 V0.4.7 才有
+//
+// 根 `tsconfig.scripts.json` 的 `include` 是 `[]`,只 reference 了
+// `packages/api-contract` 与 `sdk/typescript` 两个包的脚本项目。于是
+// `pnpm typecheck:scripts` 覆盖的只有那两处,而**根 `scripts/` 一个文件都没检查过**。
+//
+// 那里放的正是全部门禁:`check-guards` / `verify-guards` / `verify-assertions` /
+// `check-contract` / `check-version` / `check-oss-purity` / `measure-process-cost`。
+// **守卫自己在检查之外。**
+//
+// 而 `checkScriptsTsconfigReferences` 看不见这个洞,是因为它从「含 tsconfig.json
+// 的目录」出发遍历,并且**把仓库根显式过滤掉了**(`rel !== ''`)——
+// 根 `scripts/` 于是对它天生不可见。这是同一个模式的第三次:
+// 测试文件不被检查(V0.4.6 修)→ CI 不跑 verify:assertions(V0.4.7 修)→
+// 守卫脚本自己不被检查(这里)。一次比一次靠里。
+//
+// ## 为什么是 checkJs 而不是改写成 .ts
+//
+// 这些脚本要能被 `node scripts/xxx.mjs` 直接跑 —— CI 与本地都这么调,
+// 改成 .ts 就得全线加 `--experimental-strip-types`,而 Node 22 与 24 对它的
+// 默认值不同。`checkJs` 不改变任何运行时形态,是唯一零代价的办法。
+// 三方案比较见 docs/DECISIONS/typecheck-mjs-fixtures.md。
+//
+// ⚠️ `noUnusedLocals` / `noUnusedParameters` 在此**保持开启**(继承自 base):
+// 这些脚本的失效方式往往就是「改了一半,旧变量还留着」。
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "allowJs": true,
+    "checkJs": true,
+    "rewriteRelativeImportExtensions": false,
+    "rootDir": "..",
+    // 门禁脚本读 JSON 配置(package.json / tsconfig / openapi.json),
+    // 没有它 `JSON.parse` 之外的 import 断言路径会报错。
+    "resolveJsonModule": true
+  },
+  "include": ["**/*.mjs", "**/*.ts"],
+  "exclude": ["node_modules"]
+}

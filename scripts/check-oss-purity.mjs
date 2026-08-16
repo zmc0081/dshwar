@@ -30,6 +30,7 @@ import { fileURLToPath } from 'node:url'
 import { collectFiles, grepFiles, isTs, repoPath } from './lib/scan.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+/** @param {...string} seg */
 const p = (...seg) => join(REPO, ...seg)
 
 /**

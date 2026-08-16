@@ -43,10 +43,29 @@ import { fileURLToPath } from 'node:url'
 import { withMutatedFiles } from './lib/mutate.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+/** @param {...string} seg */
 const p = (...seg) => join(REPO, ...seg)
 const VITEST = p('node_modules', 'vitest', 'vitest.mjs')
 
-/** 跑一组测试,只关心红还是绿。 */
+/**
+ * 一次探针的结果。
+ *
+ * ⚠️ `unchanged` **必须出现在每个分支上**,哪怕是 `false`。
+ * 之前它只在「锚点没匹配上」那一支里有,于是别处读 `r.unchanged` 拿到的是
+ * `undefined` —— 运行时恰好等价,但类型上是不健全的,而**它的后果是诊断信息挑错**:
+ * 锚点腐烂时会打印「测试竟然还是绿的」而不是「锚点没匹配上」,
+ * 把一个工具问题伪装成一个测试问题。
+ * 这个错误是根 `scripts/` 首次纳入类型检查时抓出来的(V0.4.7)。
+ *
+ * @typedef {{ red: boolean, unchanged: boolean, output?: string }} ProbeResult
+ */
+
+/**
+ * 跑一组测试,只关心红还是绿。
+ *
+ * @param {...string} targets
+ * @returns {ProbeResult}
+ */
 function runTests(...targets) {
   try {
     execFileSync(process.execPath, [VITEST, 'run', ...targets], {
@@ -54,13 +73,20 @@ function runTests(...targets) {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
     })
-    return { red: false }
+    return { red: false, unchanged: false }
   } catch (error) {
-    return { red: true, output: `${error.stdout ?? ''}${error.stderr ?? ''}` }
+    const e = /** @type {{stdout?: unknown, stderr?: unknown}} */ (error)
+    return { red: true, unchanged: false, output: `${e.stdout ?? ''}${e.stderr ?? ''}` }
   }
 }
 
+/** @type {{name: string, passed: boolean}[]} */
 const results = []
+/**
+ * @param {string} name
+ * @param {boolean} passed
+ * @param {string} [detail]
+ */
 function expect(name, passed, detail) {
   results.push({ name, passed })
   console.log(`  ${passed ? '通过' : '失败'}  ${name}`)
@@ -84,12 +110,14 @@ function expect(name, passed, detail) {
  * @param {string} rel 仓库相对路径
  * @param {(source: string) => string} mutate 篡改函数
  * @param {string[]} targets 要跑的测试
+ * @returns {ProbeResult}
  */
 function withMutation(rel, mutate, targets) {
   const target = p(rel)
 
   // 先判「锚点匹配上了没有」再动文件 —— 没匹配上就完全不碰磁盘。
-  if (mutate(readFileSync(target, 'utf8')) === readFileSync(target, 'utf8')) {
+  const source = readFileSync(target, 'utf8')
+  if (mutate(source) === source) {
     return { red: false, unchanged: true }
   }
 

@@ -38,11 +38,17 @@ import { dirname, join, resolve } from 'node:path'
 import { withRestoredFiles } from './lib/mutate.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+/** @param {...string} seg */
 const p = (...seg) => join(REPO, ...seg)
 
 const ESLINT_BIN = p('node_modules', 'eslint', 'bin', 'eslint.js')
 
-/** 跑一条命令,只关心它是成功还是失败。 */
+/**
+ * 跑一条命令,只关心它是成功还是失败。
+ *
+ * @param {string[]} args
+ * @returns {{ ok: boolean, output: string }}
+ */
 function run(args) {
   try {
     const stdout = execFileSync(process.execPath, args, {
@@ -52,19 +58,28 @@ function run(args) {
     })
     return { ok: true, output: stdout }
   } catch (error) {
+    const e = /** @type {{stdout?: unknown, stderr?: unknown}} */ (error)
     return {
       ok: false,
-      output: `${error.stdout ?? ''}${error.stderr ?? ''}`,
+      output: `${e.stdout ?? ''}${e.stderr ?? ''}`,
     }
   }
 }
 
+/** @param {string} target */
 const runEslint = (target) => run([ESLINT_BIN, target, '--max-warnings', '0'])
 const runGuards = () => run([p('scripts', 'check-guards.mjs')])
 const runVersion = () => run([p('scripts', 'check-version.mjs')])
 
-/** 记录被本脚本创建的路径,finally 里无条件清理。 */
+/**
+ * 记录被本脚本创建的路径,finally 里无条件清理。
+ * @type {string[]}
+ */
 const created = []
+/**
+ * @param {string} relPath
+ * @param {string} content
+ */
 function writeFixture(relPath, content) {
   const full = p(relPath)
   mkdirSync(dirname(full), { recursive: true })
@@ -73,7 +88,13 @@ function writeFixture(relPath, content) {
   return full
 }
 
+/** @type {{name: string, passed: boolean, detail: string | undefined}[]} */
 const results = []
+/**
+ * @param {string} name
+ * @param {boolean} passed
+ * @param {string} [detail]
+ */
 function expect(name, passed, detail) {
   results.push({ name, passed, detail })
   console.log(`  ${passed ? '通过' : '失败'}  ${name}`)
@@ -679,11 +700,95 @@ ${added.output.slice(0, 400)}`,
   for (const file of created) {
     if (existsSync(file)) rmSync(file, { force: true })
   }
-  // 清理旧版本可能留下的备份残骸。现在的还原走 scripts/lib/mutate.mjs
-  // (原文留在内存里),不再产生 .guardbak —— 但历史上失败的运行会留下它。
-  for (const stale of [p('README.md.guardbak'), p('packages/api-contract/openapi.json.guardbak')]) {
-    if (existsSync(stale)) rmSync(stale, { force: true })
-  }
+  // ⚠️ 这里曾有一段「清理旧版本留下的 .guardbak 残骸」。删掉了,两个理由:
+  //   1. 还原改走 scripts/lib/mutate.mjs 之后,本脚本**不可能再产生**那种文件
+  //   2. 为一个不再发生的失败模式留着清理代码,正是会慢慢腐烂的东西
+  // 那次事故留下的残骸已经手工清掉了。见 docs/DECISIONS/guards-must-not-write.md。
+}
+
+// ---------------------------------------------------------------------
+// 23 守卫脚本不得越权写仓库(V0.4.7)
+//
+// 起因是真实事故:还原 openapi.json 的 copyFileSync 抛了 UNKNOWN(-4094),
+// 把对外契约留在篡改状态、留下 .guardbak、且崩在 finally 里一句话不说。
+// 详见 docs/DECISIONS/guards-must-not-write.md。
+//
+// 23a 负向:往 check-*.mjs 里植入一行写调用 → 必须红(第 1 档:纯读)
+// 23b 负向:往 verify-*.mjs 里植入落盘备份  → 必须红(第 2 档:只能走受控通路)
+// 23c 正向:verify-*.mjs 造一次性夹具仍被放行(第 3 档) ——
+//     少了这一条,一条「见写就红」的粗暴守卫也能通过 23a/23b,
+//     而那会把 verify-guards 自己变成不可能通过的。
+// ---------------------------------------------------------------------
+{
+  const checkTarget = p('scripts/check-oss-purity.mjs')
+  withRestoredFiles([checkTarget], () => {
+    const src = readFileSync(checkTarget, 'utf8')
+    writeFileSync(checkTarget, `${src}\nwriteFileSync('probe.txt', 'x')\n`, 'utf8')
+    const guards = runGuards()
+    expect(
+      '23a check-*.mjs 里出现写调用 → 守卫变红(第 1 档:检查必须只读)',
+      !guards.ok && /越权写仓库/.test(guards.output),
+      guards.ok ? '守卫放行了一个会改仓库的 check-* —— 检查与被检查的东西混了' : undefined,
+    )
+  })
+
+  const verifyTarget = p('scripts/verify-assertions.mjs')
+  withRestoredFiles([verifyTarget], () => {
+    const src = readFileSync(verifyTarget, 'utf8')
+    // dshwar-guard-allow: 本条守卫的负向测试必须写出这串字面量才能植入违规
+    writeFileSync(verifyTarget, `${src}\ncopyFileSync('a', 'a.probebak')\n`, 'utf8')
+    const guards = runGuards()
+    expect(
+      '23b verify-*.mjs 自己造落盘备份 → 守卫变红(第 2 档:只能走受控通路)',
+      !guards.ok && /越权写仓库/.test(guards.output),
+      guards.ok ? '守卫放行了绕过 lib/mutate.mjs 的备份写法 —— 事故会原样重演' : undefined,
+    )
+  })
+
+  // 23c 基线里 verify-guards.mjs 本来就在造 __guard_fixture__ 目录、
+  // 并用 writeFileSync 篡改真文件 —— 而基线是绿的,放行成立。
+  const baseline = runGuards()
+  expect(
+    '23c verify-* 造一次性夹具与经受控通路篡改仍被放行(第 3 档)',
+    baseline.ok,
+    baseline.ok ? undefined : '守卫误伤了正当的夹具创建 —— 那会让本脚本自己无法通过',
+  )
+}
+
+// ---------------------------------------------------------------------
+// 22 登记进解决方案的项目必须真的检查了文件(V0.4.7)
+//
+// 起因:`tsconfig.scripts.json` 的 include 是 [],于是根 scripts/ ——
+// 也就是**全部门禁脚本所在的地方** —— 从来没被 tsc 看过。
+// `tsc -b` 对空项目**安静地成功**,所以这个洞不会以任何方式显形。
+//
+// 22a 负向:把一个已登记项目的 include 清空 → 必须红
+// 22b 正向:根解决方案自己的 include: [] 仍被放行(它是转发器,不是漏检)
+//     —— 少了这一条,一条「见空就红」的粗暴守卫也能通过 22a。
+// ---------------------------------------------------------------------
+{
+  const victim = p('packages/principal/tsconfig.json')
+  withRestoredFiles([victim], () => {
+    const cfg = JSON.parse(readFileSync(victim, 'utf8').replace(/^\s*\/\/.*$/gm, ''))
+    cfg.include = []
+    writeFileSync(victim, JSON.stringify(cfg, null, 2) + '\n', 'utf8')
+
+    const guards = runGuards()
+    expect(
+      '22a 已登记项目的 include 被清空 → 守卫变红(tsc 对空项目会安静成功)',
+      !guards.ok && /编译零个文件/.test(guards.output),
+      guards.ok ? '守卫放行了一个什么都不检查的项目 —— 那种绿与真通过长得一样' : undefined,
+    )
+  })
+
+  // 22b 基线本身就含三个 include: [] 的根解决方案文件,而上面一跑就绿 ——
+  // 说明放行是成立的。这里显式记一条,免得将来有人把守卫改成「见空就红」。
+  const baseline = runGuards()
+  expect(
+    '22b 根解决方案的 include: [] 被放行(它是转发器,不是漏检)',
+    baseline.ok,
+    baseline.ok ? undefined : '守卫误伤了根解决方案文件 —— 它们本来就该只有 references',
+  )
 }
 
 // ---------------------------------------------------------------------

@@ -28,7 +28,10 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs'
 
-/** 同步退避 —— 这些脚本整体是同步的,不值得为几毫秒改成异步。 */
+/**
+ * 同步退避 —— 这些脚本整体是同步的,不值得为几毫秒改成异步。
+ * @param {number} ms
+ */
 function sleepSync(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 }
@@ -38,6 +41,11 @@ function sleepSync(ms) {
  *
  * 不在这里抛异常:调用方通常已经在 `finally` 里,再抛会盖掉真正的失败原因 ——
  * 而那正是这次事故里最难查的一点。
+ *
+ * @param {string} path
+ * @param {Buffer} original
+ * @param {number} [attempts]
+ * @returns {boolean}
  */
 function restoreOne(path, original, attempts = 5) {
   for (let i = 0; i < attempts; i += 1) {
@@ -102,7 +110,10 @@ export function withMutatedFiles(edits, body) {
   }
 }
 
-/** 收尾还原 —— 失败时把话说满,并让进程非零退出。 */
+/**
+ * 收尾还原 —— 失败时把话说满,并让进程非零退出。
+ * @param {{path: string, original: Buffer}[]} saved
+ */
 function finalRestore(saved) {
   // 倒序还原:与写入顺序相反,和资源释放的惯例一致。
   const broken = []

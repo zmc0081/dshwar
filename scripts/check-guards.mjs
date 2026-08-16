@@ -14,6 +14,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { collectFiles, grepFiles, isPackageJson, isTs, repoPath } from './lib/scan.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+/** @param {...string} seg */
 const p = (...seg) => join(REPO, ...seg)
 
 /** @type {{name: string, rule: string, run: () => {file: string, line: number, text: string}[]}[]} */
@@ -124,7 +125,9 @@ function checkUpstreamVersionConsistency() {
 function checkTsconfigReferences() {
   const root = JSON.parse(stripJsonComments(readFileSync(p('tsconfig.json'), 'utf8')))
   const referenced = new Set(
-    (root.references ?? []).map((r) => r.path.replace(/^\.\//, '').replace(/\/$/, '')),
+    (root.references ?? []).map((/** @type {{path: string}} */ r) =>
+      r.path.replace(/^\.\//, '').replace(/\/$/, ''),
+    ),
   )
 
   const projects = collectFiles(REPO, (f) => f.endsWith('tsconfig.json'))
@@ -161,7 +164,9 @@ function checkTestTsconfigReferences() {
     return [{ file: 'tsconfig.test.json', line: 0, text: '根测试解决方案文件缺失或无法解析' }]
   }
   const referenced = new Set(
-    (root.references ?? []).map((r) => r.path.replace(/^\.\//, '').replace(/\/$/, '')),
+    (root.references ?? []).map((/** @type {{path: string}} */ r) =>
+      r.path.replace(/^\.\//, '').replace(/\/$/, ''),
+    ),
   )
 
   const projectDirs = collectFiles(REPO, (f) => f.endsWith('tsconfig.json'))
@@ -199,7 +204,7 @@ function checkTestTsconfigReferences() {
  * `Type 'string' is not assignable to type 'FinishReason'`。
  */
 function checkMjsFixtureCoverage() {
-  const isMjs = (f) => f.endsWith('.mjs')
+  const isMjs = (/** @type {string} */ f) => f.endsWith('.mjs')
   const projectDirs = collectFiles(REPO, (f) => f.endsWith('tsconfig.json'))
     .map((f) => repoPath(REPO, dirname(f)))
     .filter((rel) => rel !== '' && rel !== '.')
@@ -221,7 +226,7 @@ function checkMjsFixtureCoverage() {
       continue
     }
     const opts = cfg.compilerOptions ?? {}
-    const includes = (cfg.include ?? []).some((g) => g.includes('.mjs'))
+    const includes = (cfg.include ?? []).some((/** @type {string} */ g) => g.includes('.mjs'))
     if (opts.checkJs !== true || opts.allowJs !== true || !includes) {
       out.push({
         file: `${rel}/tsconfig.test.json`,
@@ -243,7 +248,9 @@ function checkScriptsTsconfigReferences() {
     return [{ file: 'tsconfig.scripts.json', line: 0, text: '根脚本解决方案文件缺失或无法解析' }]
   }
   const referenced = new Set(
-    (root.references ?? []).map((r) => r.path.replace(/^\.\//, '').replace(/\/$/, '')),
+    (root.references ?? []).map((/** @type {{path: string}} */ r) =>
+      r.path.replace(/^\.\//, '').replace(/\/$/, ''),
+    ),
   )
 
   const projectDirs = collectFiles(REPO, (f) => f.endsWith('tsconfig.json'))
@@ -350,7 +357,7 @@ function checkPrincipalConsumers() {
   const registered = new Set(PRINCIPAL_CONSUMERS.map((c) => c.file))
   // 只扫产品源码。测试里调 `principal.current()` 是正当的 —— 它们不是消费方,
   // 而且断言作用域行为本来就得读它。范围与 CLAUDE.md 自查项的 `packages/*/src` 一致。
-  const inSrc = (f) => isTs(f) && /[\\/]src[\\/]/.test(f)
+  const inSrc = (/** @type {string} */ f) => isTs(f) && /[\\/]src[\\/]/.test(f)
   const files = [...collectFiles(p('packages'), inSrc), ...collectFiles(p('gateway'), inSrc)]
   const hits = grepFiles(files, /principal\.current\s*\(/g, REPO)
 
@@ -376,6 +383,198 @@ function checkStalePrincipalConsumers() {
     line: 0,
     text: `白名单里的 ${c.file} 已不存在`,
   }))
+}
+
+/**
+ * 守卫脚本不得越权写仓库。
+ *
+ * 起因是一次真实事故:`verify-guards` 还原 `openapi.json` 时 `copyFileSync`
+ * 抛了 `UNKNOWN(-4094)`,**把对外契约留在篡改状态、留下 .guardbak、
+ * 且崩在 `finally` 里一句话不说**。若那次没人看工作区,一个残缺的契约会被提交,
+ * 而契约冻结检查会拿它当新基线 —— **一个守卫的失败,悄悄拆掉了另一个守卫。**
+ *
+ * 两条断言,对应 `docs/DECISIONS/guards-must-not-write.md` 的前两档:
+ *
+ * 1. **`check-*.mjs` 一律只读。** 检查的定义就是「看一眼,给个结论」;
+ *    需要改仓库才能得出结论的检查,基本是把验证与被验证的东西搞混了。
+ * 2. **`verify-*.mjs` 不得自己造备份。** 它们确实要改真文件(Vitest 解析的是
+ *    磁盘路径),但只能走 `scripts/lib/mutate.mjs` —— 那里原文留在内存、
+ *    还原带退避重试、真失败时打印恢复命令并非零退出。
+ *
+ * ⚠️ 第 2 条查的是 `copyFileSync` 与 `.guardbak` / `.probebak` 这类**落盘备份**
+ * 的痕迹,不是 `writeFileSync` 本身 —— 后者是篡改与造夹具正当需要的。
+ *
+ * @returns {{file: string, line: number, text: string}[]}
+ */
+function checkGuardScriptsDoNotWrite() {
+  /** @type {{file: string, line: number, text: string}[]} */
+  const out = []
+  const scriptFiles = collectFiles(p('scripts'), (/** @type {string} */ f) => f.endsWith('.mjs'))
+
+  for (const file of scriptFiles) {
+    const rel = repoPath(REPO, file)
+    const base = rel.split('/').pop() ?? ''
+    // 受控通路自己当然要写 —— 它就是那条通路。
+    if (rel === 'scripts/lib/mutate.mjs') continue
+
+    const isCheck = base.startsWith('check-')
+    const isVerify = base.startsWith('verify-')
+    if (!isCheck && !isVerify) continue
+
+    const lines = readFileSync(file, 'utf8').split(/\r?\n/)
+    for (const [i, line] of lines.entries()) {
+      // 注释里提到这些名字是正常的(事故记录、说明),只看真正的调用
+      if (/^\s*(\/\/|\*|\/\*)/.test(line)) continue
+
+      // ★ 行级豁免,与 `scripts/lib/scan.mjs` 的 ALLOW_MARKER 同款。
+      //   执行一条规则的代码往往长得像违反那条规则 —— 本条守卫的**负向测试**
+      //   就必须在源码里写出 `copyFileSync(` 这串字面量,否则它没法植入违规。
+      //   (这个洞是本守卫第一次跑时抓住它自己发现的。)
+      //   空理由不算豁免,判据与 scan.mjs 一致。
+      if (
+        /dshwar-guard-allow:\s*\S/.test(line) ||
+        /dshwar-guard-allow:\s*\S/.test(lines[i - 1] ?? '')
+      )
+        continue
+
+      if (
+        isCheck &&
+        /\b(write|copy|append|rename|unlink|mkdir|rm)FileSync|\brmSync\s*\(/.test(line)
+      ) {
+        out.push({
+          file: rel,
+          line: i + 1,
+          text: `${rel}:${i + 1} check-* 必须只读,这里有写调用`,
+        })
+      }
+      if (isVerify && /\bcopyFileSync\s*\(|\.(guardbak|probebak)\b/.test(line)) {
+        out.push({
+          file: rel,
+          line: i + 1,
+          text: `${rel}:${i + 1} verify-* 自己造了落盘备份 —— 请走 scripts/lib/mutate.mjs`,
+        })
+      }
+    }
+  }
+  return out
+}
+
+/**
+ * 登记进解决方案的项目必须**真的检查了什么**。
+ *
+ * ## 起因
+ *
+ * `tsconfig.scripts.json` 的 `include` 是 `[]`,只 reference 了两个包的脚本项目。
+ * 于是 `pnpm typecheck:scripts` 从来没看过根 `scripts/` 一眼 ——
+ * 而那里放的是**全部门禁脚本**。守卫自己在检查之外,整整两个版本。
+ *
+ * ⚠️ **根解决方案文件本身的 `include: []` 是合法的** —— 它就是个转发器,
+ * 内容全在 `references` 里。所以这条守卫查的是**被登记的那一端**:
+ * 一个 leaf 项目(自己没有 references)若 `include` 与 `files` 都是空的,
+ * 它编译零个文件,**`tsc -b` 会安静地成功**。
+ *
+ * 那种绿是最坏的一种:它与「检查过且通过」在输出上一模一样。
+ *
+ * @returns {{file: string, line: number, text: string}[]}
+ */
+function checkEmptyIncludeProjects() {
+  /** @type {{file: string, line: number, text: string}[]} */
+  const out = []
+  const solutions = ['tsconfig.json', 'tsconfig.test.json', 'tsconfig.scripts.json']
+
+  for (const solution of solutions) {
+    if (!existsSync(p(solution))) continue
+    let root
+    try {
+      root = JSON.parse(stripJsonComments(readFileSync(p(solution), 'utf8')))
+    } catch {
+      continue
+    }
+    for (const ref of root.references ?? []) {
+      // references 里的 path 可能是目录(隐含 tsconfig.json)也可能是具体文件
+      const raw = String(ref.path).replace(/^\.\//, '').replace(/\/$/, '')
+      const target = raw.endsWith('.json') ? raw : `${raw}/tsconfig.json`
+      if (!existsSync(p(target))) {
+        out.push({ file: solution, line: 0, text: `登记了不存在的项目 ${target}` })
+        continue
+      }
+      let cfg
+      try {
+        cfg = JSON.parse(stripJsonComments(readFileSync(p(target), 'utf8')))
+      } catch {
+        out.push({ file: target, line: 0, text: `${target} 无法解析` })
+        continue
+      }
+      // 自己也是转发器的,由它自己的 references 那一层负责
+      if ((cfg.references ?? []).length > 0) continue
+      const covers = (cfg.include ?? []).length > 0 || (cfg.files ?? []).length > 0
+      if (!covers) {
+        out.push({
+          file: target,
+          line: 0,
+          text: `${target} 的 include 与 files 都是空的 —— 它编译零个文件,tsc 会安静地通过`,
+        })
+      }
+    }
+  }
+  return out
+}
+
+/**
+ * 根 `scripts/` 下的 `.mjs` 必须被 checkJs 覆盖。
+ *
+ * ## 为什么 {@link checkScriptsTsconfigReferences} 照不到它
+ *
+ * 那一条从「含 `tsconfig.json` 的目录」出发遍历,并且**把仓库根显式过滤掉了**
+ * (`rel !== ''`)。根 `scripts/` 不是任何 workspace 成员的子目录,
+ * 于是对它天生不可见 —— 这不是它写错了,是它的遍历起点决定了有个盲区。
+ *
+ * ## 为什么单独一条,而不是把上面那条改宽
+ *
+ * 因为这是**同一个模式的第三次**:测试文件不被检查(V0.4.6)→
+ * CI 不跑 verify:assertions(V0.4.7)→ 守卫脚本自己不被检查(这里)。
+ * 每次都是「检查机制自己的那一层没人管」,而每次的补法都是**再加一条盯着它**。
+ * 与 {@link checkMissingTsconfig} 堵 17/18 的洞是同一个套路。
+ *
+ * @returns {{file: string, line: number, text: string}[]}
+ */
+function checkRootScriptsCoverage() {
+  const isMjs = (/** @type {string} */ f) => f.endsWith('.mjs')
+  if (collectFiles(p('scripts'), isMjs).length === 0) return []
+
+  const cfgPath = 'scripts/tsconfig.scripts.json'
+  if (!existsSync(p(cfgPath))) {
+    return [
+      {
+        file: 'scripts',
+        line: 0,
+        text: `根 scripts/ 有 .mjs 却没有 ${cfgPath} —— 门禁脚本自己在类型检查之外`,
+      },
+    ]
+  }
+  let cfg
+  try {
+    cfg = JSON.parse(stripJsonComments(readFileSync(p(cfgPath), 'utf8')))
+  } catch {
+    return [{ file: cfgPath, line: 0, text: `${cfgPath} 无法解析` }]
+  }
+  const opts = cfg.compilerOptions ?? {}
+  const covers = (cfg.include ?? []).some((/** @type {string} */ g) => g.includes('.mjs'))
+  if (opts.allowJs !== true || opts.checkJs !== true || !covers) {
+    return [
+      { file: cfgPath, line: 0, text: `${cfgPath} 没有同时开 allowJs + checkJs 并 include .mjs` },
+    ]
+  }
+
+  // 登记与否交给 checkEmptyIncludeProjects 之外的这一句:没登记就等于没跑。
+  const root = JSON.parse(stripJsonComments(readFileSync(p('tsconfig.scripts.json'), 'utf8')))
+  const referenced = (root.references ?? []).map((/** @type {{path: string}} */ r) =>
+    r.path.replace(/^\.\//, ''),
+  )
+  if (!referenced.includes(cfgPath)) {
+    return [{ file: 'tsconfig.scripts.json', line: 0, text: `未登记 ${cfgPath}` }]
+  }
+  return []
 }
 
 /**
@@ -419,6 +618,7 @@ function checkCiEnumeratesGates() {
 
   // 门禁清单从 package.json 的 check:all 里现取 —— 不在这里另抄一份,
   // 否则这条守卫自己就成了第二个清单,正是它要消灭的东西。
+  /** @type {string} */
   const checkAll = JSON.parse(readFileSync(p('package.json'), 'utf8')).scripts?.['check:all'] ?? ''
   const gates = checkAll
     .split('&&')
@@ -442,7 +642,7 @@ function checkCiEnumeratesGates() {
     // 只看真正执行的地方(run:),注释与 name: 里提到脚本名是正常的说明文字
     const run = /^\s*(?:-\s*)?run:\s*(.+)$/.exec(line)
     if (run === null) continue
-    const command = run[1]
+    const command = run[1] ?? ''
     for (const gate of gates) {
       if (gate === 'check:all') continue
       // 词边界:避免 `check:contract` 被 `check:contract-foo` 之类误伤
@@ -460,7 +660,10 @@ function checkCiEnumeratesGates() {
   return hits
 }
 
-/** 去掉 JSONC 注释。根 tsconfig 里有大段说明性注释,JSON.parse 咽不下。 */
+/**
+ * 去掉 JSONC 注释。根 tsconfig 里有大段说明性注释,JSON.parse 咽不下。
+ * @param {string} text
+ */
 function stripJsonComments(text) {
   return text.replace(/^\s*\/\/.*$/gm, '')
 }
@@ -564,6 +767,41 @@ if (unregistered.length === 0 && stale.length === 0) {
   console.log('        登记处见 scripts/check-guards.mjs 的 PRINCIPAL_CONSUMERS,')
   console.log('        背景见 docs/DECISIONS/principal-scope-binding.md')
   for (const h of [...unregistered, ...stale]) console.log(`        ${h.text}`)
+}
+
+const guardWrites = checkGuardScriptsDoNotWrite()
+if (guardWrites.length === 0) {
+  console.log('  通过  守卫脚本不越权写仓库(check-* 只读,verify-* 走受控通路)')
+} else {
+  failed += 1
+  console.log(`  违规  守卫脚本越权写仓库  (${guardWrites.length} 处)`)
+  console.log('        起因是真实事故:还原 openapi.json 失败,把对外契约留在篡改状态,')
+  console.log('        且崩在 finally 里一句话不说 —— 一个守卫的失败会拆掉另一个守卫。')
+  console.log('        原则与三档划分见 docs/DECISIONS/guards-must-not-write.md')
+  for (const h of guardWrites) console.log(`        ${h.text}`)
+}
+
+const emptyProjects = checkEmptyIncludeProjects()
+if (emptyProjects.length === 0) {
+  console.log('  通过  登记进解决方案的项目都真的检查了文件')
+} else {
+  failed += 1
+  console.log(`  违规  有项目被登记了却编译零个文件  (${emptyProjects.length} 处)`)
+  console.log('        `tsc -b` 对空项目会**安静地成功** —— 那种绿与「检查过且通过」')
+  console.log('        在输出上一模一样。tsconfig.scripts.json 正是这么让根 scripts/')
+  console.log('        在类型检查之外躺了两个版本。')
+  for (const h of emptyProjects) console.log(`        ${h.text}`)
+}
+
+const rootScripts = checkRootScriptsCoverage()
+if (rootScripts.length === 0) {
+  console.log('  通过  根 scripts/ 的 .mjs 被 checkJs 覆盖(门禁脚本自己也被检查)')
+} else {
+  failed += 1
+  console.log(`  违规  门禁脚本自己在类型检查之外  (${rootScripts.length} 处)`)
+  console.log('        这是同一个模式的第三次:测试文件不被检查 → CI 不跑断言探针 →')
+  console.log('        守卫脚本自己不被检查。每次都是「检查机制自己的那一层没人管」。')
+  for (const h of rootScripts) console.log(`        ${h.text}`)
 }
 
 const ciDrift = checkCiEnumeratesGates()

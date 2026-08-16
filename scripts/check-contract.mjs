@@ -35,6 +35,7 @@ const args = process.argv.slice(2)
 const asJson = args.includes('--json')
 const baseArg = args.includes('--base') ? args[args.indexOf('--base') + 1] : undefined
 
+/** @param {string[]} subcommand */
 function git(subcommand) {
   return execFileSync('git', subcommand, {
     cwd: REPO,
@@ -95,7 +96,10 @@ function resolveBaseRef() {
   return undefined
 }
 
-/** 读某个 ref 下的契约。该 ref 下还没有这个文件时返回 undefined。 */
+/**
+ * 读某个 ref 下的契约。该 ref 下还没有这个文件时返回 undefined。
+ * @param {string} ref
+ */
 function readContractAt(ref) {
   try {
     return JSON.parse(git(['show', `${ref}:${CONTRACT}`]))
@@ -116,7 +120,7 @@ function findMajorDeclaration() {
     if (frontmatter === null) continue
     // fixed 模式下写哪个包都会一起提升,但这里坚持点名 api-contract ——
     // 破坏的是契约,声明就该落在契约上,而不是随手写在某个实现包上。
-    if (/['"]@dshwar\/api-contract['"]\s*:\s*major/.test(frontmatter[1])) {
+    if (/['"]@dshwar\/api-contract['"]\s*:\s*major/.test(frontmatter[1] ?? '')) {
       return { file: `.changeset/${name}`, reason: text.slice(frontmatter[0].length).trim() }
     }
   }
