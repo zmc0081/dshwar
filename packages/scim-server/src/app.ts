@@ -52,6 +52,19 @@ export interface ScimAppOptions {
   /** 每次列表最多返回多少条。声明进 /ServiceProviderConfig,必须与实现一致。 */
   readonly maxResults?: number
   readonly onAudit?: (record: ScimAuditRecord) => void
+  /**
+   * 镜像变更事件。`@dshwar/webhooks` 挂在这里做出站投递。
+   *
+   * 事件词表由 DSHWAR 定义,与 SCIM 的动词解耦:供给方用 PUT 还是 PATCH
+   * 是它的实现细节,下游只关心「有人被停用了」。
+   */
+  readonly onSubjectChange?: (event: SubjectChangeEvent) => void
+}
+
+/** 镜像变更。`deactivated` 单独成类:它是下游最需要立即响应的一种。 */
+export interface SubjectChangeEvent {
+  readonly type: 'created' | 'updated' | 'deactivated'
+  readonly subject: Subject
 }
 
 const USER_SCHEMA = 'urn:ietf:params:scim:schemas:core:2.0:User'
@@ -122,6 +135,14 @@ export function createScimApp(options: ScimAppOptions): Hono {
   const groups = options.groups ?? new InMemoryGroupStore()
   const maxResults = options.maxResults ?? 200
   const audit = options.onAudit ?? (() => undefined)
+  const emit = options.onSubjectChange ?? (() => undefined)
+
+  /** 变更后发事件。停用(true→false)单独成类,其余都是 updated。 */
+  function emitChange(before: Subject | undefined, after: Subject): void {
+    if (before === undefined) return emit({ type: 'created', subject: after })
+    if (before.active && !after.active) return emit({ type: 'deactivated', subject: after })
+    emit({ type: 'updated', subject: after })
+  }
 
   // ---- 错误边界:一律 SCIM 错误格式,供给方只认它 ----
   app.onError((error, c) => {
@@ -334,6 +355,7 @@ export function createScimApp(options: ScimAppOptions): Hono {
     })
 
     audit({ action: 'scim.user.replace', target: subject.id, detail: `active=${subject.active}` })
+    emitChange(existing, subject)
     return c.json(toScimUser(subject, await membershipsOf(subject.id)))
   })
 
@@ -360,6 +382,7 @@ export function createScimApp(options: ScimAppOptions): Hono {
     })
 
     audit({ action: 'scim.user.patch', target: subject.id, detail: `active=${subject.active}` })
+    emitChange(existing, subject)
     return c.json(toScimUser(subject, await membershipsOf(subject.id)))
   })
 

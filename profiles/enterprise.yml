@@ -1,0 +1,102 @@
+# profiles/enterprise.yml —— OIDC + SCIM 的部署组合(V0.3.0)
+#
+# = gateway.yml,把 auth-static 换成 auth-oidc,并加上 SCIM 供给与身份镜像。
+# 与 gateway.yml 的差异**只有身份部分** —— 运行时契约与 agent 插件逐行相同,
+# 这与 team.yml ↔ single-user.yml 的对照是同一条纪律:换身份不改语义。
+#
+# ⚠️ 隔离级别仍是**逻辑隔离**(单进程多 principal),仅限互相信任的用户。
+# 名字叫 enterprise 指的是身份接入方式,不是隔离强度 ——
+# 进程隔离 supervisor 在 V0.4.0。
+#
+# 上游版本:0.1.0-rc.6(精确锁版)
+
+# ---------------------------------------------------------------------------
+# 基础设施
+# ---------------------------------------------------------------------------
+- id: timer
+  name: '@deepseek-ai/cordis-plugin-timer'
+
+# ---------------------------------------------------------------------------
+# 身份 —— 与 gateway.yml 的全部差异在这一段
+# ---------------------------------------------------------------------------
+- id: principal
+  name: '@dshwar/principal'
+
+- id: subject
+  # 身份镜像。SCIM 写,auth 读 —— 停用在这里生效。
+  name: '@dshwar/subject'
+
+- id: auth
+  name: '@dshwar/auth-oidc'
+  config:
+    # 只需要一个 issuer URL,jwks_uri 从 discovery 拿
+    issuer: https://idp.example/realms/acme
+    audience: dshwar
+    # 必须与 SCIM 的 source 一致 —— auth 按 (source, sub) 查镜像
+    source: idp
+    tenantMap:
+      strategy: issuer
+      issuers:
+        https://idp.example/realms/acme: acme
+      # fallback 缺省即 reject(硬规则 7),不写出来就是拒绝
+
+- id: scim
+  name: '@dshwar/scim-server'
+  config:
+    source: idp
+    # token 在网关配置里签发,按身份源一把;供给系统只能写身份镜像
+    tenantMap:
+      strategy: issuer
+      issuers:
+        idp: acme
+
+- id: webhooks
+  name: '@dshwar/webhooks'
+  # 出站事件:subject.created / updated / deactivated。
+  # 不做投递保证 —— 下游按最终一致设计,定期拉 /v1/admin/subjects 兜底。
+
+# ---------------------------------------------------------------------------
+# 运行时契约 —— 与 gateway.yml 逐行相同
+# ---------------------------------------------------------------------------
+- id: credentials
+  name: '@dshwar/credentials-multiuser'
+
+- id: fs
+  name: '@dshwar/fs-tenant'
+  config:
+    root: !!js dshHomePath('workspaces')
+
+- id: storage
+  name: '@dshwar/storage-scoped'
+
+- id: subprocess
+  name: '@deepseek-ai/dsh-subprocess-local'
+
+# ---------------------------------------------------------------------------
+# 会话与 agent —— 与 gateway.yml 逐行相同
+# ---------------------------------------------------------------------------
+- id: session
+  name: '@deepseek-ai/dsh-session'
+
+- id: session-persistence-jsonl
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: !!js dshHomePath('sessions')
+
+- id: llm
+  name: '@deepseek-ai/dsh-llm'
+
+- id: tools
+  name: '@deepseek-ai/dsh-tools'
+
+- id: system-prompt
+  name: '@deepseek-ai/dsh-system-prompt'
+
+- id: agent
+  name: '@deepseek-ai/dsh-agent'
+
+- id: agent-loop
+  name: '@deepseek-ai/dsh-agent-loop'
+  config:
+    agents: []
+# ⚠️ 同样不含 session-query-sqlite(跨租户,见 docs/DECISIONS/storage-scoping.md)

@@ -48,15 +48,15 @@ DeepSeek Harness（npm 依赖 @deepseek-ai/dsh-*，精确锁版）
 
 ## 版本路线
 
-| 版本       | 内容                                                      | 周期 | 状态                                               |
-| ---------- | --------------------------------------------------------- | ---- | -------------------------------------------------- |
-| V0.1.0     | 运行时平面 MVP + 开源首发                                 | 3 周 | <span style="color:#d00000">开发完成,待发布</span> |
-| V0.2.0     | API 平面:OpenAPI v1 + Gateway + SDK + Admin 端点          | 4 周 | <span style="color:#d00000">开发完成</span>        |
-| **V0.3.0** | 身份互操作:Subject Mirror + SCIM 2.0 + 租户映射 + Webhook | 2 周 | <span style="color:#d00000">开发中</span>          |
-| V0.4.0     | 计量与治理:metering + policy + model-router               | 3 周 | 待启动                                             |
-| V0.5.0     | 控制平面:租户/成员/订阅/运营后台                          | 5 周 | 待启动                                             |
-| V0.6.0     | 支付:billing 契约 + local + 首个 hosted 实现              | 3 周 | 待启动                                             |
-| V0.7.0+    | 端:移动端 SDK + 对话前端                                  | 持续 | 待启动                                             |
+| 版本    | 内容                                                      | 周期 | 状态                                               |
+| ------- | --------------------------------------------------------- | ---- | -------------------------------------------------- |
+| V0.1.0  | 运行时平面 MVP + 开源首发                                 | 3 周 | <span style="color:#d00000">开发完成,待发布</span> |
+| V0.2.0  | API 平面:OpenAPI v1 + Gateway + SDK + Admin 端点          | 4 周 | <span style="color:#d00000">开发完成</span>        |
+| V0.3.0  | 身份互操作:Subject Mirror + SCIM 2.0 + 租户映射 + Webhook | 2 周 | <span style="color:#d00000">开发完成</span>        |
+| V0.4.0  | 计量与治理:metering + policy + model-router               | 3 周 | 待启动                                             |
+| V0.5.0  | 控制平面:租户/成员/订阅/运营后台                          | 5 周 | 待启动                                             |
+| V0.6.0  | 支付:billing 契约 + local + 首个 hosted 实现              | 3 周 | 待启动                                             |
+| V0.7.0+ | 端:移动端 SDK + 对话前端                                  | 持续 | 待启动                                             |
 
 ## 准备阶段(在开始 Session 之前)
 
@@ -98,7 +98,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 > 已发布版本的 Session 一律标 ✅;开发中版本按实际进度标记,每完成一个即更新。
 >
 > 已发布:(暂无)
-> 规划中(开发中,未上线):**V0.3.0(Session 0-7,当前)** · V0.2.0(Session 0-6,开发完成)
+> 规划中(开发中,未上线):**V0.3.0(Session 0-7,开发完成)** · V0.2.0(Session 0-6,开发完成)
 > · V0.1.0(Session 0-8,开发完成)
 
 ---
@@ -155,7 +155,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 | 4 `@dshwar/auth-oidc`       | ✅ 已完成 | 只解析 discovery,验签复用 auth-jwt;18 个单测      |
 | 5 `@dshwar/scim-server`     | ✅ 已完成 | PUT 与 PATCH 双路停用;三家供给方形状实测;22 单测  |
 | 6 网关接入与令牌分离        | ✅ 已完成 | 五条令牌互斥负向测试;subjects 转正契约零变更      |
-| 7 `@dshwar/webhooks` 与发布 | ⬜ 未开始 | 出站投递 + 端到端验收 + 文档                      |
+| 7 `@dshwar/webhooks` 与发布 | ✅ 已完成 | 进程内全链路验收 7/7;容器脚本 🟠 待外部资源       |
 
 图例:✅ 已完成 · 🔄 进行中 · ⬜ 未开始 · 🟠 代码就绪待外部资源
 
@@ -434,7 +434,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 
 ---
 
-### ⬜ Session 7: `@dshwar/webhooks` 与发布
+### ✅ Session 7: `@dshwar/webhooks` 与发布
 
 ```
 本次任务:出站事件投递，端到端验收，收尾。

@@ -11,7 +11,7 @@
  */
 
 export { createScimApp } from './app.ts'
-export type { ScimAppOptions, ScimAuditRecord } from './app.ts'
+export type { ScimAppOptions, ScimAuditRecord, SubjectChangeEvent } from './app.ts'
 
 export { InMemoryGroupStore } from './groups.ts'
 export type { GroupInput, GroupStore, ScimGroup } from './groups.ts'

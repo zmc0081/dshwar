@@ -59,6 +59,7 @@
     "@deepseek-ai/dsh-storage": "0.1.0-rc.6",
     "@deepseek-ai/dsh-system-prompt": "0.1.0-rc.6",
     "@deepseek-ai/dsh-tools": "0.1.0-rc.6",
+    "@dshwar/auth-jwt": "workspace:*",
     "@dshwar/auth-static": "workspace:*",
     "@dshwar/credentials-multiuser": "workspace:*",
     "@dshwar/example-sdk-session": "workspace:*",
@@ -67,7 +68,9 @@
     "@dshwar/storage-scoped": "workspace:*",
     "@dshwar/subject": "workspace:*",
     "@dshwar/tenant-map": "workspace:*",
-    "@hono/node-server": "^1.19.7"
+    "@dshwar/webhooks": "workspace:*",
+    "@hono/node-server": "^1.19.7",
+    "jose": "^6.2.9"
   },
   "publishConfig": {
     "access": "public"

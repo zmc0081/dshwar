@@ -114,7 +114,12 @@ Harness agent **能执行 shell、能读写文件系统**。这决定了隔离�
 | [`@dshwar/api-contract`](packages/api-contract)                   | API v1 契约(Zod 单一事实源) | ✅ V0.2.0 |
 | [`@dshwar/gateway`](gateway)                                      | API 平面服务(Hono)          | ✅ V0.2.0 |
 | [`@dshwar/sdk`](sdk/typescript)                                   | TS SDK(由 OpenAPI 生成)     | ✅ V0.2.0 |
-| `@dshwar/auth-jwt` · `auth-oidc`                                  | JWKS / Keycloak / Authentik | 📋 V0.3.0 |
+| [`@dshwar/subject`](packages/subject)                             | 身份镜像(停用在此生效)      | ✅ V0.3.0 |
+| [`@dshwar/tenant-map`](packages/tenant-map)                       | 租户映射,映射不出即拒       | ✅ V0.3.0 |
+| [`@dshwar/auth-jwt`](packages/auth-jwt)                           | JWKS 验签,验签通过≠放行     | ✅ V0.3.0 |
+| [`@dshwar/auth-oidc`](packages/auth-oidc)                         | 填一个 issuer URL 即接入    | ✅ V0.3.0 |
+| [`@dshwar/scim-server`](packages/scim-server)                     | SCIM 2.0 子集,双路停用      | ✅ V0.3.0 |
+| [`@dshwar/webhooks`](packages/webhooks)                           | 出站事件,签名可独立验证     | ✅ V0.3.0 |
 | `@dshwar/metering` · `policy` · `model-router`                    | 计量与治理                  | 📋 V0.4.0 |
 | `@dshwar/supervisor`                                              | 进程隔离                    | 📋 V0.4.0 |
 
@@ -131,16 +136,17 @@ Harness agent **能执行 shell、能读写文件系统**。这决定了隔离�
 DSHWAR 的 API 平面补的就是这一层。**它是客户接进来之后换不掉的那部分** ——
 运行时插件可替换,控制面是标准 SaaS,只有这份契约是护城河。
 
-| 端点                                               | 作用                         | 状态       |
-| -------------------------------------------------- | ---------------------------- | ---------- |
-| `POST /v1/sessions`                                | 建会话                       | ✅ V0.2.0  |
-| `GET /v1/sessions`                                 | 列出当前主体的会话           | ✅ V0.2.0  |
-| `GET /v1/sessions/{id}`                            | 会话状态                     | ✅ V0.2.0  |
-| `POST /v1/sessions/{id}/turns`                     | 发起一轮(不等跑完)           | ✅ V0.2.0  |
-| `GET /v1/sessions/{id}/stream`                     | SSE 流式,支持断线续传        | ✅ V0.2.0  |
-| `DELETE /v1/sessions/{id}`                         | 取消并释放                   | ✅ V0.2.0  |
-| `GET /v1/admin/subjects/{id}/credentials`          | 凭据配置状态(**永不返回值**) | ✅ V0.2.0  |
-| `/v1/admin/subjects` · `usage` · `quota` · `audit` | 契约已定,返回 501            | 📋 V0.3.0+ |
+| 端点                                      | 作用                         | 状态       |
+| ----------------------------------------- | ---------------------------- | ---------- |
+| `POST /v1/sessions`                       | 建会话                       | ✅ V0.2.0  |
+| `GET /v1/sessions`                        | 列出当前主体的会话           | ✅ V0.2.0  |
+| `GET /v1/sessions/{id}`                   | 会话状态                     | ✅ V0.2.0  |
+| `POST /v1/sessions/{id}/turns`            | 发起一轮(不等跑完)           | ✅ V0.2.0  |
+| `GET /v1/sessions/{id}/stream`            | SSE 流式,支持断线续传        | ✅ V0.2.0  |
+| `DELETE /v1/sessions/{id}`                | 取消并释放                   | ✅ V0.2.0  |
+| `GET /v1/admin/subjects/{id}/credentials` | 凭据配置状态(**永不返回值**) | ✅ V0.2.0  |
+| `GET /v1/admin/subjects` · `/{id}`        | 用户镜像(SCIM 推进来的)      | ✅ V0.3.0  |
+| `/v1/admin/usage` · `quota` · `audit`     | 契约已定,返回 501            | 📋 V0.4.0+ |
 
 **契约完整,实现分期。** 未实现的端点返回 501 并在 OpenAPI 里标
 `x-dshwar-status: planned` —— 而不是 404。404 会让第三方以为路径写错了,
@@ -198,6 +204,38 @@ SDK 的类型由 OpenAPI 生成,不手写。错误码是闭集,映射成可穷�
 - **TLS 由反向代理终结**,网关不自己管证书
 - **反向代理必须关缓冲、调长超时**,否则 SSE 会退化成「一次性收到一坨」
 - 部署组合用 [`profiles/gateway.yml`](profiles/gateway.yml)
+
+---
+
+## 身份互操作
+
+**DSHWAR 是身份消费者,不是身份提供者。** 不存密码、不签发身份令牌、不做注册
+流程 —— 客户的用户目录在他们自己的 IdP 里,DSHWAR 只保留一份用于归属与授权的
+**镜像**。这条边界让 DSHWAR 与 Keycloak / authentik / Entra 是集成关系而非竞争关系。
+
+```
+IdP(authentik / Entra / Okta)
+  │ SCIM push(用户与组,含停用)          │ OIDC / JWT(每次请求的认证)
+  ▼                                      ▼
+/scim/v2 ──▶ Subject Mirror ◀── auth-jwt 查停用态与租户
+```
+
+**核心保证**:在 IdP 侧停用某用户,该用户的**下一次请求被拒绝** —— 即使他手里的
+token 还没过期。JWT 是无状态的,单靠验签做不到这一点;`auth-jwt` 在验签之外
+必查镜像的 `active`,而 SCIM 负责把停用推进镜像。端到端测试用同一个 token
+在停用前后各跑一次证明它([identity-e2e.test.ts](gateway/test/identity-e2e.test.ts))。
+
+| 集成点       | 说明                                                                                                                                      |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| **SCIM 2.0** | `/scim/v2`,User + Group。**PUT 与 PATCH 都能落停用** —— Entra/Okta 发 PATCH,authentik 发 PUT,只做一条就会「在 A 家能停用、在 B 家停不掉」 |
+| **OIDC**     | 填一个 issuer URL 即接入;算法白名单只收非对称,alg 混淆与 alg:none 有测试钉死                                                              |
+| **租户映射** | `claim` / `group` / `issuer` / `fixed` 四策略;**映射不出 = 拒绝登录**,歧义也拒绝                                                          |
+| **Webhook**  | `subject.*` 出站事件,HMAC 签名可用任何语言独立验证;**不做投递保证**,下游按最终一致设计                                                    |
+| **三类令牌** | 运行时 token / Admin Key / SCIM token 分离签发,互斥有负向测试;SCIM token 泄漏的爆炸半径止步于一个身份源的镜像                             |
+
+接入步骤(authentik / Entra 各自的陷阱都写了)见
+[`docs/IDENTITY-SETUP.md`](docs/IDENTITY-SETUP.md);部署组合见
+[`profiles/enterprise.yml`](profiles/enterprise.yml)。
 
 ---
 

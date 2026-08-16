@@ -1,0 +1,30 @@
+{
+  "name": "@dshwar/webhooks",
+  "version": "0.3.0",
+  "description": "出站事件投递:HMAC 签名、重试退避、失败落审计。不做投递保证 —— 那需要持久队列,属于控制平面。",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

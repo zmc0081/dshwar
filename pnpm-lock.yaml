@@ -169,6 +169,9 @@ importers:
       '@deepseek-ai/dsh-tools':
         specifier: 0.1.0-rc.6
         version: 0.1.0-rc.6(f8724372086ccc1457fc84e7becee2e0)
+      '@dshwar/auth-jwt':
+        specifier: workspace:*
+        version: link:../packages/auth-jwt
       '@dshwar/auth-static':
         specifier: workspace:*
         version: link:../packages/auth-static
@@ -193,9 +196,15 @@ importers:
       '@dshwar/tenant-map':
         specifier: workspace:*
         version: link:../packages/tenant-map
+      '@dshwar/webhooks':
+        specifier: workspace:*
+        version: link:../packages/webhooks
       '@hono/node-server':
         specifier: ^1.19.7
         version: 1.19.17(hono@4.13.2)
+      jose:
+        specifier: ^6.2.9
+        version: 6.2.9
 
   packages/api-contract:
     dependencies:
@@ -363,6 +372,8 @@ importers:
         version: 0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1))
 
   packages/tenant-map: {}
+
+  packages/webhooks: {}
 
   sdk/typescript:
     devDependencies:
