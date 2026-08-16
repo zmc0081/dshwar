@@ -116,6 +116,14 @@ export default tseslint.config(
     rules: {
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/consistent-type-imports': 'error',
+
+      // `const { $schema, $id, ...rest } = obj` 是「剔除若干字段」的惯用写法,
+      // 被剔除的那几个名字按定义就是不会被用到的。ignoreRestSiblings 正是
+      // 为这个场景存在 —— 不开的话,唯一的替代是逐个 delete,那更啰嗦也更易错。
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { ignoreRestSiblings: true, argsIgnorePattern: '^_' },
+      ],
     },
   },
 

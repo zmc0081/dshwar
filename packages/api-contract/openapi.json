@@ -1,0 +1,2749 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "DSHWAR API",
+    "version": "0.2.0",
+    "description": "DeepSeek Harness 之上的 ToB 产品基座的 API 平面。\n\n**这份契约的稳定性承诺不依赖上游 dsh 版本。** 事件词表、错误码、资源形状\n全部由 DSHWAR 定义并版本化 —— 上游改接口时,受影响的是网关内部的翻译层,\n不是这份契约。\n\n标注 `x-dshwar-status: planned` 的端点契约完整但尚未实现,调用返回 501,\n响应头 `x-dshwar-planned-version` 指出计划版本。它们返回 501 而非 404,\n是为了让第三方知道「这个端点是真的,只是还没到」。",
+    "license": {
+      "name": "MIT",
+      "identifier": "MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "{scheme}://{host}",
+      "description": "部署方自有域名。TLS 由反向代理终结,网关不自己管证书",
+      "variables": {
+        "scheme": {
+          "default": "https",
+          "enum": [
+            "https",
+            "http"
+          ]
+        },
+        "host": {
+          "default": "dshwar.localhost:3000"
+        }
+      }
+    }
+  ],
+  "tags": [
+    {
+      "name": "sessions",
+      "description": "运行时 API:会话与流式输出"
+    },
+    {
+      "name": "admin",
+      "description": "管理 API。与运行时令牌分离签发"
+    },
+    {
+      "name": "credentials",
+      "description": "凭据配置状态。永不返回值"
+    },
+    {
+      "name": "subjects",
+      "description": "用户镜像(V0.3.0)"
+    },
+    {
+      "name": "quota",
+      "description": "配额(V0.4.0)"
+    },
+    {
+      "name": "usage",
+      "description": "用量(V0.4.0)"
+    },
+    {
+      "name": "policies",
+      "description": "模型准入与预算策略(V0.4.0)"
+    },
+    {
+      "name": "audit",
+      "description": "审计查询(V0.3.0)"
+    }
+  ],
+  "security": [
+    {
+      "runtimeBearer": []
+    }
+  ],
+  "paths": {
+    "/v1/sessions": {
+      "post": {
+        "operationId": "createSession",
+        "summary": "创建会话",
+        "tags": [
+          "sessions"
+        ],
+        "security": [
+          {
+            "runtimeBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSessionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "会话已创建",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateSessionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求体或参数不满足 schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "凭证缺失、无效或已过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-dshwar-status": "implemented"
+      },
+      "get": {
+        "operationId": "listSessions",
+        "summary": "列出当前主体的会话",
+        "tags": [
+          "sessions"
+        ],
+        "security": [
+          {
+            "runtimeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "本页最多返回多少条",
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "上一页返回的 nextCursor;首页省略",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "description": "排序字段,前缀 `-` 表示降序(如 `-createdAt`)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "会话列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListSessionsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求体或参数不满足 schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "凭证缺失、无效或已过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-dshwar-status": "implemented"
+      }
+    },
+    "/v1/sessions/{id}": {
+      "get": {
+        "operationId": "getSession",
+        "summary": "会话状态",
+        "tags": [
+          "sessions"
+        ],
+        "security": [
+          {
+            "runtimeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "会话标识,服务端生成",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "会话",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetSessionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求体或参数不满足 schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "凭证缺失、无效或已过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在,或存在但不属于该主体(两者刻意不可区分)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-dshwar-status": "implemented"
+      },
+      "delete": {
+        "operationId": "deleteSession",
+        "summary": "取消并释放会话",
+        "description": "先截断正在跑的一轮,再彻底释放会话。删除不存在或已删除的会话都返回 404,不区分。",
+        "tags": [
+          "sessions"
+        ],
+        "security": [
+          {
+            "runtimeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "会话标识,服务端生成",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "已取消并释放",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteSessionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求体或参数不满足 schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "凭证缺失、无效或已过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在,或存在但不属于该主体(两者刻意不可区分)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-dshwar-status": "implemented"
+      }
+    },
+    "/v1/sessions/{id}/turns": {
+      "post": {
+        "operationId": "createTurn",
+        "summary": "发起一轮",
+        "description": "**不等待本轮跑完就返回**,只确认已受理;输出走 SSE。一轮可能跑几分钟(工具调用、多步推理),而中间的反向代理通常在 60 秒左右掐断连接 —— 让发起与消费分开,客户端可以先建 SSE 再发起,断线重连也不丢内容。",
+        "tags": [
+          "sessions"
+        ],
+        "security": [
+          {
+            "runtimeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "会话标识,服务端生成",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTurnRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "本轮已受理,输出走 SSE",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateTurnResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求体或参数不满足 schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "凭证缺失、无效或已过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在,或存在但不属于该主体(两者刻意不可区分)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "会话正忙或已结束",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-dshwar-status": "implemented"
+      }
+    },
+    "/v1/sessions/{id}/stream": {
+      "get": {
+        "operationId": "streamSession",
+        "summary": "SSE 流式输出",
+        "description": "每条事件形如 `id: <seq>` / `event: <type>` / `data: <StreamEvent JSON>`。`id` 单调递增;断线重连时带 `Last-Event-ID` 请求头,服务端从该序号之后重放。`reasoning.delta` 仅在会话创建时 `includeReasoning: true` 才会出现。",
+        "tags": [
+          "sessions"
+        ],
+        "security": [
+          {
+            "runtimeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "会话标识,服务端生成",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          {
+            "name": "Last-Event-ID",
+            "in": "header",
+            "required": false,
+            "description": "上次收到的最后一个事件序号;服务端从该序号之后重放",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE 事件流",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/StreamEvent"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求体或参数不满足 schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "凭证缺失、无效或已过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在,或存在但不属于该主体(两者刻意不可区分)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-dshwar-status": "implemented"
+      }
+    },
+    "/v1/admin/subjects/{id}/credentials": {
+      "get": {
+        "operationId": "listSubjectCredentials",
+        "summary": "凭据配置状态",
+        "description": "**永不返回值。** 只暴露 configured / source / writable —— 本端点的 schema 里没有任何可以放值的字段(CLAUDE.md 硬规则 5)。",
+        "tags": [
+          "admin",
+          "credentials"
+        ],
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "主体标识。必须是 IdP 的不可变主键(OIDC sub / SCIM id / 目录 object id),不得使用邮箱",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "本页最多返回多少条",
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "上一页返回的 nextCursor;首页省略",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "description": "排序字段,前缀 `-` 表示降序(如 `-createdAt`)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "凭据配置状态列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListCredentialsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求体或参数不满足 schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "凭证缺失、无效或已过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin Key 不属于该主体所在租户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在,或存在但不属于该主体(两者刻意不可区分)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-dshwar-status": "implemented"
+      }
+    },
+    "/v1/admin/subjects": {
+      "get": {
+        "operationId": "listSubjects",
+        "summary": "列出用户镜像",
+        "tags": [
+          "admin",
+          "subjects"
+        ],
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "本页最多返回多少条",
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "上一页返回的 nextCursor;首页省略",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "description": "排序字段,前缀 `-` 表示降序(如 `-createdAt`)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "用户镜像列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListSubjectsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求体或参数不满足 schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "凭证缺失、无效或已过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "端点已在契约中定义,但本版本尚未实现。响应头 `x-dshwar-planned-version` 指出计划版本",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "x-dshwar-planned-version": {
+                "description": "计划实现该端点的版本",
+                "schema": {
+                  "type": "string",
+                  "const": "V0.3.0"
+                }
+              }
+            }
+          }
+        },
+        "x-dshwar-status": "planned",
+        "x-dshwar-planned-version": "V0.3.0"
+      }
+    },
+    "/v1/admin/subjects/{id}": {
+      "get": {
+        "operationId": "getSubject",
+        "summary": "读取一个用户镜像",
+        "tags": [
+          "admin",
+          "subjects"
+        ],
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "主体标识。必须是 IdP 的不可变主键(OIDC sub / SCIM id / 目录 object id),不得使用邮箱",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "用户镜像",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetSubjectResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求体或参数不满足 schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "凭证缺失、无效或已过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在,或存在但不属于该主体(两者刻意不可区分)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "端点已在契约中定义,但本版本尚未实现。响应头 `x-dshwar-planned-version` 指出计划版本",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "x-dshwar-planned-version": {
+                "description": "计划实现该端点的版本",
+                "schema": {
+                  "type": "string",
+                  "const": "V0.3.0"
+                }
+              }
+            }
+          }
+        },
+        "x-dshwar-status": "planned",
+        "x-dshwar-planned-version": "V0.3.0"
+      }
+    },
+    "/v1/admin/subjects/{id}/quota": {
+      "get": {
+        "operationId": "getSubjectQuota",
+        "summary": "读取配额",
+        "tags": [
+          "admin",
+          "quota"
+        ],
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "主体标识。必须是 IdP 的不可变主键(OIDC sub / SCIM id / 目录 object id),不得使用邮箱",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "配额",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetQuotaResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求体或参数不满足 schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "凭证缺失、无效或已过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在,或存在但不属于该主体(两者刻意不可区分)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "端点已在契约中定义,但本版本尚未实现。响应头 `x-dshwar-planned-version` 指出计划版本",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "x-dshwar-planned-version": {
+                "description": "计划实现该端点的版本",
+                "schema": {
+                  "type": "string",
+                  "const": "V0.4.0"
+                }
+              }
+            }
+          }
+        },
+        "x-dshwar-status": "planned",
+        "x-dshwar-planned-version": "V0.4.0"
+      },
+      "patch": {
+        "operationId": "updateSubjectQuota",
+        "summary": "修改配额",
+        "tags": [
+          "admin",
+          "quota"
+        ],
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "主体标识。必须是 IdP 的不可变主键(OIDC sub / SCIM id / 目录 object id),不得使用邮箱",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateQuotaRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "配额已更新",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetQuotaResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求体或参数不满足 schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "凭证缺失、无效或已过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在,或存在但不属于该主体(两者刻意不可区分)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "端点已在契约中定义,但本版本尚未实现。响应头 `x-dshwar-planned-version` 指出计划版本",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "x-dshwar-planned-version": {
+                "description": "计划实现该端点的版本",
+                "schema": {
+                  "type": "string",
+                  "const": "V0.4.0"
+                }
+              }
+            }
+          }
+        },
+        "x-dshwar-status": "planned",
+        "x-dshwar-planned-version": "V0.4.0"
+      }
+    },
+    "/v1/admin/subjects/{id}/usage": {
+      "get": {
+        "operationId": "listSubjectUsage",
+        "summary": "单个主体的用量明细",
+        "tags": [
+          "admin",
+          "usage"
+        ],
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "主体标识。必须是 IdP 的不可变主键(OIDC sub / SCIM id / 目录 object id),不得使用邮箱",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "本页最多返回多少条",
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "上一页返回的 nextCursor;首页省略",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "description": "排序字段,前缀 `-` 表示降序(如 `-createdAt`)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "用量明细",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListUsageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求体或参数不满足 schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "凭证缺失、无效或已过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在,或存在但不属于该主体(两者刻意不可区分)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "端点已在契约中定义,但本版本尚未实现。响应头 `x-dshwar-planned-version` 指出计划版本",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "x-dshwar-planned-version": {
+                "description": "计划实现该端点的版本",
+                "schema": {
+                  "type": "string",
+                  "const": "V0.4.0"
+                }
+              }
+            }
+          }
+        },
+        "x-dshwar-status": "planned",
+        "x-dshwar-planned-version": "V0.4.0"
+      }
+    },
+    "/v1/admin/usage": {
+      "get": {
+        "operationId": "listUsage",
+        "summary": "聚合用量",
+        "description": "支持按租户、时间、模型分组。",
+        "tags": [
+          "admin",
+          "usage"
+        ],
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "本页最多返回多少条",
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "上一页返回的 nextCursor;首页省略",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "description": "排序字段,前缀 `-` 表示降序(如 `-createdAt`)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "聚合用量",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListUsageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求体或参数不满足 schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "凭证缺失、无效或已过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "端点已在契约中定义,但本版本尚未实现。响应头 `x-dshwar-planned-version` 指出计划版本",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "x-dshwar-planned-version": {
+                "description": "计划实现该端点的版本",
+                "schema": {
+                  "type": "string",
+                  "const": "V0.4.0"
+                }
+              }
+            }
+          }
+        },
+        "x-dshwar-status": "planned",
+        "x-dshwar-planned-version": "V0.4.0"
+      }
+    },
+    "/v1/admin/policies": {
+      "get": {
+        "operationId": "listPolicies",
+        "summary": "模型准入与预算策略",
+        "tags": [
+          "admin",
+          "policies"
+        ],
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "本页最多返回多少条",
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "上一页返回的 nextCursor;首页省略",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "description": "排序字段,前缀 `-` 表示降序(如 `-createdAt`)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "策略列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListPoliciesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求体或参数不满足 schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "凭证缺失、无效或已过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "端点已在契约中定义,但本版本尚未实现。响应头 `x-dshwar-planned-version` 指出计划版本",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "x-dshwar-planned-version": {
+                "description": "计划实现该端点的版本",
+                "schema": {
+                  "type": "string",
+                  "const": "V0.4.0"
+                }
+              }
+            }
+          }
+        },
+        "x-dshwar-status": "planned",
+        "x-dshwar-planned-version": "V0.4.0"
+      }
+    },
+    "/v1/admin/audit": {
+      "get": {
+        "operationId": "listAudit",
+        "summary": "审计查询",
+        "tags": [
+          "admin",
+          "audit"
+        ],
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "本页最多返回多少条",
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "上一页返回的 nextCursor;首页省略",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "description": "排序字段,前缀 `-` 表示降序(如 `-createdAt`)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "审计记录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListAuditResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求体或参数不满足 schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "凭证缺失、无效或已过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "端点已在契约中定义,但本版本尚未实现。响应头 `x-dshwar-planned-version` 指出计划版本",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "x-dshwar-planned-version": {
+                "description": "计划实现该端点的版本",
+                "schema": {
+                  "type": "string",
+                  "const": "V0.3.0"
+                }
+              }
+            }
+          }
+        },
+        "x-dshwar-status": "planned",
+        "x-dshwar-planned-version": "V0.3.0"
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "runtimeBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "终端用户令牌。由部署方的 IdP 签发,DSHWAR 只验证与映射"
+      },
+      "adminApiKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-DSHWAR-Admin-Key",
+        "description": "**按租户签发**,一把钥匙不得横跨租户。与运行时令牌分离 —— 供给系统只能写身份镜像,不能读用量与凭据配置"
+      }
+    },
+    "schemas": {
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "unauthorized",
+                  "forbidden",
+                  "not_found",
+                  "invalid_request",
+                  "conflict",
+                  "rate_limited",
+                  "not_implemented",
+                  "internal"
+                ],
+                "description": "闭集错误码,SDK 可穷举"
+              },
+              "message": {
+                "type": "string",
+                "description": "面向开发者的说明。不含内部细节、不含凭证、不含他人数据"
+              },
+              "requestId": {
+                "type": "string",
+                "description": "与服务端日志和审计记录对得上的调用标识"
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "requestId"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "additionalProperties": false,
+        "description": "所有非 2xx 响应的统一形状"
+      },
+      "StreamEvent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "turn.started"
+              },
+              "turn": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "type",
+              "turn"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "message.delta"
+              },
+              "turn": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "turn",
+              "text"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "reasoning.delta"
+              },
+              "turn": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "turn",
+              "text"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "message.completed"
+              },
+              "turn": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "turn",
+              "text"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "tool.started"
+              },
+              "turn": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "callId": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "turn",
+              "callId",
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "tool.completed"
+              },
+              "turn": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "callId": {
+                "type": "string"
+              },
+              "isError": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "type",
+              "turn",
+              "callId",
+              "isError"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "turn.completed"
+              },
+              "turn": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "completed",
+                  "cancelled",
+                  "error"
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "turn",
+              "reason"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "error"
+              },
+              "turn": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "code",
+              "message"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "ping"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "additionalProperties": false
+          }
+        ],
+        "description": "SSE `data:` 字段的 JSON 载荷。事件类型是闭集,SDK 可穷举"
+      },
+      "Session": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "description": "会话标识,服务端生成"
+          },
+          "subjectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "description": "主体标识。必须是 IdP 的不可变主键(OIDC sub / SCIM id / 目录 object id),不得使用邮箱"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "idle",
+              "running"
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "includeReasoning": {
+            "type": "boolean"
+          },
+          "turns": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+          },
+          "metadata": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "subjectId",
+          "status",
+          "model",
+          "provider",
+          "includeReasoning",
+          "turns",
+          "createdAt",
+          "metadata"
+        ],
+        "additionalProperties": false
+      },
+      "CreateSessionRequest": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "description": "模型 id。省略则用部署方配置的默认值",
+            "type": "string"
+          },
+          "provider": {
+            "description": "模型提供方路由。省略则用默认",
+            "type": "string"
+          },
+          "includeReasoning": {
+            "default": false,
+            "description": "是否在流中包含推理增量(思维链)。默认关闭",
+            "type": "boolean"
+          },
+          "metadata": {
+            "description": "调用方自定义标签,原样回显。不参与任何服务端逻辑",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "includeReasoning"
+        ],
+        "additionalProperties": false
+      },
+      "CreateSessionResponse": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/Session"
+          },
+          "requestId": {
+            "type": "string",
+            "description": "与服务端日志和审计记录对得上的调用标识"
+          }
+        },
+        "required": [
+          "session",
+          "requestId"
+        ],
+        "additionalProperties": false
+      },
+      "GetSessionResponse": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/Session"
+          },
+          "requestId": {
+            "type": "string",
+            "description": "与服务端日志和审计记录对得上的调用标识"
+          }
+        },
+        "required": [
+          "session",
+          "requestId"
+        ],
+        "additionalProperties": false
+      },
+      "ListSessionsResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Session"
+            }
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "与服务端日志和审计记录对得上的调用标识"
+          }
+        },
+        "required": [
+          "data",
+          "nextCursor",
+          "requestId"
+        ],
+        "additionalProperties": false
+      },
+      "CreateTurnRequest": {
+        "type": "object",
+        "properties": {
+          "input": {
+            "type": "string",
+            "minLength": 1,
+            "description": "本轮的用户输入"
+          }
+        },
+        "required": [
+          "input"
+        ],
+        "additionalProperties": false
+      },
+      "CreateTurnResponse": {
+        "type": "object",
+        "properties": {
+          "turn": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "本轮的序号,与 SSE 事件里的 turn 对应"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "idle",
+              "running"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "与服务端日志和审计记录对得上的调用标识"
+          }
+        },
+        "required": [
+          "turn",
+          "status",
+          "requestId"
+        ],
+        "additionalProperties": false
+      },
+      "DeleteSessionResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "description": "会话标识,服务端生成"
+          },
+          "cancelledTurn": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "与服务端日志和审计记录对得上的调用标识"
+          }
+        },
+        "required": [
+          "id",
+          "cancelledTurn",
+          "requestId"
+        ],
+        "additionalProperties": false
+      },
+      "CredentialDescriptor": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "description": "凭据引用(POSIX 环境变量名形状)"
+          },
+          "configured": {
+            "type": "boolean",
+            "description": "当前能否解析出值"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "当前供值的来源层;未配置时为 null"
+          },
+          "writable": {
+            "type": "boolean",
+            "description": "当前能否写入。被只读来源遮蔽时为 false"
+          }
+        },
+        "required": [
+          "ref",
+          "configured",
+          "source",
+          "writable"
+        ],
+        "additionalProperties": false,
+        "description": "凭据的配置状态。**永不包含值** —— 本 schema 刻意不给值留字段(CLAUDE.md 硬规则 5)"
+      },
+      "ListCredentialsResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CredentialDescriptor"
+            }
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "与服务端日志和审计记录对得上的调用标识"
+          }
+        },
+        "required": [
+          "data",
+          "nextCursor",
+          "requestId"
+        ],
+        "additionalProperties": false
+      },
+      "Subject": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "description": "主体标识。必须是 IdP 的不可变主键(OIDC sub / SCIM id / 目录 object id),不得使用邮箱"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "active": {
+            "type": "boolean",
+            "description": "IdP 侧停用后置 false,下次请求即被拒"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+          }
+        },
+        "required": [
+          "id",
+          "tenantId",
+          "displayName",
+          "active",
+          "roles",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "ListSubjectsResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Subject"
+            }
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "与服务端日志和审计记录对得上的调用标识"
+          }
+        },
+        "required": [
+          "data",
+          "nextCursor",
+          "requestId"
+        ],
+        "additionalProperties": false
+      },
+      "GetSubjectResponse": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "$ref": "#/components/schemas/Subject"
+          },
+          "requestId": {
+            "type": "string",
+            "description": "与服务端日志和审计记录对得上的调用标识"
+          }
+        },
+        "required": [
+          "subject",
+          "requestId"
+        ],
+        "additionalProperties": false
+      },
+      "Quota": {
+        "type": "object",
+        "properties": {
+          "subjectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "description": "主体标识。必须是 IdP 的不可变主键(OIDC sub / SCIM id / 目录 object id),不得使用邮箱"
+          },
+          "tokenLimit": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tokenUsed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "periodStart": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+          },
+          "periodEnd": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+          }
+        },
+        "required": [
+          "subjectId",
+          "tokenLimit",
+          "tokenUsed",
+          "periodStart",
+          "periodEnd"
+        ],
+        "additionalProperties": false
+      },
+      "GetQuotaResponse": {
+        "type": "object",
+        "properties": {
+          "quota": {
+            "$ref": "#/components/schemas/Quota"
+          },
+          "requestId": {
+            "type": "string",
+            "description": "与服务端日志和审计记录对得上的调用标识"
+          }
+        },
+        "required": [
+          "quota",
+          "requestId"
+        ],
+        "additionalProperties": false
+      },
+      "UpdateQuotaRequest": {
+        "type": "object",
+        "properties": {
+          "tokenLimit": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "tokenLimit"
+        ],
+        "additionalProperties": false
+      },
+      "UsageRecord": {
+        "type": "object",
+        "properties": {
+          "subjectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "description": "主体标识。必须是 IdP 的不可变主键(OIDC sub / SCIM id / 目录 object id),不得使用邮箱"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "inputTokens": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "outputTokens": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "costMinorUnits": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "currency": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 3
+          }
+        },
+        "required": [
+          "subjectId",
+          "tenantId",
+          "date",
+          "provider",
+          "model",
+          "inputTokens",
+          "outputTokens",
+          "costMinorUnits",
+          "currency"
+        ],
+        "additionalProperties": false
+      },
+      "ListUsageResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UsageRecord"
+            }
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "与服务端日志和审计记录对得上的调用标识"
+          }
+        },
+        "required": [
+          "data",
+          "nextCursor",
+          "requestId"
+        ],
+        "additionalProperties": false
+      },
+      "Policy": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "allowedModels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "fallbackModel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+          }
+        },
+        "required": [
+          "id",
+          "tenantId",
+          "allowedModels",
+          "fallbackModel",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "ListPoliciesResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Policy"
+            }
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "与服务端日志和审计记录对得上的调用标识"
+          }
+        },
+        "required": [
+          "data",
+          "nextCursor",
+          "requestId"
+        ],
+        "additionalProperties": false
+      },
+      "AuditEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "before": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "after": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "at",
+          "actor",
+          "action",
+          "target",
+          "before",
+          "after",
+          "requestId"
+        ],
+        "additionalProperties": false
+      },
+      "ListAuditResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuditEntry"
+            }
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "与服务端日志和审计记录对得上的调用标识"
+          }
+        },
+        "required": [
+          "data",
+          "nextCursor",
+          "requestId"
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+}

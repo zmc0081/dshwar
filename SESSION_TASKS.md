@@ -123,7 +123,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 | Session                  | 状态      | 说明                                                                             |
 | ------------------------ | --------- | -------------------------------------------------------------------------------- |
 | 0 可行性证伪             | ✅ 已完成 | **止损未触发**,32 条断言全过(Win + Linux);报告见 `docs/FEASIBILITY-REPORT-V2.md` |
-| 1 OpenAPI v1 契约        | ⬜ 未开始 | ★ 护城河本体                                                                     |
+| 1 OpenAPI v1 契约        | ✅ 已完成 | Zod 单一事实源 → OpenAPI 3.1;redocly lint 零警告;29 个单测                       |
 | 2 Gateway 骨架与会话路由 | ⬜ 未开始 |                                                                                  |
 | 3 运行时 API 与 SSE      | ⬜ 未开始 |                                                                                  |
 | 4 Admin API              | ⬜ 未开始 | 契约先行,实现分期                                                                |
@@ -222,7 +222,7 @@ docs/FEASIBILITY-REPORT-V2.md，包含：
 
 ---
 
-### ⬜ Session 1: OpenAPI v1 契约 ★ 护城河本体
+### ✅ Session 1: OpenAPI v1 契约 ★ 护城河本体
 
 ```
 读取 CLAUDE.md 与 IDENTITY-INTEROP.md §3.3。

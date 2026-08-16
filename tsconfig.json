@@ -7,6 +7,7 @@
   // 空的 `files` 会触发 TS18002。
   "include": [],
   "references": [
+    { "path": "./packages/api-contract" },
     { "path": "./packages/principal" },
     { "path": "./packages/auth" },
     { "path": "./packages/auth-static" },

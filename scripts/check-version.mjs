@@ -103,6 +103,8 @@ for (const [file, label] of [
 
 // ---------- 6. gateway OpenAPI info.version(V0.2.0 起) ----------
 for (const candidate of [
+  // 契约包的生成产物 —— V0.2.0 Session 1 起存在
+  'packages/api-contract/openapi.json',
   'gateway/openapi.json',
   'gateway/openapi.yaml',
   'gateway/src/openapi.json',

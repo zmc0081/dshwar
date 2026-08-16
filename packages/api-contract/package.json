@@ -1,0 +1,40 @@
+{
+  "name": "@dshwar/api-contract",
+  "version": "0.2.0",
+  "description": "DSHWAR API v1 契约 —— ★ 护城河。Zod 为单一事实源,OpenAPI 3.1 由其生成。",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./openapi.json": "./openapi.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "openapi.json",
+    "README.md"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "generate": "node --experimental-strip-types scripts/generate-openapi.ts",
+    "lint:openapi": "redocly lint openapi.json"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@redocly/cli": "^2.46.1"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
