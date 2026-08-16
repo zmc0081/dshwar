@@ -1,0 +1,37 @@
+{
+  "host": "127.0.0.1",
+  "port": 8787,
+
+  "workspaceRoot": "./var/workspaces",
+  "sessionRoot": "./var/sessions",
+
+  "defaultProvider": "deepseek",
+  "defaultModel": "deepseek-chat",
+
+  "authEntries": [
+    { "token": "dev-alice", "id": "alice-e6f1", "tenantId": "acme", "roles": ["member"] },
+    { "token": "dev-bob", "id": "bob-a2b3", "tenantId": "globex", "roles": ["member"] }
+  ],
+
+  "adminKeys": [
+    { "key": "admin-acme-CHANGE-ME", "label": "acme 运维", "tenantId": "acme" },
+    { "key": "admin-globex-CHANGE-ME", "label": "globex 运维", "tenantId": "globex" }
+  ],
+
+  "credentials": [
+    {
+      "subjectId": "alice-e6f1",
+      "tenantId": "acme",
+      "ref": "DEEPSEEK_API_KEY",
+      "value": "sk-alice-XXXX"
+    },
+    {
+      "subjectId": "bob-a2b3",
+      "tenantId": "globex",
+      "ref": "DEEPSEEK_API_KEY",
+      "value": "sk-bob-YYYY"
+    }
+  ],
+
+  "heartbeatMs": 15000
+}

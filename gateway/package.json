@@ -11,7 +11,15 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
+    },
+    "./runtime": {
+      "types": "./dist/runtime.d.ts",
+      "default": "./dist/runtime.js"
+    }
   },
   "files": [
     "dist",
@@ -39,20 +47,29 @@
     "@deepseek-ai/dsh-agent": "0.1.0-rc.6",
     "@deepseek-ai/dsh-agent-loop": "0.1.0-rc.6",
     "@deepseek-ai/dsh-credentials": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-fs": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-fs-local": "0.1.0-rc.6",
     "@deepseek-ai/dsh-invariants": "0.1.0-rc.6",
     "@deepseek-ai/dsh-llm": "0.1.0-rc.6",
     "@deepseek-ai/dsh-scope": "0.1.0-rc.6",
     "@deepseek-ai/dsh-session": "0.1.0-rc.6",
     "@deepseek-ai/dsh-session-persistence": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-session-persistence-jsonl": "0.1.0-rc.6",
     "@deepseek-ai/dsh-settings": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-storage": "0.1.0-rc.6",
     "@deepseek-ai/dsh-system-prompt": "0.1.0-rc.6",
     "@deepseek-ai/dsh-tools": "0.1.0-rc.6",
     "@dshwar/auth-static": "workspace:*",
     "@dshwar/credentials-multiuser": "workspace:*",
     "@dshwar/example-sdk-session": "workspace:*",
+    "@dshwar/fs-tenant": "workspace:*",
+    "@dshwar/storage-scoped": "workspace:*",
     "@hono/node-server": "^1.19.7"
   },
   "publishConfig": {
     "access": "public"
+  },
+  "bin": {
+    "dshwar-gateway": "./dist/server.js"
   }
 }

@@ -47,3 +47,9 @@ export type { AdminRouteOptions, SubjectLookup } from './admin/routes.ts'
 
 export { ConsoleAuditSink, NullAuditSink } from './admin/audit.ts'
 export type { AuditRecord, AuditSink } from './admin/audit.ts'
+
+export { assembleRuntime, DELIBERATELY_OMITTED, GATEWAY_PLUGINS } from './runtime.ts'
+export type { AssembledRuntime, RuntimeOptions, StaticAuthEntry } from './runtime.ts'
+
+export { parseArgs, startServer } from './server.ts'
+export type { ServerConfig } from './server.ts'

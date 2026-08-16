@@ -49,17 +49,38 @@ DSHWAR 不存密码、不做注册流程(CLAUDE.md 硬规则 4)。
 
 ```bash
 pnpm --filter @dshwar/gateway build
-node dist/server.js --profile profiles/gateway.yml
+node gateway/dist/server.js --config gateway.config.json
 ```
 
-`profiles/gateway.yml` 是网关部署用的插件组合。它 = `team.yml` + 驱动 agent
-所需的三个插件(`dsh-tools` / `dsh-system-prompt` / `dsh-agent-loop`)。
-少任何一个,`ctx.agents.create()` 能建出对象但 `followup()` 不产生输出 ——
-症状是「事件序列完全正确却收到 0 个增量」,极难排查。
+配置模板见 [`gateway/gateway.config.example.json`](../gateway/gateway.config.example.json)。
+只有 `--port` 与 `--host` 能用命令行覆盖;**身份与凭据一律只从配置文件读** ——
+令牌散在环境变量里,轮换时没人知道该改哪几台机器。
 
-⚠️ profile 里默认的 `@dshwar/auth-static` 用明文令牌,**禁止用于部署**。
-它在那里只是为了让 profile 能零外部依赖跑起来验证装配。
-生产请换 `@dshwar/auth-jwt` 或 `@dshwar/auth-oidc`(V0.3.0)。
+`--host` 默认 `127.0.0.1`,只听本地。这是刻意的:网关前面必须有反向代理终结 TLS。
+要直接对外请显式传 `0.0.0.0`。
+
+### 装了哪些插件
+
+`profiles/gateway.yml` 是这套组合的声明式表达(给用 dsh 自带 loader 的人看),
+可执行版本是 `gateway/src/runtime.ts` 里的 `GATEWAY_PLUGINS`。两者漂移由
+`gateway/test/server.test.ts` 断言拦住 —— profile 里出现而装配里没有、又没写明
+为什么不装的插件,测试直接红。
+
+它 = `team.yml` + 驱动 agent 所需的三个插件(`dsh-tools` / `dsh-system-prompt` /
+`dsh-agent-loop`)。少任何一个,`ctx.agents.create()` 能建出对象但 `followup()`
+不产生输出 —— 症状是「事件序列完全正确却收到 0 个增量」,极难排查。
+
+profile 里有三条**默认不装**,每条都有理由:
+
+| 插件                     | 为什么不装                                                                                                                                                                   |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dsh-subprocess-local`   | 依赖 node-pty 原生构建,且上游 `ProcessInspector` 只实现 linux / darwin,win32 直接抛错。让默认部署在 Windows 上起不来,代价大于收益。**需要 shell 工具的部署自行加装。**       |
+| `cordis-plugin-timer`    | 上游某些插件的可选依赖,本装配用不到                                                                                                                                          |
+| `@dshwar/storage-scoped` | 它导出的是 `scopedBackend(ctx, inner)` 包装函数,不是根上下文插件 —— 作用域在 `open()` 那一刻定格,必须在会话作用域内套用。会话流本身不读 `ctx.storage`,不装它不影响任何端点。 |
+
+⚠️ 默认的 `@dshwar/auth-static` 用明文令牌,**禁止用于生产**。它在那里只是为了让
+部署方能先把管道跑通。生产请换 `@dshwar/auth-jwt` 或 `@dshwar/auth-oidc`(V0.3.0)。
+进程启动时会就此打一行警告。
 
 ### 两种令牌
 
