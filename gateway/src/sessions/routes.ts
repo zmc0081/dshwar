@@ -30,6 +30,16 @@ export interface RuntimeRouteOptions {
   readonly userMessage: UserMessageFactory
   /** SSE 心跳间隔(毫秒)。穿透代理用。 */
   readonly heartbeatMs?: number
+  /**
+   * 配额判定(V0.4.0)。红线 2:判定与执行分离 —— policy 包只回答能不能,
+   * 429 由这里发。缺席 = 不限流(配额是 opt-in 的治理)。
+   */
+  readonly quota?: QuotaCheckLike
+}
+
+/** `@dshwar/policy` 判定入口的结构性子集。 */
+export interface QuotaCheckLike {
+  check(subjectId: string): Promise<{ kind: 'allow' } | { kind: 'deny'; reason: string }>
 }
 
 function toWire(session: GatewaySession) {
@@ -118,6 +128,17 @@ export function registerRuntimeRoutes(options: RuntimeRouteOptions) {
 
       if (session.handle.agent.status === 'running') {
         throw new ApiError('conflict', 'session is already processing a turn')
+      }
+
+      // ---- 配额闸(V0.4.0)----
+      // 挂在发轮而不是建会话:烧钱的是轮,不是会话对象。
+      // 超限就是 429,不静默换便宜模型(红线 3)—— 降级是 model-router 的
+      // 显式配置,发生在准入裁决处,不发生在这里。
+      if (options.quota !== undefined) {
+        const decision = await options.quota.check(session.subjectId)
+        if (decision.kind === 'deny') {
+          throw new ApiError('rate_limited', `quota exhausted (${decision.reason})`)
+        }
       }
 
       session.turns += 1

@@ -272,7 +272,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 
 ---
 
-### ⬜ Session 3: `@dshwar/policy` —— 配额与限流
+### ✅ Session 3: `@dshwar/policy` —— 配额与限流
 
 ```
 本次任务:配额判定与网关执行。

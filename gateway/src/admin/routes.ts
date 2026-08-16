@@ -59,6 +59,26 @@ export interface AdminRouteOptions {
    * `@dshwar/metering` 里做,端点只分页,不再碰口径。
    */
   readonly usageReader?: UsageReaderLike
+  /**
+   * 配额读写(V0.4.0 Session 3)。`/v1/admin/subjects/{id}/quota` 从这里走。
+   * 判定逻辑在 `@dshwar/policy`,这里只暴露状态查询与上限设置。
+   */
+  readonly quotaAdmin?: QuotaAdminLike
+}
+
+/** `@dshwar/policy` 的管理面子集。 */
+export interface QuotaAdminLike {
+  /** 契约 `Quota` 形状的状态;主体的租户未知时 `undefined`(→ 404)。 */
+  quotaOf(subjectId: string): Promise<QuotaStateLike | undefined>
+  setLimit(subjectId: string, tokenLimit: number | null): Promise<void>
+}
+
+export interface QuotaStateLike {
+  readonly subjectId: string
+  readonly tokenLimit: number | null
+  readonly tokenUsed: number
+  readonly periodStart: string
+  readonly periodEnd: string
 }
 
 /** `@dshwar/metering` 聚合结果的只读入口。 */
@@ -311,6 +331,64 @@ export function registerAdminRoutes(options: AdminRouteOptions) {
       const rows = await usage.daily({ tenantId: admin.tenantId, subjectId })
       const { page, nextCursor } = usagePage(rows, parsed.data.cursor, parsed.data.limit)
       return c.json({ data: page, nextCursor, requestId })
+    })
+
+    // ---- 配额(V0.4.0 Session 3,由 planned 转实现)----
+    const quotaAdmin = options.quotaAdmin
+
+    /** 两个 quota 端点共用:404/403 语义与其它 subject 端点一致。 */
+    const quotaOf404 = async (c: HonoContext<GatewayEnv>, subjectId: string) => {
+      const admin = c.get('admin')!
+
+      if (options.subjectStore !== undefined) {
+        const subject = await options.subjectStore.get(subjectId)
+        if (subject === undefined) throw new ApiError('not_found', 'subject not found')
+        assertTenant(admin, subject.tenantId)
+      }
+
+      const quota = await quotaAdmin!.quotaOf(subjectId)
+      if (quota === undefined) throw new ApiError('not_found', 'subject not found')
+      return quota
+    }
+
+    app.get('/v1/admin/subjects/:id/quota', async (c) => {
+      if (quotaAdmin === undefined) throw notImplemented('V0.4.0')
+      const quota = await quotaOf404(c, c.req.param('id'))
+      return c.json({ quota, requestId: c.get('requestId') })
+    })
+
+    app.patch('/v1/admin/subjects/:id/quota', async (c) => {
+      if (quotaAdmin === undefined) throw notImplemented('V0.4.0')
+      const admin = c.get('admin')!
+      const requestId = c.get('requestId')
+
+      const body = (await c.req.json().catch(() => ({}))) as { tokenLimit?: unknown }
+      const tokenLimit = body.tokenLimit
+      if (
+        tokenLimit !== null &&
+        (typeof tokenLimit !== 'number' || tokenLimit < 0 || !Number.isInteger(tokenLimit))
+      ) {
+        throw new ApiError('invalid_request', 'tokenLimit 需要非负整数或 null')
+      }
+
+      const before = await quotaOf404(c, c.req.param('id'))
+      await quotaAdmin.setLimit(before.subjectId, tokenLimit)
+      const after = await quotaAdmin.quotaOf(before.subjectId)
+
+      // 提额/降额是钱的事,before/after 必须都在审计里 ——
+      // 「谁在什么时候把限额从多少改到多少」是账务纠纷时的第一个问题
+      options.audit.record({
+        at: new Date().toISOString(),
+        actor: admin.label,
+        tenantId: admin.tenantId,
+        action: 'admin.updateSubjectQuota',
+        target: before.subjectId,
+        before: { tokenLimit: before.tokenLimit },
+        after: { tokenLimit },
+        requestId,
+      })
+
+      return c.json({ quota: after, requestId })
     })
 
     // ---- 审计查询(V0.4.0 Session 1,由 planned 转实现)----

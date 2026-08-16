@@ -1,0 +1,33 @@
+{
+  "name": "@dshwar/policy",
+  "version": "0.4.0",
+  "description": "配额判定。只回答「能不能」,429 由网关发 —— 判定与执行分离。",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@dshwar/metering": "workspace:*"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

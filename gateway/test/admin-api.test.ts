@@ -189,8 +189,8 @@ describe('planned 端点', () => {
   it('契约里的每个 planned 端点都已挂载', async () => {
     const { ROUTES } = await import('@dshwar/api-contract')
     const planned = ROUTES.filter((r) => r.status === 'planned')
-    // V0.3.0 转正 subjects×2(8→6);V0.4.0 转正 audit(6→5)、usage×2(5→3)
-    expect(planned.length).toBe(3)
+    // V0.3.0 转正 subjects×2;V0.4.0 转正 audit、usage×2、quota×2 —— 只剩 policies
+    expect(planned.length).toBe(1)
 
     for (const route of planned) {
       const path = route.path.replace('{id}', alice.id)

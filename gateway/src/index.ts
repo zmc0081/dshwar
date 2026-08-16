@@ -34,7 +34,12 @@ export {
 export type { GatewayEnv, GatewayVariables } from './middleware.ts'
 
 export { registerRuntimeRoutes } from './sessions/routes.ts'
-export type { AgentFactoryFn, RuntimeRouteOptions, UserMessageFactory } from './sessions/routes.ts'
+export type {
+  AgentFactoryFn,
+  QuotaCheckLike,
+  RuntimeRouteOptions,
+  UserMessageFactory,
+} from './sessions/routes.ts'
 
 export { GatewaySessionStore } from './sessions/store.ts'
 export type { AgentHandleLike, GatewaySession, UsageObservation } from './sessions/store.ts'
@@ -50,6 +55,8 @@ export type {
   StoredAuditRecord,
   SubjectLookup,
   SubjectMirrorReader,
+  QuotaAdminLike,
+  QuotaStateLike,
   UsageReaderLike,
   UsageRowLike,
 } from './admin/routes.ts'
