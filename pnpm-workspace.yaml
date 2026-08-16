@@ -14,3 +14,6 @@ allowBuilds:
   '@deepseek-ai/dsh-subprocess-local': true
   koffi: true
   node-pty: true
+
+minimumReleaseAgeExclude:
+  - jose@6.2.9

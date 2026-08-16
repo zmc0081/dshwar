@@ -1,0 +1,43 @@
+{
+  "name": "@dshwar/auth-jwt",
+  "version": "0.3.0",
+  "description": "JWKS 验签的 Auth 实现。验签通过后仍要过 Subject Mirror 与租户映射 —— 停用的用户拿着有效 token 也进不来。",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@dshwar/auth": "workspace:*",
+    "@dshwar/principal": "workspace:*",
+    "@dshwar/subject": "workspace:*",
+    "@dshwar/tenant-map": "workspace:*",
+    "jose": "^6.2.9"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.1"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
