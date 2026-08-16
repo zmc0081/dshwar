@@ -446,6 +446,17 @@ export async function startServer(
       // /v1/admin/audit 查询。只写 console 的话审计端点永远是空的 ——
       // 这也是冒烟抓到的:PATCH 配额成功了,审计里却什么都没有。
       audit: auditSink,
+      // ★ V0.5.0 D2:容量与开户闸门**同一个来源**。
+      //   控制台显示 64、实际拦在 39 —— 那种不一致里,管理员会相信界面上那个数,
+      //   然后加到第 40 个人时才发现起不来。
+      capacity: () =>
+        memberCapacityOf({
+          level: parseIsolationLevel(config.isolation?.level),
+          totalMemoryBytes: totalmem(),
+          configuredMax: config.isolation?.maxProcesses,
+        }),
+      // 只数**启用**的成员 —— 与闸门的判据一致(停用的人不会起进程)。
+      memberCount: async (tenantId) => (await subjects.list({ tenantId, active: true })).length,
       credentialRefs: [...new Set((config.credentials ?? []).map((c) => c.ref))],
       // ⚠️ **两个 id 空间要在这里对上。**
       //

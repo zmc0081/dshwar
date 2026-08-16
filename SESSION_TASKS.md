@@ -366,7 +366,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 | 0       | 立项:console-contract 骨架 + 工作区语义定案(D3)  | ⬜   |
 | 1       | 契约:租户 / 成员 / 角色 / 配额 / 用量 / 审计查询 | ✅   |
 | 2       | Admin API + 开户闸门(D2:拦在「建第二个成员」)    | ⬜   |
-| 3       | 容量端点:隔离档 / maxProcesses / 成员上限        | ⬜   |
+| 3       | 容量端点:隔离档 / maxProcesses / 成员上限        | ✅   |
 | 4       | console-web 最小前端 + SDK 层 + D7 三条守卫      | ⬜   |
 
 **本版本的预先裁决**:D1(仓库拆分)· D2(隔离档表达)· D3(工作区语义)· D7(前端约束)

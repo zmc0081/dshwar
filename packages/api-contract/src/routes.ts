@@ -9,6 +9,7 @@
  */
 import { z } from 'zod'
 import {
+  Capacity,
   GetQuotaResponse,
   GetSubjectResponse,
   ListAuditResponse,
@@ -320,6 +321,20 @@ const ADMIN_ROUTES: readonly RouteDef[] = [
     query: PaginationQuery,
     responses: {
       200: { description: '聚合用量', schema: ListUsageResponse },
+      ...COMMON_ERRORS,
+    },
+  },
+  {
+    method: 'get',
+    path: '/v1/admin/capacity',
+    operationId: 'getCapacity',
+    summary: '部署容量:隔离档、进程上限、成员上限',
+    tags: ['admin'],
+    auth: 'admin',
+    // V0.5.0 新增。**相容变更**(path.added)—— 不动任何既有路径的形状。
+    status: 'implemented',
+    responses: {
+      200: { description: '当前部署的容量', schema: Capacity },
       ...COMMON_ERRORS,
     },
   },

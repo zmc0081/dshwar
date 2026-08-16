@@ -148,6 +148,42 @@ export const ListPoliciesResponse = z
   })
   .meta({ id: 'ListPoliciesResponse' })
 
+/**
+ * 部署容量(V0.5.0)。
+ *
+ * ## 它为什么是契约的一部分,而不是控制台自己算
+ *
+ * 因为**算错的后果是管理员照着一个错的上限去加人**,加到第 N 个时才发现
+ * 起不来。这几个数必须与服务端**同一个来源**(`@dshwar/supervisor` 的
+ * `deriveMaxProcesses`),不是各算各的。
+ *
+ * ⚠️ 它是**只读**的:`maxProcesses` 要改请改配置文件重启,不提供写端点。
+ * 一个能在线改进程池上限的端点听起来方便,但它会让「当前生效的值」
+ * 与「配置文件里的值」分叉 —— 而排障时人看的是配置文件。
+ */
+export const Capacity = z
+  .object({
+    /** `logical` | `process` | `container`。 */
+    isolationLevel: z.string(),
+    /**
+     * 当前生效的进程上限。
+     *
+     * ⚠️ 逻辑档下为 `null` 而不是 0 —— 它不起子进程,这个数没有意义。
+     * `null` 逼着前端去想「这一档该显示什么」,0 会被直接渲染成「上限 0」。
+     */
+    maxProcesses: z.number().int().nullable(),
+    /** 可容纳的成员数上限。逻辑档恒为 1(V0.4.7 架构限制)。 */
+    memberCap: z.number().int(),
+    /** 当前已有的**启用**成员数。停用的不计 —— 他们不会起进程。 */
+    memberCount: z.number().int(),
+    /** 每进程常驻内存(MB),实测值。让管理员看得见代价。 */
+    rssPerProcessMb: z.number().int(),
+    /** 推导依据,人类可读。说不出理由的上限,管理员只能盲信或盲改。 */
+    basis: z.string(),
+    ...RequestIdField,
+  })
+  .meta({ id: 'Capacity' })
+
 /** 审计记录(V0.3.0 的 `@dshwar/audit`)。 */
 export const AuditEntry = z
   .object({

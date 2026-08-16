@@ -191,6 +191,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/capacity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 部署容量:隔离档、进程上限、成员上限 */
+        get: operations["getCapacity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/policies": {
         parameters: {
             query?: never;
@@ -1344,6 +1361,71 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ListUsageResponse"];
+                };
+            };
+            /** @description 请求体或参数不满足 schema */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 凭证缺失、无效或已过期 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 触发限流 */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 服务端内部错误 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getCapacity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 当前部署的容量 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        isolationLevel: string;
+                        maxProcesses: number | null;
+                        memberCap: number;
+                        memberCount: number;
+                        rssPerProcessMb: number;
+                        basis: string;
+                        /** @description 与服务端日志和审计记录对得上的调用标识 */
+                        requestId: string;
+                    };
                 };
             };
             /** @description 请求体或参数不满足 schema */

@@ -1366,6 +1366,122 @@
         "x-dshwar-status": "implemented"
       }
     },
+    "/v1/admin/capacity": {
+      "get": {
+        "operationId": "getCapacity",
+        "summary": "部署容量:隔离档、进程上限、成员上限",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "adminApiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "当前部署的容量",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "isolationLevel": {
+                      "type": "string"
+                    },
+                    "maxProcesses": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "memberCap": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "memberCount": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "rssPerProcessMb": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "basis": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "与服务端日志和审计记录对得上的调用标识"
+                    }
+                  },
+                  "required": [
+                    "isolationLevel",
+                    "maxProcesses",
+                    "memberCap",
+                    "memberCount",
+                    "rssPerProcessMb",
+                    "basis",
+                    "requestId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求体或参数不满足 schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "凭证缺失、无效或已过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-dshwar-status": "implemented"
+      }
+    },
     "/v1/admin/policies": {
       "get": {
         "operationId": "listPolicies",

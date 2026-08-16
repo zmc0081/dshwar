@@ -70,6 +70,23 @@ export interface AdminRouteOptions {
    * 审批流,不该是一个 curl 就能干的事。
    */
   readonly modelPolicies?: PolicyReaderLike
+  /**
+   * 部署容量(V0.5.0,D2)。`/v1/admin/capacity` 从这里读。
+   *
+   * 传的是**函数**而不是快照:容量依赖 `os.totalmem()` 与配置,
+   * 而这个端点可能在进程活很久之后才被调用 —— 快照会过期,函数不会。
+   *
+   * ⚠️ 缺席时回落 501,与 subjectStore / auditStore 同款语义。
+   */
+  readonly capacity?: () => {
+    readonly level: string
+    readonly maxProcesses: number | null
+    readonly memberCap: number
+    readonly rssPerProcessMb: number
+    readonly basis: string
+  }
+  /** 数当前启用成员数。与 capacity 成对 —— 缺一个这个端点就没意义。 */
+  readonly memberCount?: (tenantId: string) => Promise<number>
 }
 
 /** `@dshwar/model-router` 策略存储的只读子集。 */
@@ -313,6 +330,34 @@ export function registerAdminRoutes(options: AdminRouteOptions) {
           : null
       return { page, nextCursor }
     }
+
+    /**
+     * 部署容量(V0.5.0,D2)—— 控制台首页那三个数的来源。
+     *
+     * ⚠️ **只读,且刻意不提供写端点。** 一个能在线改 `maxProcesses` 的
+     * 端点听起来方便,但它会让「当前生效的值」与「配置文件里的值」分叉 ——
+     * 而排障时人看的是配置文件。要改请改配置重启。
+     */
+    app.get('/v1/admin/capacity', async (c) => {
+      if (options.capacity === undefined) throw notImplemented('V0.5.0')
+      const admin = c.get('admin')!
+      const requestId = c.get('requestId')
+
+      const cap = options.capacity()
+      // 成员数按**调用方的租户**数,不是全局 —— Admin Key 按租户签发,
+      // 一把钥匙不得横跨租户(CLAUDE.md 第七节)。
+      const memberCount = (await options.memberCount?.(admin.tenantId)) ?? 0
+
+      return c.json({
+        isolationLevel: cap.level,
+        maxProcesses: cap.maxProcesses,
+        memberCap: cap.memberCap,
+        memberCount,
+        rssPerProcessMb: cap.rssPerProcessMb,
+        basis: cap.basis,
+        requestId,
+      })
+    })
 
     app.get('/v1/admin/usage', async (c) => {
       if (usage === undefined) throw notImplemented('V0.4.0')
