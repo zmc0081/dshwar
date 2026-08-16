@@ -10,7 +10,7 @@ import type { FileSystem } from '@deepseek-ai/dsh-fs'
 import { createPrincipal, PrincipalService, runWithPrincipal } from '@dshwar/principal'
 import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve as resolvePath } from 'node:path'
+import { join, resolve as resolvePath, sep } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { PathEscapeError, TenantFileSystem, tenantWorkspaceRoot } from '../src/index.ts'
 
@@ -302,5 +302,128 @@ describe('单用户对照 —— 只加隔离,不改语义', () => {
     const innerCtx = ctx.isolate('fs')
     await innerCtx.plugin(LocalFileSystem, { cwd: root })
     expect(ctx.fs.sandboxMode).toBe((innerCtx.fs as FileSystem).sandboxMode)
+  })
+})
+
+// ============================================================================
+// V0.4.1 · 跨工作区隔离 —— 对着真实文件系统
+//
+// path.test.ts 验的是纯路径层。这里验的是**同一个用户**换工作区之后,
+// 真实读写与符号链接是否也隔离 —— 纯路径测试看不到 symlink。
+// ============================================================================
+describe('跨工作区隔离(同一用户的两个工作区)', () => {
+  /** 用给定的 workspaceOf 起一个 TenantFileSystem;工作区目录真实建出来。 */
+  async function ctxForWorkspace(workspaceId: string): Promise<Context> {
+    const ws = tenantWorkspaceRoot(root, alice, workspaceId)
+    await mkdir(ws, { recursive: true })
+
+    const c = new Context()
+    await c.plugin(PrincipalService)
+    const innerCtx = c.isolate('fs')
+    await innerCtx.plugin(LocalFileSystem, { cwd: root })
+    await c.plugin(TenantFileSystem, {
+      inner: innerCtx.fs as FileSystem,
+      root,
+      workspaceOf: () => workspaceId,
+    })
+    return c
+  }
+
+  it('在 proj-a 写的文件,在 proj-b 里读不到', async () => {
+    const a = await ctxForWorkspace('proj-a')
+    const b = await ctxForWorkspace('proj-b')
+
+    await runWithPrincipal(a, alice, async (c) => {
+      const t = await c.fs.resolve('notes.md')
+      await c.fs.writeText(t, 'proj-a only')
+    })
+
+    // 同名路径在另一个工作区里是另一个文件 —— 不该读到 proj-a 的内容
+    await expect(
+      runWithPrincipal(b, alice, async (c) => {
+        const t = await c.fs.resolve('notes.md')
+        return c.fs.readText(t)
+      }),
+    ).rejects.toThrow()
+  })
+
+  it('两个工作区的同名文件互不覆盖', async () => {
+    const a = await ctxForWorkspace('proj-a')
+    const b = await ctxForWorkspace('proj-b')
+
+    for (const [c, text] of [
+      [a, 'from-a'],
+      [b, 'from-b'],
+    ] as const) {
+      await runWithPrincipal(c, alice, async (scoped) => {
+        const t = await scoped.fs.resolve('shared-name.txt')
+        await scoped.fs.writeText(t, text)
+      })
+    }
+
+    const readA = await runWithPrincipal(a, alice, async (c) => {
+      const t = await c.fs.resolve('shared-name.txt')
+      return c.fs.readText(t)
+    })
+    expect(readA).toBe('from-a')
+  })
+
+  it('用 ../ 够另一个工作区被拒绝', async () => {
+    const a = await ctxForWorkspace('proj-a')
+    await mkdir(tenantWorkspaceRoot(root, alice, 'proj-b'), { recursive: true })
+
+    await expect(
+      runWithPrincipal(a, alice, (c) => c.fs.resolve('../proj-b/notes.md')),
+    ).rejects.toThrow(PathEscapeError)
+  })
+
+  it('指向另一个工作区的符号链接被拒绝 —— realpath 层兜底', async () => {
+    const wsA = tenantWorkspaceRoot(root, alice, 'proj-a')
+    const wsB = tenantWorkspaceRoot(root, alice, 'proj-b')
+    await mkdir(wsA, { recursive: true })
+    await mkdir(wsB, { recursive: true })
+    if (!(await canSymlink(wsA))) return
+
+    await writeFile(join(wsB, 'b-secret.txt'), 'proj-b private')
+    await symlink(join(wsB, 'b-secret.txt'), join(wsA, 'peek-at-b'))
+
+    const a = await ctxForWorkspace('proj-a')
+    await expect(runWithPrincipal(a, alice, (c) => c.fs.resolve('peek-at-b'))).rejects.toThrow(
+      PathEscapeError,
+    )
+  })
+
+  it('workspaceOf 返回 undefined 时落到 default,与不传 workspaceOf 一致', async () => {
+    const c = new Context()
+    await c.plugin(PrincipalService)
+    const innerCtx = c.isolate('fs')
+    await innerCtx.plugin(LocalFileSystem, { cwd: root })
+    await c.plugin(TenantFileSystem, {
+      inner: innerCtx.fs as FileSystem,
+      root,
+      workspaceOf: () => undefined,
+    })
+
+    const path = await runWithPrincipal(c, alice, async (scoped) => {
+      const t = await scoped.fs.resolve('probe.txt')
+      return scoped.fs.processPath(t)
+    })
+    expect(path.startsWith(tenantWorkspaceRoot(root, alice) + sep)).toBe(true)
+  })
+
+  it('工作区非法时拒绝,且不回落到 default —— 缺省不是旁路', async () => {
+    const c = new Context()
+    await c.plugin(PrincipalService)
+    const innerCtx = c.isolate('fs')
+    await innerCtx.plugin(LocalFileSystem, { cwd: root })
+    await c.plugin(TenantFileSystem, {
+      inner: innerCtx.fs as FileSystem,
+      root,
+      workspaceOf: () => '   ',
+    })
+
+    await expect(
+      runWithPrincipal(c, alice, (scoped) => scoped.fs.resolve('x.txt')),
+    ).rejects.toThrow(PathEscapeError)
   })
 })

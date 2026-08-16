@@ -110,7 +110,7 @@ Harness agent **能执行 shell、能读写文件系统**。这决定了隔离�
 | [`@dshwar/auth`](packages/auth)                                   | 认证契约                    | ✅ V0.1.0 |
 | [`@dshwar/auth-static`](packages/auth-static)                     | 静态 token(开发用,禁止部署) | ✅ V0.1.0 |
 | [`@dshwar/credentials-multiuser`](packages/credentials-multiuser) | per-principal 凭据          | ✅ V0.1.0 |
-| [`@dshwar/fs-tenant`](packages/fs-tenant)                         | 工作区按租户钉死            | ✅ V0.1.0 |
+| [`@dshwar/fs-tenant`](packages/fs-tenant)                         | 工作区按租户+工作区钉死     | ✅ V0.4.1 |
 | [`@dshwar/storage-scoped`](packages/storage-scoped)               | 租户前缀键                  | ✅ V0.1.0 |
 | [`@dshwar/api-contract`](packages/api-contract)                   | API v1 契约(Zod 单一事实源) | ✅ V0.2.0 |
 | [`@dshwar/gateway`](gateway)                                      | API 平面服务(Hono)          | ✅ V0.2.0 |

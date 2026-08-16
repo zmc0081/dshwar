@@ -30,16 +30,25 @@ import {
   type FsWriteOutcome,
 } from '@deepseek-ai/dsh-fs'
 import type { Principal } from '@dshwar/principal'
-import { isWithin, PathEscapeError, pinPath, tenantWorkspaceRoot } from './path.ts'
-
-export {
-  encodeSegment,
+import {
+  DEFAULT_WORKSPACE_ID,
   isWithin,
   PathEscapeError,
   pinPath,
   tenantWorkspaceRoot,
+} from './path.ts'
+
+export {
+  DEFAULT_WORKSPACE_ID,
+  encodeSegment,
+  isWithin,
+  PathEscapeError,
+  pinPath,
+  tenantUserRoot,
+  tenantWorkspaceRoot,
   toPathSegment,
 } from './path.ts'
+export type { PathField } from './path.ts'
 
 /** {@link TenantFileSystem} 的配置。 */
 export interface TenantFileSystemConfig {
@@ -52,9 +61,21 @@ export interface TenantFileSystemConfig {
    */
   readonly inner: FileSystem
   /**
-   * 全局工作区根,绝对路径。每个主体的实际根是 `{root}/{tenantId}/{userId}`。
+   * 全局工作区根,绝对路径。
+   * 每个主体的实际根是 `{root}/{tenantId}/{userId}/{workspaceId}`(V0.4.1 起四段)。
    */
   readonly root: string
+  /**
+   * 当前操作属于哪个工作区。**每次操作现场求值,不缓存。**
+   *
+   * 省略时一律落到 {@link DEFAULT_WORKSPACE_ID},这让改造前的调用方零改动仍能工作
+   * (R2)。缺省只发生在**取值**阶段 —— 返回值仍走与任何 workspaceId 完全相同的
+   * 校验路径,不存在「缺省值走旁路」。
+   *
+   * ⚠️ **工作区来源的决定权不在本包。** 它是 `/v1` 契约的问题(查询参数还是路径段),
+   * 由 V0.4.1 Session 1 裁决;这里只留注入点,免得本包替网关做决定。
+   */
+  readonly workspaceOf?: () => string | undefined
 }
 
 /**
@@ -77,11 +98,13 @@ export interface TenantFileSystemConfig {
 export class TenantFileSystem extends FileSystem {
   private readonly inner: FileSystem
   private readonly root: string
+  private readonly workspaceOf: (() => string | undefined) | undefined
 
   constructor(ctx: Context, config: TenantFileSystemConfig) {
     super(ctx)
     this.inner = config.inner
     this.root = config.root
+    this.workspaceOf = config.workspaceOf
   }
 
   /**
@@ -100,7 +123,10 @@ export class TenantFileSystem extends FileSystem {
    */
   private currentWorkspaceRoot(): string {
     const principal: Principal = this.ctx.principal.current()
-    return tenantWorkspaceRoot(this.root, principal)
+    // 工作区与 principal 同样现场求值:同一个运行时里相邻两次操作
+    // 可能属于不同的人,也可能属于同一个人的不同工作区。
+    const workspaceId = this.workspaceOf?.() ?? DEFAULT_WORKSPACE_ID
+    return tenantWorkspaceRoot(this.root, principal, workspaceId)
   }
 
   /**

@@ -110,33 +110,105 @@ export function encodeSegment(value: string): string {
   return ENCODED_PREFIX + createHash('sha256').update(normalized, 'utf8').digest('hex').slice(0, 32)
 }
 
+/** 参与路径拼接的标识符字段。三段**同级对待**,不因来源不同而放松校验。 */
+export type PathField = 'tenantId' | 'userId' | 'workspaceId'
+
+/**
+ * 未指定工作区时落到的缺省工作区(R2)。
+ *
+ * ⚠️ **它不是特殊值。** `default` 走与任何其它 workspaceId 完全相同的校验与
+ * 编码路径 —— 一旦给缺省值开一条旁路,那条旁路就是攻击面:调用方只要不传
+ * workspaceId 就能绕过校验。这里的「缺省」只发生在**取值**阶段,不发生在
+ * 校验阶段。
+ */
+export const DEFAULT_WORKSPACE_ID = 'default'
+
 /**
  * 校验一个标识符可以参与路径拼接,并返回其编码后的路径段。
  *
- * @param value 原始标识符(`principal.tenantId` 或 `principal.id`)
+ * @param value 原始标识符(`principal.tenantId` / `principal.id` / workspaceId)
  * @param field 用于报错的字段名
  * @returns 编码后的路径段
- * @throws {PathEscapeError} 值为空
+ * @throws {PathEscapeError} 值为空或仅含空白
  */
-export function toPathSegment(value: string, field: 'tenantId' | 'userId'): string {
+export function toPathSegment(value: string, field: PathField): string {
   if (value.length === 0) {
-    // 空段落会让 {root}/{tenantId}/{userId} 塌陷成 {root}//{userId},
-    // 而 path.resolve 会把它归一成 {root}/{userId} —— 于是所有空租户的用户
-    // 共享同一层目录。这正是「越过隔离」。
+    // 空段落会让 {root}/{tenantId}/{userId}/{workspaceId} 塌陷少一层,
+    // 而 path.resolve 会把 `//` 归一掉 —— 于是所有空段落的主体共享同一层目录。
+    // 这正是「越过隔离」。四段路径下这个风险比三段时更大:塌陷的可能位置多了一处。
     throw new PathEscapeError(`${field} 不得为空 —— 空段落会让工作区根塌陷,等于越过隔离`)
+  }
+  // 仅含空白的段落同样危险:Windows 会把尾部空格静默去掉,`" "` 于是等价于空。
+  // 白名单本身也排除空格,但先在这里拒绝能给出准确得多的错误信息。
+  if (value.trim().length === 0) {
+    throw new PathEscapeError(`${field} 不得仅含空白 —— Windows 会静默去掉它,等价于空段落`)
   }
   return encodeSegment(value)
 }
 
 /**
- * 计算某个主体的工作区根:`{root}/{tenantId}/{userId}`。
+ * 计算某个主体在某个工作区下的根:`{root}/{tenantId}/{userId}/{workspaceId}`。
+ *
+ * ## 为什么是四段(V0.4.1)
+ *
+ * 工作台的核心体验是按项目分区干活。三段路径意味着用户把所有项目的文件混在
+ * 一起。这个改动在 V0.1.0 **发布前**做成本为零,发布后就是破坏性变更 ——
+ * 要升大版本、写迁移、维护双版本。
+ *
+ * ## 校验顺序是刻意的
+ *
+ * **先逐段校验,再拼接,再 resolve,最后断言仍在根内。** 不能用「拼接后再检查」
+ * 替代「拼接前先校验」—— 两者拦的是不同的东西:
+ *
+ * - 拼接前:段落自身是否合法(空、空白、保留名、分隔符伪造)
+ * - 拼接后:归一化之后是否还在根内(`..` 序列的净效果)
+ *
+ * 只做后者的话,一个叫 `..` 的 workspaceId 会先把路径抬高一层,再由后续段落
+ * 补回来,最终 `isWithin` 通过 —— 但它落在了**别人的**用户目录下。
  *
  * @param root 全局工作区根(绝对路径)
  * @param principal 主体
- * @returns 该主体的工作区根,绝对路径
- * @throws {PathEscapeError} root 非绝对路径,或 tenantId / userId 为空
+ * @param workspaceId 工作区;省略时用 {@link DEFAULT_WORKSPACE_ID}
+ * @returns 该主体在该工作区下的根,绝对路径
+ * @throws {PathEscapeError} root 非绝对路径,或任一段为空 / 非法
  */
-export function tenantWorkspaceRoot(root: string, principal: Principal): string {
+export function tenantWorkspaceRoot(
+  root: string,
+  principal: Principal,
+  workspaceId: string = DEFAULT_WORKSPACE_ID,
+): string {
+  if (!isAbsolute(root)) {
+    throw new PathEscapeError(`工作区根必须是绝对路径(收到 ${JSON.stringify(root)})`)
+  }
+
+  // ---- ① 逐段校验(拼接之前)----
+  const tenant = toPathSegment(principal.tenantId, 'tenantId')
+  const user = toPathSegment(principal.id, 'userId')
+  const workspace = toPathSegment(workspaceId, 'workspaceId')
+
+  // ---- ② 拼接 + resolve ----
+  const pinned = resolvePath(root, tenant, user, workspace)
+
+  // ---- ③ 断言仍在根内 ----
+  // 编码后的段落理论上不可能含分隔符或 `..`,但这道断言不依赖那个理论:
+  // 它直接检查最终结果。encodeSegment 哪天被改坏,这里先炸,而不是静默越权。
+  if (!isWithin(resolvePath(root), pinned)) {
+    throw new PathEscapeError(
+      `工作区根拼接后逃出全局根(root ${JSON.stringify(root)},结果 ${JSON.stringify(pinned)})`,
+    )
+  }
+
+  return pinned
+}
+
+/**
+ * 该主体在**全部**工作区之上的用户根:`{root}/{tenantId}/{userId}`。
+ *
+ * 只用于「列出这个用户有哪些工作区」这类跨工作区的操作。
+ * ⚠️ **不要拿它当读写的根** —— 那会让同一用户的两个工作区互相可见,
+ * 而 V0.4.1 的隔离要求是它们之间也隔离。
+ */
+export function tenantUserRoot(root: string, principal: Principal): string {
   if (!isAbsolute(root)) {
     throw new PathEscapeError(`工作区根必须是绝对路径(收到 ${JSON.stringify(root)})`)
   }
