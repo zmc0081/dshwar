@@ -196,9 +196,11 @@ describe('OpenAPI 文档结构', () => {
     }
   })
 
-  it('planned 端点标了 x-dshwar-status 与计划版本', () => {
+  it('planned 端点(若有)标了 x-dshwar-status 与计划版本', () => {
+    // V0.4.0 Session 4 起 planned 清零 —— 「契约完整,实现分期」走完了。
+    // 断言从「必须有 planned」改为条件校验:契约将来再加 planned 端点时,
+    // 标注纪律仍被钉住;现在为空不是缺陷,是里程碑。
     const planned = ROUTES.filter((r) => r.status === 'planned')
-    expect(planned.length).toBeGreaterThan(0)
 
     for (const route of planned) {
       const op = (doc.paths[route.path] as Record<string, Record<string, unknown>>)[route.method]!
