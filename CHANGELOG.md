@@ -1,19 +1,170 @@
 # CHANGELOG
 
-## 0.2.0 —— API 平面(开发中)
-
-任务详情见 `SESSION_TASKS.md` 的 V0.2.0 块。
+> ⚠️ **本仓至今未发布到 npm。** 首发被 npm 组织占名与 GitHub 仓库创建阻塞
+> (见 [`docs/RELEASE-CHECKLIST.md`](docs/RELEASE-CHECKLIST.md))。
+> 因此**首个公开版本将是 0.4.1**,内容包含下面全部五节。
+>
+> 相应地,各版本的变更集在版本号提升时**并入本文件并删除** ——
+> 否则 `changeset version` 会把 0.4.1 再推成 0.5.0,而 CLAUDE.md 第四节承诺
+> 「开发版本号 = 最终发布版本号,发布时无需再改」。
+> changesets 记录的是**发布之间的增量**,而首发之前不存在「之间」。
+>
+> 发布之后恢复正常流程:每个改动写 changeset,`changeset version` 生成条目。
 
 ---
 
-## 0.1.0 —— 运行时平面 MVP(开发完成,**未发布**)
+## 0.4.1 —— `fs-tenant` 多工作区改造(开发完成,未发布)
 
-> ⚠️ 这一版从未发布到 npm —— 首发被 npm 组织占名与 GitHub 仓库创建阻塞
-> (见 [`docs/RELEASE-CHECKLIST.md`](docs/RELEASE-CHECKLIST.md))。
-> 因此**首个公开版本将是 0.2.0**,内容包含本节与上节两部分。
->
-> 相应地,V0.1.0 的变更集已在版本号提升到 0.2.0 时并入本文件并删除 ——
-> 否则 `changeset version` 会把 0.2.0 再推成 0.3.0(这正是发布清单里记录的那个陷阱)。
+**有时限的改动**:`fs-tenant` 属于 V0.1.0 且尚未 publish,此刻改路径模型是普通改动;
+一旦发布出去就是破坏性变更,要升大版本、写迁移、维护双版本。
+
+### 变更
+
+- **路径模型改为四段**:`{root}/{tenantId}/{userId}/{workspaceId}`。
+  `workspaceId` 与另两段**同级对待** —— 同一套白名单校验与 SHA-256 编码,
+  不因它来自请求而放松。
+- **校验顺序是四步**:先逐段校验 → 拼接 → resolve → 断言仍在根内。
+  不能用「拼接后再检查」替代「拼接前先校验」:一个叫 `..` 的 workspaceId 会先把
+  路径抬回用户根、再由后续段落补回来,最终 `isWithin` 通过,但落在别人的目录下。
+- **缺省工作区 `default`**:未指定时落到它,改造前的调用方零改动仍能工作。
+  缺省**只发生在取值阶段,不发生在校验阶段** —— 非法的 workspaceId 直接拒绝,
+  不回落到 `default`。给缺省值开旁路,那条旁路就是攻击面。
+- 新增 `tenantUserRoot()`(工作区的上一层,仅用于列举),文档写明不得当读写根。
+- `/v1` 携带工作区:**建会话时传一次,之后由会话 id 承载**。
+  发轮 / SSE / 删除都不必再带,消除了「漏带参数静默落到 default」这一整类错误。
+- `@dshwar/policy` 增加工作区配额:数量与容量两条上限。
+- 新增 `pnpm check:oss`(硬规则 9):开源构建产物不含闭源组件 ——
+  这既是 open-core 边界,也是 SignPath Foundation 免费签名的资格条件。
+
+### 契约兼容性
+
+**相容变更,不升大版本。** 实测:
+
+```
+差异: 破坏性 0 处,相容 2 处
+  [property.added] Session.workspaceId               新增可选字段
+  [property.added] CreateSessionRequest.workspaceId  新增可选字段
+```
+
+`Session.workspaceId` 语义上恒有值但 schema 上**必须可选** —— 进 `required`
+会让老客户端的响应校验失败,那是破坏性变更。
+
+### 两份决策文档
+
+- [`storage-workspace-scoping.md`](docs/DECISIONS/storage-workspace-scoping.md) ——
+  `storage-scoped` **不加**工作区维度。storage 的键对我们不透明,一刀切会把用户级
+  数据也切开;同一用户的两个工作区不是信任边界;作用域在 `open()` 时定格,时机对不上。
+- [`workspace-in-api.md`](docs/DECISIONS/workspace-in-api.md) —— 选项 A′ 及其兼容性声明。
+
+### 测试
+
+630 条。`fs-tenant` 的逃逸测试按新增路径段**全量重写**(95 条,+28):
+每种绕过手法都在 workspaceId 这一段上重验一遍,外加跨工作区隔离的正反向断言。
+符号链接测试在 Linux 容器复验,确认真的执行而非静默跳过。
+
+---
+
+## 0.4.0 —— 计量与治理(开发完成,未发布)
+
+### 新增
+
+| 包 | 作用 |
+| --- | --- |
+| `@dshwar/audit` | 仅追加审计 —— 类型层没有 update / delete |
+| `@dshwar/metering` | 用量归属与成本核算 |
+| `@dshwar/policy` | 配额判定(判定与执行分离) |
+| `@dshwar/model-router` | 模型准入与预算降级 |
+
+`/v1/admin` 的 `usage` / `quota` / `audit` / `policies` 端点由 501 转为实现。
+**契约里的 `planned` 至此清零** —— v1 定义的每个端点都有实现,有测试钉住。
+
+### 四条红线
+
+1. **计量只观测,不阻断。** 丢一条用量记录是账目问题,断一次会话是事故。
+2. **判定与执行分离。** `policy` 只回答「能不能」,429 由网关发。
+3. **超限拒绝,不静默降级。** 降级是 `model-router` 的显式配置,且三处可见:
+   响应头、会话记录、审计 —— 用户有权知道自己被换了模型。
+4. **审计仅追加。** 改得掉的审计等于没有审计。
+
+### 两处容易算错的地方
+
+- **计费口径按 DISJOINT 加**:上游 `inputTokens` 只算未命中缓存的输入,
+  计费输入 = `input + cacheRead + cacheWrite`。直接用 `inputTokens` 会**少计费**。
+- **配额 fail open**:计量读不到时放行并落审计。与身份层 fail closed 方向相反 ——
+  计量是账目组件不是安全组件,把它放进关键路径的故障域,等于造一个
+  「记账挂了所以谁都不能用」的事故模式。
+
+---
+
+## 0.3.0 —— 身份互操作(开发完成,未发布)
+
+### 新增
+
+| 包 | 作用 |
+| --- | --- |
+| `@dshwar/subject` | Subject Mirror —— 外部身份源的用户镜像 |
+| `@dshwar/tenant-map` | 租户映射,四种策略 |
+| `@dshwar/auth-jwt` | JWKS 验签 |
+| `@dshwar/auth-oidc` | 填一个 issuer URL 即接入 |
+| `@dshwar/scim-server` | SCIM 2.0 子集(User + Group) |
+| `@dshwar/webhooks` | 出站事件投递,签名可独立验证 |
+
+### 核心语义
+
+- ★ **验签通过 ≠ 放行**:IdP 侧停用不会让已签发的 token 失效,每次 `verify()`
+  必查 Subject Mirror 的 `active`。这是本版本验收标准的落点。
+- **停用的两条路径都做**:Entra / Okta 发 `PATCH`,authentik 发 `PUT` ——
+  只做一条就会「在 A 家能停用、在 B 家停不掉」,而停不掉意味着离职员工仍能调模型。
+- **三类令牌分离签发**:运行时 token / Admin Key / SCIM token,互斥有负向测试。
+- **租户由映射裁决,不信 token 自称**;映射不出与歧义**都拒绝**;
+  镜像与裁决冲突时拒绝而非选一边 —— 选任何一边都是猜,猜错就是跨租户可见。
+- **只接受非对称算法**,传入对称算法在构造时抛错(JWKS 分发的是公钥)。
+- **Subject 契约里没有任何凭据字段**,供给方载荷带 `password` 时报错而非静默丢弃。
+
+### 可行性裁决
+
+**Keycloak 没有 SCIM 出站客户端** —— 它 26.6 的 `scim-api` 方向是反的
+(让 Keycloak 成为服务提供方)。验收基线由 Keycloak 换为 **authentik**
+(原生出站 SCIM、MIT、可容器化)。详见 [`docs/FEASIBILITY-REPORT-V3.md`](docs/FEASIBILITY-REPORT-V3.md)。
+
+---
+
+## 0.2.0 —— API 平面(开发完成,未发布)
+
+### 新增
+
+| 包 | 作用 |
+| --- | --- |
+| `@dshwar/api-contract` | API v1 契约 —— **护城河本体** |
+| `@dshwar/gateway` | API 平面服务(Hono),含可执行入口 |
+| `@dshwar/sdk` | TS SDK,由 OpenAPI 生成 |
+
+### 核心语义
+
+- ★ **契约是单一事实源**:Zod → OpenAPI 3.1 → SDK。任何一处手写都是第二个事实源,
+  而两个事实源迟早分叉 —— 分叉的表现是客户按文档写的客户端在生产上炸掉。
+- **契约完整,实现分期**:未实现端点返回 501 并标 `x-dshwar-status: planned`,
+  而不是 404 —— 404 会让第三方以为路径写错了,从而去猜别的路径。
+  planned 清单**从契约里读**而非手写。
+- **契约冻结的基线取自 git,不是快照文件**:另存快照行不通,改契约的人必然顺手
+  更新它,检查恒绿。破坏性变更需一份点名契约包的 `major` changeset。
+- **闭集枚举加值判为破坏性**:错误码定成 `z.enum` 就是为了让下游写出可穷举的
+  `switch`,多一个值就让已写全的 `switch` 编译失败。这是设计后果,不是判定过严。
+- **跨 principal 一律 404 而非 403** —— 403 会泄漏 id 存在性,且与「不存在」响应完全一致。
+- **凭据永不返回值**:契约层就没给值字段留位置,SDK 生成的类型里同样没有。
+- SSE 带单调 `id`,支持 `Last-Event-ID` 断线续传;有界缓冲避免长连接 OOM;
+  断连即移除订阅(有度量测试,不靠肉眼)。
+- 网关**只消费装好的 `ctx`**,不组装 harness;装配在 `runtime.ts` 里单列一层,
+  与 `profiles/gateway.yml` 的漂移由测试拦住。
+
+### 验收
+
+第三方仅凭 SDK 完成一次完整会话,不接触 dsh。[`examples/sdk-session`](examples/sdk-session)
+**只依赖 `@dshwar/sdk`** —— 依赖面由测试钉住,对着绑真实端口的 HTTP 服务器跑通。
+
+---
+
+## 0.1.0 —— 运行时平面 MVP(开发完成,未发布)
 
 **核心论点已被证明:Harness 的服务契约可以被换成多用户实现,消费方零改动。**
 
@@ -41,19 +192,16 @@
 
 - adapters 边界:ESLint + grep 双重强制,且**豁免本身**也有负向测试
 - PR 自查清单整条脚本化(`pnpm check:guards`)
-- 守卫的负向测试 9 条(`pnpm verify:guards`)—— 确认每道守卫真的会拦
+- 守卫的负向测试(`pnpm verify:guards`)—— 确认每道守卫真的会拦
 - 版本号全仓一致性检查,含 changesets fixed 组覆盖
 - CI:守卫单独成 job + Node 22/24 构建矩阵
 
 ### 测试
 
-207 条(174 单测 + 33 契约测试),含:
-
-- 并发 100 组 principal 无串号(三处随机挂起制造交错)
-- 44 条路径逃逸(`../`、绝对路径、UNC、8.3 短名、NTFS 数据流、Windows 保留名、
-  URL 编码、Unicode 规范化、同前缀兄弟目录的 off-by-one)
-- 符号链接逃逸(对着真实 `fs-local`,须在 Linux 验证)
-- R9 双 profile 对照:单用户场景下 `single-user.yml` 与 `team.yml` 行为一致
+含并发 100 组 principal 无串号(三处随机挂起制造交错)、路径逃逸全谱
+(`../`、绝对路径、UNC、8.3 短名、NTFS 数据流、Windows 保留名、URL 编码、
+Unicode 规范化、同前缀兄弟目录的 off-by-one)、符号链接逃逸(对着真实 `fs-local`,
+须在 Linux 验证)、R9 双 profile 对照。
 
 ### 已知限制
 

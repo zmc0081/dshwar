@@ -58,22 +58,40 @@ dev-bob   → sk-bob-YYYY
 
 **README 首屏的代码逐字可执行。**
 
-## ⚠️ 发布前必读:changesets 会把版本推到 0.2.0
+## changesets 与预标版本号的张力(已按方案 A 处理)
 
-`CLAUDE.md` 第四节要求「开发版本号即时同步」——全仓已经预先标成 `0.1.0`。
-而 `.changeset/` 里有 5 条 `minor` 变更集,直接跑 `pnpm exec changeset version`
-会把 `0.1.0` 推成 **`0.2.0`**,与预标的版本冲突,`pnpm check:version` 会红。
+`CLAUDE.md` 第四节要求「开发版本号即时同步」——全仓已预先标成 **`0.4.1`**,
+且承诺「发布时无需再改」。而 changesets 的模型是「攒变更集 → 提版本 → 发布」,
+两者天然冲突:任何待发布的 `minor` 变更集都会把 `0.4.1` 推成 `0.5.0`。
 
-首发时二选一:
+**已采用方案 A(V0.4.1 收敛,2026-08-16)**:各版本的变更集在版本号提升时
+并入 `CHANGELOG.md` 并删除。理由不是图省事 ——
 
-**A. 保留预标版本(推荐)** —— 删掉 `.changeset/*.md`(内容已汇总进 `CHANGELOG.md`),
-直接以 `0.1.0` 发布。此后每个版本正常走 changesets 流程。
+> **changesets 记录的是「发布之间」的增量,而首发之前不存在「之间」。**
+> 22 份变更集描述的是一个从未发布过的东西的演进过程,那属于 CHANGELOG 的
+> 「初版包含什么」,不属于「相对上一版改了什么」。
 
-**B. 接受 bump** —— 跑 `changeset version` 让它变成 `0.2.0`,同步改
-`CLAUDE.md` / `SESSION_TASKS.md` / `README` 兼容矩阵,以 `0.2.0` 首发。
+**发布之后恢复正常流程**:每个改动写 changeset,`changeset version` 生成条目。
+那时预标与 bump 不再冲突,因为有了真实的「上一版」作参照。
 
-这是「预标版本号」与 changesets bump 模型之间的固有张力,**只在首发时出现一次**。
-后续版本按 CLAUDE.md 第四节的流程(规划确立即预标)不会再撞。
+### 两个实测到的坑
+
+**1. `npm pack` 不重写 `workspace:*`,`pnpm pack` 会。** 见上一节。
+
+**2. `changeset version` 不提升 root `package.json`,而 `check-version` 拿它当基准。**
+
+root 是 `private: true`,changesets 正确地忽略它。但 `scripts/check-version.mjs`
+以 root 的 `version` 为基准比对其余 24 处 —— 于是跑完 `changeset version` 之后:
+
+```
+packages/*  → 0.5.0   (changesets 提升了)
+package.json → 0.4.1  (没被提升)
+→ pnpm check:version 红
+```
+
+**将来真走 `changeset version` 时,必须手工把 root 的 `version` 同步过去。**
+这不是 bug,是两个工具对「root 算不算一个包」的看法不同;写在这里免得下次
+花半小时排查。
 
 ## 待执行的发布步骤
 
