@@ -1,0 +1,14 @@
+{
+  "name": "@dshwar/example-sdk-session",
+  "version": "0.2.0",
+  "private": true,
+  "description": "第三方视角:仅凭 @dshwar/sdk 完成一次完整会话,不接触 dsh。",
+  "type": "module",
+  "main": "./src/session.ts",
+  "scripts": {
+    "start": "node src/cli.ts"
+  },
+  "dependencies": {
+    "@dshwar/sdk": "workspace:*"
+  }
+}

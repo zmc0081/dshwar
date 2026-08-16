@@ -10,7 +10,10 @@ import { PaginationQuery, ROUTES } from '@dshwar/api-contract'
 import type { Principal } from '@dshwar/principal'
 import { runWithPrincipal } from '@dshwar/principal'
 import type { Context as CordisContext } from '@deepseek-ai/cordis'
-import type { Hono } from 'hono'
+// 把上游对 cordis `Context` 的模块增强(`ctx.credentials`)带进来。
+// 空的 `import type {}` 完全擦除,不产生运行时依赖。
+import type {} from '@deepseek-ai/dsh-credentials'
+import type { Context as HonoContext, Hono } from 'hono'
 import { ApiError, notImplemented } from '../errors.ts'
 import { assertTenant, type GatewayEnv } from '../middleware.ts'
 import type { AuditSink } from './audit.ts'
@@ -108,7 +111,7 @@ export function registerAdminRoutes(options: AdminRouteOptions) {
       const honoPath = route.path.replace(/\{(\w+)\}/g, ':$1')
       const version = route.plannedVersion ?? 'a future version'
 
-      const handler = (c: Parameters<Parameters<typeof app.get>[1]>[0]) => {
+      const handler = (c: HonoContext<GatewayEnv>): never => {
         options.audit.record({
           at: new Date().toISOString(),
           actor: c.get('admin')?.label ?? 'unknown',

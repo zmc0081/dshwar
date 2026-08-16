@@ -1,0 +1,35 @@
+{
+  "name": "@dshwar/sdk",
+  "version": "0.2.0",
+  "description": "DSHWAR API v1 的 TypeScript SDK。类型由 OpenAPI 生成,不手写。",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "generate": "node --experimental-strip-types scripts/generate.ts"
+  },
+  "devDependencies": {
+    "@dshwar/api-contract": "workspace:*",
+    "openapi-typescript": "^7.13.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

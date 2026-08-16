@@ -30,7 +30,7 @@ const expected = rootPkg.version
 found.push({ where: 'package.json (root)', version: expected })
 
 // ---------- 2. 各 workspace 包 ----------
-for (const area of ['packages', 'adapters', 'gateway', 'examples']) {
+for (const area of ['packages', 'adapters', 'gateway', 'sdk', 'examples']) {
   const base = p(area)
   if (!existsSync(base)) continue
   const stat = statSync(base)
@@ -138,8 +138,10 @@ function checkFixedCoverage() {
     return { ok: false, detail: '.changeset/config.json 解析失败' }
   }
 
+  // 不按目录筛 —— 按「是不是可发布的 @dshwar/* 包」筛。
+  // 早先这里写死了 packages/ 与 adapters/,于是 gateway 与 sdk 这两个同样
+  // 要发布的包压根没被检查过覆盖率:漏出 fixed 组也不会有人知道。
   const publishable = found
-    .filter((f) => f.where.startsWith('packages/') || f.where.startsWith('adapters/'))
     .map((f) => f.where.split('/').slice(1).join('/'))
     .filter((name) => name.startsWith('@dshwar/'))
 

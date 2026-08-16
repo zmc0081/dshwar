@@ -6,8 +6,15 @@
  * @module @dshwar/gateway/sessions/store
  */
 import type { Context as CordisContext } from '@deepseek-ai/cordis'
+// 仅为把上游对 cordis `Events` 的模块增强(`session/event`)带进来。
+// 空的 `import type {}` 会被完全擦除,不产生运行时依赖 ——
+// 网关不该为了一个事件名的类型就在运行时拉进 dsh-session。
+//
+// 不引这一行,`ctx.on('session/event', ...)` 编译不过;而 Vitest 不做类型检查,
+// 测试会照样全绿。这正是根 tsconfig 必须登记每个项目的原因。
+import type {} from '@deepseek-ai/dsh-session'
 import type { Principal } from '@dshwar/principal'
-import { EventBuffer, translateEvent, type UpstreamSessionEvent } from './events.ts'
+import { asUpstreamEvent, EventBuffer, translateEvent } from './events.ts'
 
 /** 上游 agent 句柄的最小形状。刻意只声明用得到的部分。 */
 export interface AgentHandleLike {
@@ -72,18 +79,16 @@ export class GatewaySessionStore {
     const buffer = new EventBuffer()
     const subscribers = new Set<(seq: number, event: unknown) => void>()
 
-    const dispose = input.handle.agent.ctx.on(
-      'session/event',
-      (_session: unknown, upstream: UpstreamSessionEvent) => {
-        const translated = translateEvent(upstream, {
-          includeReasoning: input.includeReasoning,
-        })
-        if (translated === undefined) return
+    const dispose = input.handle.agent.ctx.on('session/event', (_session, event) => {
+      const upstream = asUpstreamEvent(event)
+      const translated = translateEvent(upstream, {
+        includeReasoning: input.includeReasoning,
+      })
+      if (translated === undefined) return
 
-        buffer.push({ seq: upstream.seq, event: translated })
-        for (const notify of subscribers) notify(upstream.seq, translated)
-      },
-    )
+      buffer.push({ seq: upstream.seq, event: translated })
+      for (const notify of subscribers) notify(upstream.seq, translated)
+    })
 
     const session: GatewaySession = {
       id: input.id,

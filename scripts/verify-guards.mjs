@@ -10,9 +10,11 @@
  *   2. 故意把上游依赖改成 ^            → 必须失败
  *   3. 故意改乱一处版本号              → check-version 必须失败
  *
- * 另加两条,理由见各自的注释:
+ * 另加几条,理由见各自的注释:
  *   4. adapters/ 的深链**必须放行**    → 证明豁免有效,而非「一律禁止」
  *   5. Service 子类的 #private        → 必须失败(Session 0 §4.1)
+ *   6. 篡改 adapters 的上游版本假设    → 契约测试必须红(Session 7 验收)
+ *   7. TS 项目未登记进根 references    → 必须失败(V0.2.0 Session 5 实测教训)
  *
  * 退出码:全绿 0,任一守卫没拦住 1。
  */
@@ -287,6 +289,30 @@ try {
       }
     }
   }
+
+  // ---------------------------------------------------------------------
+  // 7. 新增一个未登记进根 tsconfig references 的 TS 项目
+  //
+  //    根 typecheck 是 `tsc -b`,只构建 references 里列出的项目。漏登记的
+  //    项目会被安静跳过 —— 而 Vitest 不做类型检查、ESLint 也照样全绿,
+  //    于是「三道门禁全绿」可以完全不覆盖这个包。
+  //
+  //    V0.2.0 Session 5 补登记 gateway 时一次性炸出 4 类真实类型错误,
+  //    它们已经跟着三次「全绿」提交进了仓库。这条守卫就是为此加的。
+  // ---------------------------------------------------------------------
+  {
+    writeFixture(
+      'packages/__guard_fixture__/tsconfig.json',
+      `${JSON.stringify({ extends: '../../tsconfig.base.json', include: ['src'] }, null, 2)}\n`,
+    )
+
+    const guards = runGuards()
+    expect(
+      '7 未登记进根 tsconfig references 的项目被拦住',
+      !guards.ok && /未登记 packages\/__guard_fixture__/.test(guards.output),
+      guards.ok ? '守卫放行了未登记的 TS 项目 —— 该项目将不被任何类型检查覆盖' : undefined,
+    )
+  }
 } finally {
   // 无条件清理,失败路径也不留垃圾
   for (const dir of ['packages/__guard_fixture__', 'adapters/__guard_fixture__']) {
@@ -309,7 +335,7 @@ try {
   const guards = runGuards()
   const version = runVersion()
   expect(
-    '7 夹具已清理干净,守卫回到基线',
+    '8 夹具已清理干净,守卫回到基线',
     guards.ok && version.ok,
     guards.ok && version.ok ? undefined : '清理后守卫仍然失败,仓库可能残留夹具',
   )

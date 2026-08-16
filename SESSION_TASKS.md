@@ -127,7 +127,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 | 2 Gateway 骨架与会话路由 | ✅ 已完成 | 分道鉴权在中间件层;22 个单测,含隔离槽位零增长                                    |
 | 3 运行时 API 与 SSE      | ✅ 已完成 | 端到端对真实 harness;19 个单测,含断连释放度量与 Last-Event-ID                    |
 | 4 Admin API              | ✅ 已完成 | credentials describe;8 个 planned 返 501;22 个单测                               |
-| 5 TS SDK                 | ⬜ 未开始 | 由 OpenAPI 生成,不手写                                                           |
+| 5 TS SDK                 | ✅ 已完成 | 由 OpenAPI 生成;M2 验收对真实端口跑通;12 个单测                                  |
 | 6 契约冻结与发布         | ⬜ 未开始 |                                                                                  |
 
 图例:✅ 已完成 · 🔄 进行中 · ⬜ 未开始 · 🟠 代码就绪待外部资源
@@ -389,7 +389,7 @@ docs/FEASIBILITY-REPORT-V2.md，包含：
 
 ---
 
-### ⬜ Session 5: TS SDK
+### ✅ Session 5: TS SDK
 
 ```
 本次任务:由 OpenAPI 生成 TS SDK，不手写。

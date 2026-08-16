@@ -12,6 +12,11 @@
     { "path": "./packages/auth" },
     { "path": "./packages/auth-static" },
     { "path": "./packages/credentials-multiuser" },
-    { "path": "./packages/fs-tenant" }
+    { "path": "./packages/fs-tenant" },
+    { "path": "./packages/storage-scoped" },
+    { "path": "./adapters/dsh-0.1.0" },
+    { "path": "./gateway" },
+    { "path": "./sdk/typescript" },
+    { "path": "./examples/sdk-session" }
   ]
 }

@@ -111,6 +111,36 @@ function checkUpstreamVersionConsistency() {
   return out
 }
 
+/**
+ * 每个带 tsconfig.json 的 workspace 项目都必须登记进根 tsconfig 的 references。
+ *
+ * 为什么值得单独一条:根 `typecheck` 是 `tsc -b`,它**只构建 references 里列出的
+ * 项目**。漏登记的项目不会报错,只是安静地不被检查 —— 而 Vitest 用 esbuild 转译、
+ * 不做类型检查,所以测试照样全绿、lint 照样全绿。
+ *
+ * 这不是假想:V0.2.0 Session 5 补登记 gateway 时,一次性炸出 4 类真实类型错误,
+ * 而它们已经跟着 Session 2/3/4 三次「全绿」提交进了仓库。
+ */
+function checkTsconfigReferences() {
+  const root = JSON.parse(stripJsonComments(readFileSync(p('tsconfig.json'), 'utf8')))
+  const referenced = new Set(
+    (root.references ?? []).map((r) => r.path.replace(/^\.\//, '').replace(/\/$/, '')),
+  )
+
+  const projects = collectFiles(REPO, (f) => f.endsWith('tsconfig.json'))
+    .map((f) => repoPath(REPO, dirname(f)))
+    .filter((rel) => rel !== '' && rel !== '.')
+
+  return projects
+    .filter((rel) => !referenced.has(rel))
+    .map((rel) => ({ file: 'tsconfig.json', line: 0, text: `未登记 ${rel}` }))
+}
+
+/** 去掉 JSONC 注释。根 tsconfig 里有大段说明性注释,JSON.parse 咽不下。 */
+function stripJsonComments(text) {
+  return text.replace(/^\s*\/\/.*$/gm, '')
+}
+
 let failed = 0
 console.log('DSHWAR · PR 自查守卫\n')
 
@@ -137,6 +167,16 @@ if (inconsistent.length === 0) {
   console.log(`  违规  上游锁定版本全仓不一致  (${inconsistent.length} 处)`)
   console.log('        CLAUDE.md 第五节 —— 全仓必须锁同一个上游版本')
   for (const h of inconsistent) console.log(`        ${h.file}  ${h.text}`)
+}
+
+const unreferenced = checkTsconfigReferences()
+if (unreferenced.length === 0) {
+  console.log('  通过  全部 TS 项目已登记进根 tsconfig references')
+} else {
+  failed += 1
+  console.log(`  违规  有 TS 项目未登记进根 tsconfig references  (${unreferenced.length} 处)`)
+  console.log('        根 typecheck 是 tsc -b,未登记的项目会被安静跳过,不做任何类型检查')
+  for (const h of unreferenced) console.log(`        ${h.text}`)
 }
 
 console.log('')

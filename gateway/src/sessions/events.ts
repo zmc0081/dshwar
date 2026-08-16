@@ -35,6 +35,22 @@ export interface UpstreamSessionEvent {
   }
 }
 
+/**
+ * 把上游监听器给的事件收窄成本模块认识的信封。
+ *
+ * 上游 `SessionEvent` 是个大联合,每个成员的 `data` 形状都不同;
+ * `UpstreamSessionEvent` 只声明**我们真正读的那几个字段**。两者结构上不能
+ * 互相赋值(TS 的弱类型检查会挡住全可选字段的对象),所以收窄集中在这一个
+ * 函数里,而不是散在每个调用点。
+ *
+ * **这是唯一允许对上游事件做类型断言的地方。** 断言错了的后果是
+ * {@link translateEvent} 返回 `undefined` 或某个字段落空,而不是抛错 ——
+ * 事件词表是 DSHWAR 定义的,上游多一个事件类型不该让网关崩掉。
+ */
+export function asUpstreamEvent(event: unknown): UpstreamSessionEvent {
+  return event as UpstreamSessionEvent
+}
+
 /** 一条待发送的 SSE 事件:载荷 + 它的序号。 */
 export interface SequencedEvent {
   readonly seq: number

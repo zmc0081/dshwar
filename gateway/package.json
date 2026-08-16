@@ -48,7 +48,9 @@
     "@deepseek-ai/dsh-system-prompt": "0.1.0-rc.6",
     "@deepseek-ai/dsh-tools": "0.1.0-rc.6",
     "@dshwar/auth-static": "workspace:*",
-    "@dshwar/credentials-multiuser": "workspace:*"
+    "@dshwar/credentials-multiuser": "workspace:*",
+    "@dshwar/example-sdk-session": "workspace:*",
+    "@hono/node-server": "^1.19.7"
   },
   "publishConfig": {
     "access": "public"

@@ -9,4 +9,5 @@ feasibility-v2/node_modules/
 # 生成产物。prettier 重排它会与「生成结果逐字节一致」的契约同步测试打架 ——
 # 那条测试正是用来发现「契约改了但忘了重新生成」的。
 packages/api-contract/openapi.json
+sdk/typescript/src/generated/
 CHANGELOG.md
