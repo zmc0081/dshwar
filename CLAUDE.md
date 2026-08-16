@@ -175,7 +175,9 @@ pnpm eslint . --max-warnings 0                                                �
 - `README.md` 维护 DSHWAR × dsh 兼容矩阵,每次跟版更新
 - 双轨:`stable` 跟已验证版本,`edge` 跟上游最新
 - ⚠️ 上游 npm registry 版本号与 monorepo 根版本号**不一致**,**一律以 registry 为准**
-- ⚠️ **上游子包的 `dist-tags.latest` 是坏的**:除 `@deepseek-ai/dsh` 本体外,全部子包的 `latest` 停留在 `0.0.1-rc.1`,而实际已发布到 `0.1.0-rc.6`。**Renovate 必须按版本号跟版,不得依赖 `latest` 标签**,否则永远不开 PR。实测见 `docs/FEASIBILITY-REPORT.md` §4.3
+- ⚠️ **上游子包的 `dist-tags.latest` 是坏的**:除 `@deepseek-ai/dsh` 本体外,全部子包的 `latest` 停留在 `0.0.1-rc.1`,而实际已发布到 `0.1.0-rc.6`。**Renovate 不得依赖 `latest` 标签**,否则永远不开 PR。实测见 `docs/FEASIBILITY-REPORT.md` §4.3
+  - ✅ **但有 `next` 标签,且指向正确版本**(V0.4.6 实测):`dsh-llm` 与 `dsh-llm-deepseek` 的 `dist-tags` 都是 `{ latest: 0.0.1-rc.1, next: 0.1.0-rc.6 }`。**Renovate 可以直接跟 `next`**,比按版本号排序省事
+  - ⚠️ 各子包**在同一条版本线上**,不是「版本线不统一」—— 是同一条线加同一个坏标签。不要因为看到 `0.0.1-rc.1` 就以为某个包落后了
 - 当前锁定版本:**`0.1.0-rc.6`**(Session 0 验证基线),适配目录 `adapters/dsh-0.1.0/`
 
 ---

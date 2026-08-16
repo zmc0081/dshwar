@@ -20,6 +20,8 @@
  *  13. 公开包依赖闭源组件              → 必须失败(硬规则 9,V0.4.1)
  *  14. 有 test/ 却没有测试 tsconfig    → 必须失败(V0.4.5,与第 7 条同源)
  *  15. 测试项目未登记进根测试解决方案  → 必须失败(同上)
+ *  16. 未登记的 principal.current() 调用点 → 必须失败(V0.4.6)
+ *  16b 测试文件里的 principal.current()    → **必须放行**(另一个方向)
  *
  * 退出码:全绿 0,任一守卫没拦住 1。
  */
@@ -491,6 +493,62 @@ try {
       copyFileSync(backup, target)
       unlinkSync(backup)
     }
+  }
+
+  // ---------------------------------------------------------------------
+  // 16. 未登记的 principal.current() 调用点(V0.4.6)
+  //
+  //     这条守卫兜的是 V0.4.7 那个「靠人记得」的修法。忘记重入作用域的后果
+  //     是静默的 —— fs-tenant 会老实往 anonymous/ 里写文件。所以守卫本身
+  //     必须真的会红,否则它给的是虚假的安全感。
+  // ---------------------------------------------------------------------
+  {
+    const fixture = writeFixture(
+      'packages/__guard_fixture__/src/reads-principal.ts',
+      [
+        '// 负向测试夹具:由 scripts/verify-guards.mjs 生成,跑完即删。',
+        'export function whoAmI(ctx: { principal: { current(): { id: string } } }): string {',
+        '  return ctx.principal.current().id',
+        '}',
+        '',
+      ].join('\n'),
+    )
+    void fixture
+
+    const guards = runGuards()
+    expect(
+      '16 未登记的 principal.current() 调用点被拦住',
+      !guards.ok && /principal\.current\(\) 的登记白名单不同步/.test(guards.output),
+      guards.ok
+        ? 'check-guards 放行了未登记的 principal 消费方 —— V0.4.7 的修法就没有兜底了'
+        : undefined,
+    )
+
+    rmSync(p('packages/__guard_fixture__'), { recursive: true, force: true })
+
+    // 反向:测试文件里调 principal.current() **不该**被拦 ——
+    // 断言作用域行为本来就得读它,把测试也拦下会逼人绕过守卫。
+    const inTest = writeFixture(
+      'packages/__guard_fixture2__/test/reads-principal.test.ts',
+      [
+        '// 负向测试夹具:由 scripts/verify-guards.mjs 生成,跑完即删。',
+        'export const probe = (ctx: { principal: { current(): { id: string } } }) =>',
+        '  ctx.principal.current().id',
+        '',
+      ].join('\n'),
+    )
+    void inTest
+
+    const guardsInTest = runGuards()
+    expect(
+      '16b 测试文件里的 principal.current() 被放行(证明规则不是「一律禁止」)',
+      !/principal\.current\(\) 的登记白名单不同步/.test(guardsInTest.output),
+      /principal\.current\(\) 的登记白名单不同步/.test(guardsInTest.output)
+        ? '守卫误伤了测试文件'
+        : undefined,
+    )
+
+    rmSync(p('packages/__guard_fixture2__'), { recursive: true, force: true })
   }
 } finally {
   // 无条件清理,失败路径也不留垃圾

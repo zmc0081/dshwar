@@ -186,6 +186,84 @@ function checkTestTsconfigReferences() {
   return out
 }
 
+
+/**
+ * `ctx.principal.current()` 的登记白名单。
+ *
+ * ## 为什么这条守卫存在
+ *
+ * V0.4.6 Session 0 实测:principal 的作用域(AsyncLocalStorage)**只活在 HTTP
+ * 请求内**,而 agent loop 在请求返回之后才真正跑 —— 于是 loop 内读到的是
+ * ANONYMOUS。凭据那处 fail closed(拒绝服务,吵闹);`fs-tenant` 那处**不**
+ * fail closed,它老老实实往 `anonymous/anonymous/` 里写文件,跨租户共用一个目录。
+ *
+ * V0.4.7 的修法(逐点显式重入)**靠人记得**,而忘掉的那次是静默的 ——
+ * 正是这次的失败模式。所以每个读环境 principal 的地方都必须在这里登记,
+ * 新增未登记的调用点即 CI 红,逼写的人先回答一个问题:
+ * **这个调用会不会发生在 agent loop 内?**
+ *
+ * 详见 `docs/DECISIONS/principal-scope-binding.md`。
+ */
+const PRINCIPAL_CONSUMERS = [
+  {
+    file: 'packages/principal/src/service.ts',
+    why: '定义方 —— PrincipalService.current() 本身就在这里实现',
+  },
+  {
+    file: 'packages/principal/src/index.ts',
+    why: '定义方 —— 模块文档里的用法示例',
+  },
+  {
+    file: 'packages/principal/src/principal.ts',
+    why: '定义方 —— ANONYMOUS 与其判定',
+  },
+  {
+    file: 'packages/credentials-multiuser/src/index.ts',
+    why: '⚠️ 受影响:loop 内解析成匿名 → fail closed → agent 拿不到凭据。V0.4.7 修',
+  },
+  {
+    file: 'packages/fs-tenant/src/index.ts',
+    why: '🚨 受影响且不 fail closed:loop 内落进 anonymous/anonymous/,跨租户共用。V0.4.7 修',
+  },
+  {
+    file: 'packages/storage-scoped/src/index.ts',
+    why: '⚠️ 受影响:同 fs-tenant。当前未装配,V0.5.5 工作台后端会装配 —— 必须赶在那之前修',
+  },
+]
+
+/** 未登记的 `principal.current()` 调用点。 */
+function checkPrincipalConsumers() {
+  const registered = new Set(PRINCIPAL_CONSUMERS.map((c) => c.file))
+  // 只扫产品源码。测试里调 `principal.current()` 是正当的 —— 它们不是消费方,
+  // 而且断言作用域行为本来就得读它。范围与 CLAUDE.md 自查项的 `packages/*/src` 一致。
+  const inSrc = (f) => isTs(f) && /[\\/]src[\\/]/.test(f)
+  const files = [...collectFiles(p('packages'), inSrc), ...collectFiles(p('gateway'), inSrc)]
+  const hits = grepFiles(files, /principal\.current\s*\(/g, REPO)
+
+  const out = []
+  const seen = new Set()
+  for (const hit of hits) {
+    const rel = hit.file.split('\\').join('/')
+    if (registered.has(rel) || seen.has(rel)) continue
+    seen.add(rel)
+    out.push({
+      file: rel,
+      line: hit.line,
+      text: `未登记的 principal.current() 调用点:${rel}:${hit.line}`,
+    })
+  }
+  return out
+}
+
+/** 白名单里已经不存在的条目 —— 否则清单会变成噪音。 */
+function checkStalePrincipalConsumers() {
+  return PRINCIPAL_CONSUMERS.filter((c) => !existsSync(p(c.file))).map((c) => ({
+    file: c.file,
+    line: 0,
+    text: `白名单里的 ${c.file} 已不存在`,
+  }))
+}
+
 /** 去掉 JSONC 注释。根 tsconfig 里有大段说明性注释,JSON.parse 咽不下。 */
 function stripJsonComments(text) {
   return text.replace(/^\s*\/\/.*$/gm, '')
@@ -238,6 +316,20 @@ if (testUnreferenced.length === 0) {
   console.log('        Vitest 用 esbuild 转译、不做类型检查,漏掉的测试文件里')
   console.log('        即便 import 了不存在的导出,门禁也全绿。见 pnpm typecheck:test')
   for (const h of testUnreferenced) console.log(`        ${h.text}`)
+}
+
+const unregistered = checkPrincipalConsumers()
+const stale = checkStalePrincipalConsumers()
+if (unregistered.length === 0 && stale.length === 0) {
+  console.log('  通过  principal.current() 调用点全部已登记')
+} else {
+  failed += 1
+  console.log(`  违规  principal.current() 的登记白名单不同步  (${unregistered.length + stale.length} 处)`)
+  console.log('        新增的 principal 消费方必须先回答:这个调用会不会发生在 agent loop 内?')
+  console.log('        loop 内读到的是 ANONYMOUS —— fs-tenant 那一类不 fail closed,会静默跨租户混放。')
+  console.log('        登记处见 scripts/check-guards.mjs 的 PRINCIPAL_CONSUMERS,')
+  console.log('        背景见 docs/DECISIONS/principal-scope-binding.md')
+  for (const h of [...unregistered, ...stale]) console.log(`        ${h.text}`)
 }
 
 console.log('')

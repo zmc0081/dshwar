@@ -108,6 +108,41 @@ Harness agent **能执行 shell、能读写文件系统**。这决定了隔离�
 
 > 宁可劝退采用者,不要让他们从事故中学会。
 
+### 🚨 已知问题:上面这一整段,在 agent 执行路径上目前是失效的
+
+**2026-08-16 实测。修复前请勿把本项目用于任何真实的多租户场景。**
+
+principal 的传播靠 **cordis 的上下文槽位**(`ctx.isolate(PRINCIPAL_BINDING)`),
+绑定只存在于那个派生出来的 context 对象上。而 **agent 拿到的是它自己的 ctx** ——
+由 `AgentRegistry` 插件的 fiber 派生,与调用方传进去的作用域无关。
+
+实测结果:
+
+```
+从 scoped ctx 建 agent → agent.ctx 的 principal 绑定 = anonymous
+作用域外建 agent       → agent.ctx 的 principal 绑定 = anonymous
+```
+
+工具与适配器都跑在 agent 自己的 ctx 上,于是:
+
+```
+HTTP 请求内(scoped ctx)→ {root}/acme/alice-e6f1/default/note.txt
+agent 执行时(agent.ctx)→ {root}/anonymous/anonymous/default/note.txt   ← 所有租户共用
+```
+
+| 受影响           | 后果                                                         |
+| ---------------- | ------------------------------------------------------------ |
+| `fs-tenant`      | ⚠️ **agent 的文件操作全部落进 `anonymous/anonymous/`,跨租户共用一个目录** |
+| `credentials-multiuser` | 解析成匿名 → fail closed → agent 拿不到模型凭据(拒绝服务,不泄漏) |
+| `storage-scoped` | 同 `fs-tenant`;当前默认不装配,一旦装配即中招                 |
+
+**路径钉死本身没坏** —— `tenantWorkspaceRoot()` 的逐段校验、四步顺序、
+白名单编码全部正常工作。坏的是**喂给它的 principal**。`fs-tenant` 有 18 处
+工作区断言全绿,因为那些测试都在 HTTP 作用域里调。
+
+修复方向已定(见 [`docs/DECISIONS/principal-scope-binding.md`](docs/DECISIONS/principal-scope-binding.md)),
+排在 V0.4.7。**在那之前,本项目只适合单租户或评估用途。**
+
 ---
 
 ## 契约表 —— DSHWAR 补齐了哪一列
@@ -353,6 +388,9 @@ V0.3.0 解决了「谁能进来」,V0.4.0 解决「进来之后用了多少、�
 
 老实说在前面,免得你从事故里发现:
 
+- 🚨 **principal 在 agent loop 内解析为匿名** —— 见上方「已知问题」。
+  这是当前最严重的一条:agent 的文件操作跨租户共用同一个目录。
+  修复排在 V0.4.7
 - **逻辑隔离不是强边界** —— 见上方警告;**进程隔离也不是容器**,同样见上方
 - **进程隔离的代价是实打实的** —— 冷启动 ~115 ms、常驻 ~58 MB/进程
   (实测见 [`docs/FEASIBILITY-REPORT-V45.md`](docs/FEASIBILITY-REPORT-V45.md) §6)。
