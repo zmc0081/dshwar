@@ -68,8 +68,9 @@ export function createGateway(options: GatewayOptions): Hono<GatewayEnv> {
   options.runtimeRoutes?.(app)
   options.adminRoutes?.(app)
 
-  // 未匹配到任何路由 —— 用契约里的错误形状,而不是 Hono 的默认 404 文本
-  app.notFound((c) => {
+  // 未匹配到任何路由 —— 用契约里的错误形状,而不是 Hono 的默认 404 文本。
+  // 这里 throw 而非直接返回,是为了让它和其它错误走同一个 onError 出口。
+  app.notFound(() => {
     throw notFound('endpoint')
   })
 
