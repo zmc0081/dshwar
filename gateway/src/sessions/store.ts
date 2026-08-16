@@ -13,6 +13,7 @@
 // 测试会照样全绿。这正是根 tsconfig 必须登记每个项目的原因。
 import type {} from '@deepseek-ai/dsh-session'
 import type { Principal } from '@dshwar/principal'
+import type { StreamEvent } from '@dshwar/api-contract'
 import { asUpstreamEvent, EventBuffer, translateEvent } from './events.ts'
 
 /**
@@ -29,6 +30,22 @@ export interface SessionEventSource {
   on(
     event: 'session/event',
     listener: (session: unknown, event: unknown) => void,
+  ): () => unknown
+  /**
+   * agent 执行出错。
+   *
+   * ⚠️ **它与 `session/event` 是两条不同的通道。** 上游把它挂在 cordis
+   * **Context** 上(`dsh-agent` 的 `runtime-types.d.ts`,签名带
+   * `this: Scoped<Agent>`),而不是 `SessionEventMap` 的成员 —— 所以
+   * `translateEvent` 永远看不到它,必须另开一条订阅。
+   *
+   * 契约的事件映射表从 V0.2.0 起就写着 `agent/error → error`,但在 V0.4.6
+   * 之前没人接这条线:agent 报错时客户端的流只是**静默停住**,
+   * 它无从区分「模型在想」与「已经炸了」。
+   */
+  on(
+    event: 'agent/error',
+    listener: (payload: { turn?: number; step?: number; error?: unknown }) => void,
   ): () => unknown
 }
 
@@ -64,6 +81,23 @@ export interface GatewaySession {
   readonly metadata: Readonly<Record<string, string>>
   /** 已发起的轮次数。 */
   turns: number
+  /**
+   * **网关自持**的事件序号,下一个要发的号。
+   *
+   * ## 为什么不直接用上游的 seq(V0.4.6 改)
+   *
+   * 网关要发的不只是上游事件的翻译:还有它**自己合成**的事件 ——
+   * `agent/error` 翻出来的 `error`、进程死亡时的终结通知。这些没有上游 seq,
+   * 而 `Last-Event-ID` 续传按 `seq >` 过滤,借一个号就可能与随后到来的真实
+   * 上游事件撞号:客户端带着那个 id 重连时会漏掉一条。
+   *
+   * 自持一个计数器,这个问题就不存在了 —— 而不是被绕过去。代价是 SSE 的 id
+   * 不再等于上游 seq,但契约从来只承诺**单调**,没承诺它等于任何东西。
+   *
+   * 顺带:上游 seq 是稀疏的(`translateEvent` 会丢掉一半事件),
+   * 自持的是密集的,续传时更省事。
+   */
+  nextSeq: number
   /**
    * 会话已终结且不可再用(V0.4.5 R5)。
    *
@@ -131,6 +165,19 @@ export class GatewaySessionStore {
     const buffer = new EventBuffer()
     const subscribers = new Set<(seq: number, event: unknown) => void>()
 
+    /**
+     * 发一条对外事件 —— **网关自持序号的唯一出口**。
+     *
+     * 上游翻译过来的、网关自己合成的,全都走这里拿号。这就是自持序号
+     * 相对「借上游的号」的全部好处:合成事件不再需要论证「借这个号安全吗」。
+     */
+    const emit = (event: StreamEvent): void => {
+      const seq = session.nextSeq
+      session.nextSeq += 1
+      buffer.push({ seq, event })
+      for (const notify of subscribers) notify(seq, event)
+    }
+
     const dispose = input.handle.agent.ctx.on('session/event', (_session, event) => {
       const upstream = asUpstreamEvent(event)
 
@@ -156,8 +203,22 @@ export class GatewaySessionStore {
       })
       if (translated === undefined) return
 
-      buffer.push({ seq: upstream.seq, event: translated })
-      for (const notify of subscribers) notify(upstream.seq, translated)
+      emit(translated)
+    })
+
+    // ---- agent/error → error(V0.4.6)----
+    // 契约的映射表从 V0.2.0 起就写着这一条,但直到这里才有人接线。
+    // 在此之前 agent 报错 = 客户端的流静默停住,而**静默是最糟的失败模式**:
+    // 客户端无从区分「模型在想」与「已经炸了」,只能等到超时。
+    const disposeError = input.handle.agent.ctx.on('agent/error', (payload) => {
+      emit({
+        type: 'error',
+        ...(payload?.turn === undefined ? {} : { turn: payload.turn }),
+        code: 'internal',
+        // ⚠️ 不把 error 原样塞进 message —— 它会原样进响应体,而上游的错误
+        // 对象可能带着请求 URL、甚至凭据片段。凭 requestId 查日志。
+        message: 'agent 执行失败',
+      })
     })
 
     const session: GatewaySession = {
@@ -172,11 +233,13 @@ export class GatewaySessionStore {
       createdAt: new Date().toISOString(),
       metadata: { ...input.metadata },
       turns: 0,
+      nextSeq: 0,
       terminated: false,
       buffer,
       subscribers,
       unsubscribe: () => {
         dispose()
+        disposeError()
       },
     }
 
@@ -208,11 +271,11 @@ export class GatewaySessionStore {
    * 出事了,而且不知道出的是什么事。发一条 `error` 事件,客户端立刻拿到
    * 机器可读的原因,可以决定是重试还是报给用户。
    *
-   * ## seq 用 `lastSeq + 1` 是安全的,前提是终结
+   * ## seq(V0.4.6 起不再需要「借号」的论证)
    *
-   * 合成事件没有上游 seq,而 `Last-Event-ID` 续传按 `seq >` 过滤,借号会撞。
-   * 这里能安全借用下一个号,**正是因为置位 `terminated` 之后不会再有上游事件
-   * 进来** —— 没有后来者,就没有撞号的对象。非终结的合成事件不能照抄这个做法。
+   * 本方法曾借 `buffer.lastSeq + 1`,并靠「终结之后不会再有上游事件」来论证
+   * 那样安全。自持序号落地之后这套论证不必要了:合成事件与翻译事件从**同一个
+   * 计数器**取号,撞号在结构上就不存在。
    *
    * @param session 目标会话
    * @param failure 机器可读的失败原因
@@ -223,7 +286,8 @@ export class GatewaySessionStore {
     session.unsubscribe()
 
     const event = { type: 'error' as const, code: failure.code, message: failure.message }
-    const seq = session.buffer.lastSeq + 1
+    const seq = session.nextSeq
+    session.nextSeq += 1
     session.buffer.push({ seq, event })
     for (const notify of session.subscribers) notify(seq, event)
   }

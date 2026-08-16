@@ -321,10 +321,23 @@ function diffEnum(
   for (const value of afterValues) {
     if (!beforeValues.has(value)) {
       changes.push({
-        kind: 'breaking',
+        // V0.4.6:从 breaking 改为 additive。
+        //
+        // ⚠️ **改判据必须连理由一起改。** 这里原本写着「闭集枚举加值会让下游
+        // 已写全的 switch 编译失败」—— 那句话在**没有**契约级规定时是**对的**。
+        // 放宽的前提是 `@dshwar/api-contract/common` 里那条「客户端必须优雅
+        // 处理未知枚举值」:先立规定,再放宽检查。只做后者是把安全网剪个洞。
+        //
+        // 为什么值得放宽:不加值的代价是让语义失真。V0.4.5 曾把「进程池满」
+        // 映射成 `rate_limited`(你请求太多),于是客户端错误地限制自己,
+        // 运维照着 429 曲线去调客户端限额,而根因是容量不足。
+        //
+        // `enum.value.removed` **仍是破坏性变更** —— 删值会让下游正在处理的
+        // 分支变成死代码,`default` 兜不住。
+        kind: 'additive',
         code: 'enum.value.added',
         where,
-        detail: `枚举值 ${value} 被新增 —— 闭集枚举加值会让下游已写全的 switch 编译失败`,
+        detail: `枚举值 ${value} 被新增 —— 客户端须有 default 分支(契约级要求)`,
       })
     }
   }

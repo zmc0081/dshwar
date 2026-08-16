@@ -18,6 +18,7 @@ const STATUS_BY_CODE: Readonly<Record<ErrorCode, number>> = {
   invalid_request: 400,
   conflict: 409,
   rate_limited: 429,
+  unavailable: 503,
   not_implemented: 501,
   internal: 500,
 }

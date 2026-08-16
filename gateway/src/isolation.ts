@@ -126,16 +126,12 @@ export function createIsolatedRuntime(config: IsolationConfig): IsolatedRuntime 
         // 判定与执行分离(与 policy 同款):supervisor 只抛类型化错误,
         // 状态码在这里定。
         //
-        // ⚠️ **用 `rate_limited`(429)是被红线 2 逼出来的折中,不是最贴切的语义。**
-        // 贴切的是 503 —— 「你请求太多」与「这台机器满了」是两回事,前者会让
-        // 客户端以为该限制自己。但契约的 `ErrorCode` 是闭集,加一个新码会被
-        // `check:contract` 判为破坏性变更(`enum.value.added`),而红线 2 要求
-        // `/v1` 零变更。闭集里唯一语义为「退避后重试」的就是 `rate_limited`,
-        // 客户端与负载均衡器对它的处置(退避 + `Retry-After`)恰好是对的。
-        //
-        // 契约下次开口时(V0.5.0 控制平面)应补一个 `unavailable`。
+        // V0.4.5 这里曾是 `rate_limited`(429)—— 那是被「契约零变更」逼出来的
+        // 折中,语义是错的:「你请求太多」与「这台机器满了」是两回事,前者会让
+        // 客户端以为该限制自己,也会让运维照着 429 曲线去调客户端限额,
+        // 而根因是容量不足。V0.4.6 补了 `unavailable`,折中撤销。
         if (e instanceof AtCapacityError) {
-          throw new ApiError('rate_limited', '隔离进程池已满,请稍后重试')
+          throw new ApiError('unavailable', '隔离进程池已满,请稍后重试')
         }
         throw e
       }

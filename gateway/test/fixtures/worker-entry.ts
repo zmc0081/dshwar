@@ -7,8 +7,17 @@
  *
  * 由 `node --experimental-strip-types` 拉起(`tsconfig.base.json` 就是按这个用法配的)。
  */
+import { LlmAdapter, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import { runWorker } from '../../src/worker.ts'
 import { FakeLlmAdapter } from '../harness.ts'
+
+/** 一开口就炸 —— 用来验证 agent/error 能不能穿过进程边界。 */
+class ExplodingAdapter extends LlmAdapter {
+  // eslint-disable-next-line require-yield
+  async *stream(_options: GenerateOptions): AsyncIterable<StreamChunk> {
+    throw new Error('模型炸了')
+  }
+}
 
 // 启动参数里带 --tokens 与 --delay,供取消测试控制节奏
 const argv = process.argv.slice(2)
@@ -26,5 +35,6 @@ runWorker(process, {
       llm: { registerAdapter(names: string[], adapter: unknown): void }
     }
     ctx.llm.registerAdapter(['fake'], new FakeLlmAdapter({ tokens, delayMs }))
+    ctx.llm.registerAdapter(['boom'], new ExplodingAdapter())
   },
 })

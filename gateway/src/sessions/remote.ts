@@ -26,9 +26,11 @@ import type { AgentHandleLike, SessionEventSource } from './store.ts'
 
 /** 子进程回传的消息载荷。与 `gateway/src/worker.ts` 的 `send` 一一对应。 */
 interface WorkerPayload {
-  readonly kind: 'session' | 'created' | 'idle' | 'disposed'
+  readonly kind: 'session' | 'agent-error' | 'created' | 'idle' | 'disposed'
   readonly event?: unknown
   readonly agentId?: string
+  readonly turn?: number
+  readonly step?: number
 }
 
 /** 父进程侧构造一次会话所需的信息。 */
@@ -73,6 +75,15 @@ class RemoteAgentHandle implements AgentHandleLike {
   private readonly detach: () => void
   private status: 'idle' | 'running' = 'idle'
   private readonly listeners = new Set<(session: unknown, event: unknown) => void>()
+  /**
+   * `agent/error` 的订阅者。与 `session/event` **分开两个集合** ——
+   * 它们是上游的两条不同通道(一条是 `SessionEventMap`,一条挂在 Context 上),
+   * 回调签名也不同。合成一个集合会逼调用方在回调里自己分辨,那正是这个 bug
+   * 当初能藏三个版本的形状。
+   */
+  private readonly errorListeners = new Set<
+    (payload: { turn?: number; step?: number; error?: unknown }) => void
+  >()
   private idleWaiters: (() => void)[] = []
 
   // 不用参数属性:`tsconfig.base.json` 要求源码可被
@@ -85,11 +96,25 @@ class RemoteAgentHandle implements AgentHandleLike {
     // 事件订阅者与状态用闭包持有,不用 `const self = this` ——
     // ctx 与 agent 都是要交出去的普通对象,它们的方法里的 `this` 不是本实例。
     const listeners = this.listeners
+    const errorListeners = this.errorListeners
     const ctx: SessionEventSource = {
-      on: (_event, listener) => {
-        listeners.add(listener)
-        return () => listeners.delete(listener)
-      },
+      // 两条通道分开挂 —— `session/event` 与 `agent/error` 是上游的两个不同
+      // 事件源,回调签名也不同。这里的断言集中在一处,而不是让调用方
+      // 在回调里自己分辨。
+      on: ((event: string, listener: (...args: never[]) => void) => {
+        if (event === 'agent/error') {
+          const l = listener as unknown as (p: {
+            turn?: number
+            step?: number
+            error?: unknown
+          }) => void
+          errorListeners.add(l)
+          return () => errorListeners.delete(l)
+        }
+        const l = listener as unknown as (session: unknown, e: unknown) => void
+        listeners.add(l)
+        return () => listeners.delete(l)
+      }) as SessionEventSource['on'],
     }
 
     this.agent = {
@@ -116,6 +141,17 @@ class RemoteAgentHandle implements AgentHandleLike {
   ingest(payload: WorkerPayload): void {
     if (payload.kind === 'session') {
       for (const listener of this.listeners) listener(undefined, payload.event)
+      return
+    }
+    if (payload.kind === 'agent-error') {
+      // 跨进程也要送到 —— 否则进程隔离档会悄悄丢掉错误通知,
+      // 而红线 2 要求两档对外行为一致。
+      for (const listener of this.errorListeners) {
+        listener({
+          ...(payload.turn === undefined ? {} : { turn: payload.turn }),
+          ...(payload.step === undefined ? {} : { step: payload.step }),
+        })
+      }
       return
     }
     if (payload.kind === 'idle') this.settleIdle()

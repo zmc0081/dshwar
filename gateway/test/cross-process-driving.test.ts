@@ -283,3 +283,25 @@ describe('R5 崩溃恢复', () => {
     expect(crash).toMatchObject({ kind: 'crash', principalId: alice.id })
   }, 30_000)
 })
+
+// V0.4.6 Session 4:agent/error 是上游的**另一条通道**(挂在 Context 上,
+// 不是 SessionEventMap 成员)。不专门转发它,进程隔离档就会悄悄丢掉错误通知 ——
+// 而红线 2 要求客户端不该知道自己跑在哪一档,**包括出错的时候**。
+describe('agent/error 穿过进程边界', () => {
+  it('★ 子进程里 agent 报错,父进程收得到', async () => {
+    const remote = await createRemoteAgent(
+      makeSupervisor().acquire(alice),
+      { sessionId: 's-boom', model: 'm', provider: 'boom' },
+      () => {},
+    )
+
+    const errors: { turn?: number }[] = []
+    remote.agent.ctx.on('agent/error', (payload) => errors.push(payload))
+
+    remote.agent.followup(remoteUserMessage('会炸'))
+    await remote.agent.whenIdle()
+    await new Promise((r) => setTimeout(r, 100))
+
+    expect(errors.length, 'agent 在子进程里炸了,父进程什么都没收到').toBeGreaterThan(0)
+  }, 30_000)
+})

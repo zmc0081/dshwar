@@ -76,8 +76,11 @@ describe('错误码是闭集', () => {
     expect(ErrorCode.options).toContain('not_implemented')
   })
 
-  // 加错误码会让调用方已写好的穷举 switch 漏掉新分支
-  it('错误码数量被钉死 —— 增删是破坏性变更,必须升 v2', () => {
+  // V0.4.6 起:**删**错误码是破坏性变更,**加**是相容的
+  // (前提是契约规定了客户端必须有 default 分支,见 common.ts)。
+  // 这条清单仍然钉死,但目的变了:不再是「不许动」,而是
+  // **让每一次增删都必须是有人明确决定的**,而不是顺手改出来的。
+  it('错误码清单被钉死 —— 删是破坏性变更,加需明确决定', () => {
     expect(ErrorCode.options).toEqual([
       'unauthorized',
       'forbidden',
@@ -85,9 +88,18 @@ describe('错误码是闭集', () => {
       'invalid_request',
       'conflict',
       'rate_limited',
+      'unavailable',
       'not_implemented',
       'internal',
     ])
+  })
+
+  it('rate_limited 与 unavailable 是两个码 —— 语义相反,不得合并', () => {
+    // 「你请求太多」vs「这台机器满了」。客户端的处置看起来一样(退避重试),
+    // 含义却相反:前者该自我节流,后者该等扩容或换实例。
+    // 合并会让客户端错误地限制自己,也会让运维照着 429 曲线调错东西。
+    expect(ErrorCode.options).toContain('rate_limited')
+    expect(ErrorCode.options).toContain('unavailable')
   })
 })
 

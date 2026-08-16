@@ -236,7 +236,7 @@ export interface components {
                  * @description 闭集错误码,SDK 可穷举
                  * @enum {string}
                  */
-                code: "unauthorized" | "forbidden" | "not_found" | "invalid_request" | "conflict" | "rate_limited" | "not_implemented" | "internal";
+                code: "unauthorized" | "forbidden" | "not_found" | "invalid_request" | "conflict" | "rate_limited" | "unavailable" | "not_implemented" | "internal";
                 /** @description 面向开发者的说明。不含内部细节、不含凭证、不含他人数据 */
                 message: string;
                 /** @description 与服务端日志和审计记录对得上的调用标识 */

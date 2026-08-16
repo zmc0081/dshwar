@@ -21,6 +21,7 @@
  * | 父→子 | `cancel` | 取消本路会话 ★ 红线 3 |
  * | 父→子 | `ping` | 健康检查 |
  * | 子→父 | `event` `{kind:'session'}` | 上游 session 事件,原样转发 |
+ * | 子→父 | `event` `{kind:'agent-error'}` | agent 执行出错(另一条通道) |
  * | 子→父 | `event` `{kind:'created'\|'idle'\|'disposed'}` | 状态回执 |
  * | 子→父 | `error` | 该 lease 出错 |
  *
@@ -106,6 +107,18 @@ export function runWorker(
     // 但同一个 principal 的多个会话仍要彼此隔离。
     handle.agent.ctx.on('session/event', (_session, event) => {
       send(leaseId, 'event', { kind: 'session', event })
+    })
+
+    // agent/error 是另一条通道(挂在 Context 上,不是 SessionEventMap 成员)。
+    // 不转发它,进程隔离档就会悄悄丢掉错误通知 —— 红线 2 要求两档一致。
+    // ⚠️ 只转发 turn / step,**不转发 error 对象本身**:它要过 IPC 的 JSON
+    // 序列化,而上游的错误可能带着请求 URL 甚至凭据片段。父进程也不需要它。
+    handle.agent.ctx.on('agent/error', (payload) => {
+      send(leaseId, 'event', {
+        kind: 'agent-error',
+        turn: payload?.turn,
+        step: payload?.step,
+      })
     })
 
     send(leaseId, 'event', { kind: 'created', agentId: handle.agent.id })

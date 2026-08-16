@@ -125,18 +125,31 @@ describe('破坏性的几种形态', () => {
   })
 })
 
-describe('闭集枚举:加值也是破坏性的', () => {
-  // 这条最容易被误判成「加东西不算破坏」。契约把错误码定成 z.enum 就是为了让
-  // 客户端写出可穷举的 switch —— 多一个值,下游已经写全的 switch 立刻编译失败。
-  it('给错误码加一个值 → 红', () => {
+describe('闭集枚举:加值相容,删值破坏', () => {
+  // ⚠️ **这条断言在 V0.4.6 被翻转了,理由要连着看。**
+  //
+  // 原本是「加值也是破坏性的」,理由是:契约把错误码定成 z.enum 就是为了让
+  // 客户端写出可穷举的 switch,多一个值下游立刻编译失败。**那个理由在当时
+  // 是对的** —— 前提是契约没有规定客户端怎么处理未知值。
+  //
+  // V0.4.6 先在契约里立下「客户端必须优雅处理未知枚举值」(见
+  // `common.ts` 的 ErrorCode 说明),再放宽这条检查。**顺序不能反** ——
+  // 只放宽检查是把安全网剪个洞。
+  //
+  // 为什么值得翻转:不加值的代价是让语义失真。V0.4.5 曾把「进程池满」
+  // 映射成 rate_limited(你请求太多),于是客户端错误地限制自己,
+  // 运维照着 429 曲线去调客户端限额,而根因是容量不足。
+  it('给错误码加一个值 → 相容,不拦', () => {
     const after = clone(REAL)
     const error = after.components.schemas['ErrorResponse'] as {
       properties: { error: { properties: { code: { enum: string[] } } } }
     }
     error.properties.error.properties.code.enum.push('teapot')
 
-    const breaking = breakingChanges(diffContract(REAL, after))
-    expect(breaking.map((c) => c.code)).toContain('enum.value.added')
+    const diff = diffContract(REAL, after)
+    expect(diff.map((c) => c.code)).toContain('enum.value.added')
+    // 出现在 diff 里(可见),但不进破坏性清单(不拦)
+    expect(breakingChanges(diff)).toEqual([])
   })
 
   it('删一个枚举值 → 红', () => {

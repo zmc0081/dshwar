@@ -23,11 +23,19 @@
  * | `assistant/message` | `message.completed` | |
  * | `tool/call` | `tool.started` | |
  * | `tool/result` | `tool.completed` | |
- * | `agent/error` | `error` | |
+ * | `agent/error` | `error` | ⚠️ **另一条通道**,见下 |
  * | `step/*` · `request/*` · `todo/*` | *(不透传)* | 内部实现细节 |
  *
  * 刻意**不**透传 `step/*` 与 `request/*`:它们是 agent loop 的内部结构,
  * 对 API 客户端没有意义,而暴露出去就变成了我们要维护的契约。
+ *
+ * ⚠️ **`agent/error` 不走 `translateEvent`。** 上游把它挂在 cordis **Context**
+ * 上(`dsh-agent` 的 `runtime-types.d.ts`),不是 `SessionEventMap` 的成员 ——
+ * 网关另开一条 `ctx.on('agent/error', …)` 订阅(`gateway/src/sessions/store.ts`)。
+ *
+ * 这张表从 V0.2.0 起就写着这一行,但**直到 V0.4.6 才真的有人接线**。
+ * 在那之前 agent 报错 = 客户端的流静默停住。教训:**映射表是承诺,不是描述** ——
+ * 写进表里的每一行都该有一条测试盯着。
  *
  * @module @dshwar/api-contract/events
  */

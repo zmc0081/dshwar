@@ -343,7 +343,7 @@ describe('R7 治理联动:不另起一套', () => {
     expect(entries.every((e) => e['actor'] === 'supervisor')).toBe(true)
   }, 40_000)
 
-  it('进程池满时返回可退避的错误码,而不是 500', async () => {
+  it('进程池满时返回 503 unavailable', async () => {
     const { app } = await boot('process', { maxProcesses: 0 })
     const res = await app.request('/v1/sessions', {
       method: 'POST',
@@ -351,9 +351,11 @@ describe('R7 治理联动:不另起一套', () => {
       body: JSON.stringify({}),
     })
 
-    // 429 是被红线 2 逼出来的折中(契约的 ErrorCode 是闭集,加码即破坏性变更),
-    // 见 isolation.ts 里的说明。关键是它可退避、不是 5xx。
-    expect(res.status).toBe(429)
-    expect(((await res.json()) as { error: { message: string } }).error.message).toContain('已满')
+    // V0.4.5 这里曾是 429 —— 那是被「契约零变更」逼出来的折中,语义是错的。
+    // V0.4.6 补了 unavailable,撤销折中:「这台机器满了」不是「你请求太多」。
+    expect(res.status).toBe(503)
+    const body = (await res.json()) as { error: { code: string; message: string } }
+    expect(body.error.code).toBe('unavailable')
+    expect(body.error.message).toContain('已满')
   }, 30_000)
 })

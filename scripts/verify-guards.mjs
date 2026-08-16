@@ -26,6 +26,8 @@
  *  18. 脚本项目未登记进根解决方案          → 必须失败(同上)
  *  19. 有 src/*.ts 却完全没有 tsconfig     → 必须失败(堵 17/18 自己的洞)
  *  20. .mjs 夹具未被 checkJs 覆盖          → 必须失败(同上,另一个盲区)
+ *  9b. 枚举**删值**                        → 必须失败(V0.4.6 红线 3)
+ *  9c. 枚举**加值**                        → **必须放行**(V0.4.6 决策 1)
  *
  * 退出码:全绿 0,任一守卫没拦住 1。
  */
@@ -479,6 +481,35 @@ try {
         '8 破坏性契约变更被契约冻结检查拦住',
         !breaking.ok && /path\.removed/.test(breaking.output),
         breaking.ok ? '契约冻结检查放行了删端点 —— 已接入的客户端会直接拿到 404' : undefined,
+      )
+
+      // 9b. 枚举**删值**仍是破坏性变更(V0.4.6 红线 3)
+      //     这一条与 9c 成对:加值放宽了,删值不能跟着放宽 ——
+      //     删值会让下游正在处理的分支变成死代码,而 default 兜不住。
+      copyFileSync(backup, target)
+      const shrunk = JSON.parse(readFileSync(target, 'utf8'))
+      shrunk.components.schemas.ErrorResponse.properties.error.properties.code.enum.pop()
+      writeFileSync(target, JSON.stringify(shrunk, null, 2) + '\n', 'utf8')
+
+      const removed = runContract()
+      expect(
+        '9b 枚举删值仍被拦住(V0.4.6 只放宽了加值)',
+        !removed.ok && /enum.value.removed/.test(removed.output),
+        removed.ok ? '契约冻结检查放行了删枚举值 —— 下游的分支会变成死代码' : undefined,
+      )
+
+      // 9c. 枚举**加值**被放行(V0.4.6 决策 1)
+      copyFileSync(backup, target)
+      const grown = JSON.parse(readFileSync(target, 'utf8'))
+      grown.components.schemas.ErrorResponse.properties.error.properties.code.enum.push('teapot')
+      writeFileSync(target, JSON.stringify(grown, null, 2) + '\n', 'utf8')
+
+      const added = runContract()
+      expect(
+        '9c 枚举加值被放行(前提:契约规定客户端须有 default 分支)',
+        added.ok && /enum.value.added/.test(added.output),
+        added.ok ? undefined : `契约冻结检查仍在拦枚举加值:
+${added.output.slice(0, 400)}`,
       )
 
       // 9. 相容:加一个可选字段

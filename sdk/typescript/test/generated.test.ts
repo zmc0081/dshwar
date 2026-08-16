@@ -49,11 +49,20 @@ describe('SDK 类型与契约同步', () => {
   })
 })
 
-describe('错误码闭集映射为可穷举的联合类型', () => {
-  // 这正是契约把错误码定成 z.enum 而不是 z.string() 换来的东西
-  it('每个契约错误码都在 SDK 的联合类型里', () => {
-    // 类型层断言：漏掉任何一个分支，这个函数就编译不过
-    const describeCode = (code: DshwarErrorCode): string => {
+describe('错误码是闭集,但消费方必须有 default 分支', () => {
+  // ⚠️ **这一组在 V0.4.6 被改写了,理由要连着看。**
+  //
+  // 原本用 `const exhaustive: never = code` 做穷尽断言,注释写着
+  // 「这就是『加错误码是破坏性变更』在类型层的体现」。那在当时是自洽的。
+  //
+  // V0.4.6 的契约改成「枚举会在 v1 内追加,客户端**必须**优雅处理未知值」——
+  // 于是这个示例反倒成了**反面教材**:SDK 的测试是消费方抄写的参照,
+  // 留着 `never` 断言等于教人写出下一个版本编译不过的代码。
+  //
+  // 现在演示的是**正确**的形状:认识的码各自处理,不认识的走 default
+  // 按「与 HTTP 状态码同类的通用失败」兜底。
+  it('认识的码逐一映射,不认识的走 default 兜底', () => {
+    const describeCode = (code: DshwarErrorCode | (string & {})): string => {
       switch (code) {
         case 'unauthorized':
           return '凭证无效'
@@ -71,17 +80,35 @@ describe('错误码闭集映射为可穷举的联合类型', () => {
           return '尚未实现'
         case 'internal':
           return '服务端错误'
-        default: {
-          // 契约新增错误码时，这里会因为 never 断言失败而编译不过 ——
-          // 这就是"加错误码是破坏性变更"在类型层的体现
-          const exhaustive: never = code
-          return exhaustive
-        }
+        case 'unavailable':
+          return '服务端暂时没有资源受理'
+        default:
+          // ★ 契约级要求:**不得抛错,不得断言穷尽**。
+          // 未知码按通用失败处理,让老客户端在新服务端上仍然可用。
+          return '未知错误'
       }
     }
 
     expect(describeCode('unauthorized')).toBe('凭证无效')
-    expect(describeCode('not_implemented')).toBe('尚未实现')
+    expect(describeCode('unavailable')).toBe('服务端暂时没有资源受理')
+    // 模拟「服务端比客户端新」:一个本 SDK 版本还不认识的码
+    expect(describeCode('some_future_code')).toBe('未知错误')
+  })
+
+  it('每个契约错误码都在 SDK 的联合类型里', () => {
+    // 闭集仍然有价值 —— 它让 SDK 能把已知的码列全,只是不再据此断言穷尽。
+    const known: DshwarErrorCode[] = [
+      'unauthorized',
+      'forbidden',
+      'not_found',
+      'invalid_request',
+      'conflict',
+      'rate_limited',
+      'unavailable',
+      'not_implemented',
+      'internal',
+    ]
+    expect(known.length).toBeGreaterThan(0)
   })
 })
 
