@@ -68,6 +68,13 @@ async function assemble(options: { provideAtRoot?: Principal } = {}) {
  * V0.4.6 Session 0 第一版探针踩的坑 —— 在根 ctx 上读,永远是匿名,
  * 与作用域有没有生效无关。
  */
+async function makeAgentOn(ctx: Context, id: string): Promise<AgentLike> {
+  return (await ctx.agents.create({
+    sessionId: SessionId(id),
+    agentOptions: { provider: 'fake', model: 'fake-1' },
+  })) as unknown as AgentLike
+}
+
 async function driveAndReadBinding(ctx: Context, sessionId: string): Promise<Principal> {
   const handle = (await ctx.agents.create({
     sessionId: SessionId(sessionId),
@@ -139,5 +146,55 @@ describe('进程隔离档:装配时把 principal 钉到根上就够了', () => {
       second.id,
       '若这里不再等于 alice,说明 cordis 的绑定语义变了 —— 本条的警告需要重写',
     ).toBe('alice-e6f1')
+  }, 30_000)
+})
+
+/**
+ * 🪤 **留给下一个人的陷阱。**
+ *
+ * 「给每个 agent 的 ctx 单独 provide 一个 principal」看起来完全合理,而且
+ * **第一个 agent 会成功** —— 只有第二个报错。而 `try/catch` 吞掉注册错误
+ * 是很常见的写法。
+ *
+ * 那时的失败形态比现在隐蔽得多:现在所有人掉进 `anonymous/anonymous`,
+ * 一眼看得出不对;那样是 **bob 的数据算进 alice 的租户**,看起来一切正常。
+ *
+ * 所以把它固化成断言,而不只是写进文档。
+ */
+describe('🪤 陷阱:per-agent provide 会让第二个 agent 静默继承第一个的身份', () => {
+  it('第一个 provide 成功,第二个抛错 —— 错误一旦被吞,身份就串了', async () => {
+    const { ctx } = await assemble()
+    const a = await makeAgentOn(ctx, 's-trap-a')
+    const b = await makeAgentOn(ctx, 's-trap-b')
+
+    // 第一个:成功
+    expect(() => a.agent.ctx.provide(PRINCIPAL_BINDING, alice)).not.toThrow()
+
+    // 第二个:抛 —— 槽位已被第一个占住
+    expect(
+      () => b.agent.ctx.provide(PRINCIPAL_BINDING, bob),
+      '第二个 agent 也 provide 成功了 —— cordis 的语义变了,本陷阱需要重新评估',
+    ).toThrow(/registered/)
+
+    // ★ 关键:错误被吞掉之后会发生什么 —— B 读到的是 A 的身份
+    const seenByB = (b.agent.ctx.get(PRINCIPAL_BINDING) as Principal | undefined)?.id
+    expect(
+      seenByB,
+      'bob 的 agent 读到了 alice —— 这正是「看起来一切正常」的跨租户串号',
+    ).toBe('alice-e6f1')
+  }, 30_000)
+
+  it('per-agent 装第二份服务实例也不行 —— 遮蔽不成立', async () => {
+    // 另一条看似可行的路:给每个 agent 在它自己的 ctx 上装一份 fs-tenant。
+    // cordis 同样拒绝 —— 与上面是同一个机制(祖先已注册该服务名)。
+    const { ctx } = await assemble()
+    const a = await makeAgentOn(ctx, 's-trap-c')
+
+    await expect(
+      a.agent.ctx.plugin(TenantFileSystem, {
+        inner: ctx.get('fs') as FileSystem,
+        root: mkdtempSync(join(tmpdir(), 'trap-')),
+      }),
+    ).rejects.toThrow(/registered/)
   }, 30_000)
 })

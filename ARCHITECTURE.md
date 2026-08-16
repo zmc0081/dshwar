@@ -175,7 +175,7 @@ Harness agent 能执行 shell、读写文件系统。这决定了隔离级别不
 
 | 级别     | 形态                                | 适用                   | 状态          | 实测代价                                        |
 | -------- | ----------------------------------- | ---------------------- | ------------- | ----------------------------------------------- |
-| **逻辑** | 单进程,per-session principal 作用域 | 互相信任的用户(团队内) | ✅ 默认        | 提示词注入、恶意 MCP、污染 skill 可越界         |
+| **逻辑** | 单进程,per-session principal 作用域 | 🚨 **仅限单 principal** | ✅ 默认        | 多 principal 时**根本没有隔离**,见下           |
 | **进程** | 一 principal 一 dsh 进程            | 跨信任边界             | ✅ **V0.4.5** | 冷启动 ~115 ms、常驻 ~58 MB/进程;取消需重新实现 |
 | **容器** | 进程 + OS 沙箱                      | 多租户 SaaS            | 📋 仅配置位   | 由部署方的编排系统承担                          |
 
@@ -183,6 +183,26 @@ Harness agent 能执行 shell、读写文件系统。这决定了隔离级别不
 冷启动里**九成花在进程创建与模块加载上**,插件装配只占 13 ms —— 所以优化装配代码
 没有意义,只能压进程复用率。这正是 supervisor 选「一 principal 一进程」而非
 「一会话一进程」的原因。
+
+#### ⚠️ 逻辑档只支持单 principal(V0.4.6 实测,架构限制)
+
+principal 的绑定活在 cordis 上下文槽位上,而 **agent 拿到的是 `AgentRegistry`
+插件 fiber 派生的自有 ctx**。一个 runtime 多个 principal 时,没有任何公开 API
+能让服务在操作时分辨「现在是谁在问」:
+
+| 试过的路 | 结果 |
+| --- | --- |
+| 根上 provide | ✅ 但对**所有** agent 生效 —— 把 bob 算成 alice |
+| 每个 agent 的 ctx 上 provide | ❌ 第一个成功,第二个报 `already registered`;错误被吞则 B 静默继承 A 的身份 |
+| 沿 fiber 链把 `this.ctx` 走回 agent | ❌ `cannot get property "ctx" without inject` |
+| 给每个 agent 装一份服务实例(遮蔽) | ❌ `service "fs" has been registered at <TenantFileSystem>` |
+
+**判别信息是在的**(服务方法里的 `this.ctx` 按 agent 不同),
+**但没有公开 API 把它解回身份**。所以这是**架构限制而非待办**:
+在上游给出钩子(见 `docs/UPSTREAM-ISSUE-agent-ctx.md`)之前,
+逻辑档多 principal 做不到,只能拒绝启动。
+
+全部实测钉在 `gateway/test/principal-reach.test.ts`,含一条留给后人的陷阱测试。
 
 #### 进程隔离与 cancel 的关系是**反的**
 

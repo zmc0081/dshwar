@@ -230,8 +230,40 @@ cordis 的 inject 保护同样拦住祖先链。
 principal)。这比「三个小回调」重,但比「服务生命周期全面改成 per-agent」轻 ——
 只涉及三个包,且范围限定在 agent ctx 上。
 
-⚠️ **仍有一处未验**:`agent.ctx.plugin(TenantFileSystem, …)` 能否**遮蔽**根上
-那一份。未验之前不要把工期按这条路排。
+### 遮蔽也不成立(V0.4.6 补测)—— 于是这是架构限制,不是待办
+
+```
+在 agent A 的 ctx 上装第二份 TenantFileSystem
+  → service "fs" has been registered at <TenantFileSystem>
+```
+
+与 per-agent `provide` 同一个机制:祖先已注册该服务名,后代不得再注册。
+`isolate` 能绕开,但返回的是**新 ctx**,不是 agent 自己那个 —— 工具看不到。
+
+**四条路全部走不通。判别信息是在的**(服务方法里的 `this.ctx` 按 agent 不同),
+**但没有公开 API 把它解回身份**。
+
+⇒ **逻辑档多 principal 在当前上游 API 下结构上做不到。**
+拒绝启动**不是临时闸门,是永久设计** —— 直到上游给出钩子
+(`docs/UPSTREAM-ISSUE-agent-ctx.md`)。
+
+### 因此:逻辑档的判据分两层
+
+| 层 | 时机 | 判据 | 动作 |
+| --- | --- | --- | --- |
+| **配置层**(主) | 启动时,确定性 | 逻辑档 + 任何多用户 auth(`auth-oidc` / `auth-jwt` / `auth-static` 多于一个 token) | **拒绝启动** |
+| **运行时**(兜底) | 出现第二个不同的 principal | 防御深度 | **拒绝该会话** |
+
+⚠️ **兜底层绝不能杀进程。** 逻辑档下杀进程 = 第二个用户能干掉第一个用户的
+运行时,那是 DoS 向量。**拒绝会话,不拒绝服务。**
+
+✅ `profiles/single-user.yml` 必须仍能跑:匿名或单 token 的逻辑档没有这个 bug
+(一个人的文件落在 `anonymous` 目录下,路径难看但没有混放)。
+红线 1「默认 logical」因此仍然成立,**不改默认档**。
+
+⚠️ **拒绝启动的错误信息必须给出路**:说明改用 `isolation: process`,
+并写明代价(约 58 MB/进程)。否则人们会直接把这个检查注释掉 ——
+一个没有出路的门禁,最后拦住的只有守规矩的人。
 
 ## 配套守卫
 
