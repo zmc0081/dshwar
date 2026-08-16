@@ -1,6 +1,6 @@
 {
   "name": "@dshwar/model-router",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "模型准入与预算降级。只在 createAgent 入口裁决,不碰请求路由 —— 那是上游地盘。",
   "license": "MIT",
   "type": "module",

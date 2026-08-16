@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "DSHWAR API",
-    "version": "0.4.0",
+    "version": "0.4.1",
     "description": "DeepSeek Harness 之上的 ToB 产品基座的 API 平面。\n\n**这份契约的稳定性承诺不依赖上游 dsh 版本。** 事件词表、错误码、资源形状\n全部由 DSHWAR 定义并版本化 —— 上游改接口时,受影响的是网关内部的翻译层,\n不是这份契约。\n\n标注 `x-dshwar-status: planned` 的端点契约完整但尚未实现,调用返回 501,\n响应头 `x-dshwar-planned-version` 指出计划版本。它们返回 501 而非 404,\n是为了让第三方知道「这个端点是真的,只是还没到」。",
     "license": {
       "name": "MIT",
