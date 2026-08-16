@@ -1,6 +1,6 @@
 {
   "name": "@dshwar/storage-scoped",
-  "version": "0.4.7",
+  "version": "0.5.0",
   "description": "租户维度的存储作用域:记录键加长度前缀,跨租户读写在本层拒绝。",
   "license": "MIT",
   "type": "module",

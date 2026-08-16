@@ -1,7 +1,7 @@
 # DSHWAR 开发 Session 任务清单
 
 > 项目对外名称:DSHWAR;npm 作用域 `@dshwar/*`;开源主仓 `dshwar`,控制平面仓 `dshwar-console`。
-> 当前版本(正在开发): **V0.4.7** —— 本行强制为"正在开发的版本号",随新版本规划立即更新(见第三部分强制约束)
+> 当前版本(正在开发): **V0.5.0** —— 本行强制为"正在开发的版本号",随新版本规划立即更新(见第三部分强制约束)
 
 ---
 
@@ -351,6 +351,100 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 
 > 从 V0.7.0 拆出。**只出 SDK(Kotlin / Swift)+ 一个可运行示例,不做 App、不进商店。**
 > 你是基座,移动端 App 是客户的产品。SDK 由 OpenAPI 生成,与 TS / Python SDK 同源。
+
+---
+
+## <span style="color:#d00000">●</span> M0.5.0 · 控制平面 / 企业自服务配置台(Session 0-4) <span style="color:#d00000">[开发中]</span>
+
+> **定位**:企业客户**自服务配置他们的解决方案** —— 配租户、成员、配额、模型准入,
+> 看用量与账单。不是「运营后台」,措辞要对,这是产品本体。
+
+**Session 状态**
+
+| Session | 标题                                             | 状态 |
+| ------- | ------------------------------------------------ | ---- |
+| 0       | 立项:console-contract 骨架 + 工作区语义定案(D3)  | ⬜   |
+| 1       | 契约:租户 / 成员 / 角色 / 配额 / 用量 / 审计查询 | ⬜   |
+| 2       | Admin API + 开户闸门(D2:拦在「建第二个成员」)    | ⬜   |
+| 3       | 容量端点:隔离档 / maxProcesses / 成员上限        | ⬜   |
+| 4       | console-web 最小前端 + SDK 层 + D7 三条守卫      | ⬜   |
+
+**本版本的预先裁决**:D1(仓库拆分)· D2(隔离档表达)· D3(工作区语义)· D7(前端约束)
+—— 全文见 [`docs/DECISIONS/AUTOPILOT-LOG.md`](docs/DECISIONS/AUTOPILOT-LOG.md)。
+
+---
+
+### Session 0 · 立项:console-contract 骨架 + 工作区语义定案
+
+**交付**
+
+1. `packages/console-contract` —— 共享类型与 OpenAPI 契约。**放主仓**的理由(D1):
+   它要与运行时版本联动,放主仓才被 `check:all` 覆盖
+2. `docs/DECISIONS/workspace-semantics.md` —— D3 定案:**每用户多工作区,
+   工作区是项目容器,不跨用户共享**
+3. 关闭 `docs/DECISIONS/one-process-per-tenant.md` 的待评估状态 ——
+   该方案把 user 段变成常量,与 D3 直接冲突,**不做**
+4. `docs/CONSOLE-SPLIT.md` —— 主仓与 `dshwar-console` 的分工
+
+**验收**:新包被 `check:guards` 的全部登记类守卫认可(tsconfig / test tsconfig /
+根 references),`pnpm check:all` 绿。
+
+---
+
+### Session 1 · 契约:租户 / 成员 / 角色 / 配额 / 用量 / 审计查询
+
+**交付**:`console-contract` 的类型与 OpenAPI 片段。消费既有的
+`@dshwar/subject`(身份镜像)、`@dshwar/policy`(配额)、`@dshwar/metering`(用量)、
+`@dshwar/audit`(审计)—— **不另起一套模型**。
+
+⚠️ **这是 console 平面的契约,不是 `/v1` 运行时契约。** 两者分开版本化:
+`/v1` 是对最终用户的承诺,console 契约是对管理端的。混在一起会让
+「改管理端」变成「破坏运行时契约」。
+
+**验收**:契约冻结检查对 `/v1` 报零破坏(console 契约不进 `/v1` 冻结基线)。
+
+---
+
+### Session 2 · Admin API + 开户闸门(D2)
+
+**核心**:把隔离档的约束表达在**开户流程**里,而不是登录时。
+
+> **拦在「管理员建第二个成员」那一步。** 那才是第一次真正违反约束 ——
+> 登录时拦太早(单用户部署会被误伤),运行时拦太晚(数据已经开始混)。
+
+错误信息按 V0.4.7 闸门同款三要素:**给出路 · 写明代价(约 63 MB/进程)· 不吓退单用户**。
+
+**验收**:三个方向都要断言 —— 单用户建第一个成员放行、逻辑档建第二个成员拒绝、
+进程档建第二个成员放行。
+
+---
+
+### Session 3 · 容量端点
+
+**交付**:一个只读端点,返回当前隔离档、按内存推导出的 `maxProcesses`、
+可容纳成员数上限。数据来自 `@dshwar/supervisor` 的 `deriveMaxProcesses`
+—— **同一个来源**,不另算一遍。
+
+**验收**:端点返回值与 `deriveMaxProcesses()` 逐字段一致(而不是各算各的)。
+
+---
+
+### Session 4 · console-web + SDK 层 + D7 三条守卫
+
+**交付**
+
+1. `console-web/` —— 最小但真实的 React 应用,首页显示容量信息(D2 后半)
+2. SDK 层:`baseURL` 可注入(为 V0.7.0 从远端切到 `127.0.0.1` 预留)
+3. **D7 三条守卫**,每条带负向验证:
+   - 路由必须 hash / memory,不得 history
+   - 不得依赖浏览器专有 API
+   - 所有请求走统一 SDK 层,不得散落 `fetch`
+
+⚠️ **守卫不能建在空集上** —— 这是 `console-web/` 放主仓的理由(A1)。
+扫描一个不存在的目录会永远绿,而那正是本仓反复强调的最危险的绿。
+
+**验收**:三条守卫各有一条负向验证(植入违规 → 红)与至少一条正向对照
+(合规写法 → 放行),证明规则不是「一律禁止」。
 
 ---
 

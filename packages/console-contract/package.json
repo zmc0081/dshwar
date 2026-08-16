@@ -1,7 +1,7 @@
 {
-  "name": "@dshwar/auth-static",
+  "name": "@dshwar/console-contract",
   "version": "0.5.0",
-  "description": "配置声明的 token → principal 映射。零外部依赖跑通开发环境,并作为全部契约测试的 fixture。禁止部署。",
+  "description": "控制平面契约:租户 / 成员 / 角色 / 配额 / 用量 / 审计查询的共享类型。与 /v1 运行时契约分开版本化。",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
@@ -23,16 +23,6 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -b"
-  },
-  "dependencies": {
-    "@dshwar/auth": "workspace:*",
-    "@dshwar/principal": "workspace:*"
-  },
-  "peerDependencies": {
-    "@deepseek-ai/cordis": "4.0.1"
-  },
-  "devDependencies": {
-    "@deepseek-ai/cordis": "4.0.1"
   },
   "publishConfig": {
     "access": "public"

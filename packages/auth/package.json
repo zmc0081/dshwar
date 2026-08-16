@@ -1,6 +1,6 @@
 {
   "name": "@dshwar/auth",
-  "version": "0.4.7",
+  "version": "0.5.0",
   "description": "认证契约:token → Principal。只验证与映射,永不存密码、永不签发令牌、永不实现注册流程。",
   "license": "MIT",
   "type": "module",
