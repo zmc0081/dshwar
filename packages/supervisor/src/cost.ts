@@ -44,13 +44,16 @@ export const RSS_PER_PROCESS_MB = 63
  *
  * 这个遗漏的后果很具体:旧的固定默认值 `maxProcesses: 64` 在一台 4 GB 的
  * 机器上,子进程要 64 × 63 = 4032 MB,**算术上塞得下**(4096 MB),
- * 于是看起来没问题;但剩下 64 MB 连网关自己都放不下,更别说操作系统。
+ * 于是看起来没问题;但剩下 64 MB 连网关自己(80 MB)都放不下,更别说操作系统。
  * **算得下、跑不起来** —— 这正是固定值最难被发现的失败形态。
  *
- * ⚠️ 78 MB 测于 Windows 11 + Node 24。Linux 上的值由 CI 的
- * `进程隔离代价` job 每次打印,与子进程那两个数同一条通路。
+ * **80 MB 是 Linux 实测**(GitHub ubuntu-latest · Node 22),与
+ * {@link RSS_PER_PROCESS_MB} 同一台机器、同一次运行 —— 生产在 Linux,
+ * 容量推导就该用 Linux 的数。Windows 同日测得 78 MB,差 2 MB。
+ *
+ * CI 的 `进程隔离代价` job 每次都会打印它,与子进程那两个数同一条通路。
  */
-export const GATEWAY_BASELINE_RSS_MB = 78
+export const GATEWAY_BASELINE_RSS_MB = 80
 
 /**
  * 进程池最多能吃掉整机内存的多大一块。
@@ -61,7 +64,7 @@ export const GATEWAY_BASELINE_RSS_MB = 78
  *
  * | 吃内存的 | 量级 |
  * | --- | --- |
- * | 网关进程自身(见 {@link GATEWAY_BASELINE_RSS_MB},实测) | 78 MB |
+ * | 网关进程自身(见 {@link GATEWAY_BASELINE_RSS_MB},实测) | 80 MB |
  * | 操作系统与页缓存 | 数百 MB 起 |
  * | 突发:同一 principal 的并发会话、大文件读写、模型响应缓冲 | 不可预估 |
  *
@@ -70,7 +73,7 @@ export const GATEWAY_BASELINE_RSS_MB = 78
  *
  * ## 为什么不做得更聪明
  *
- * 试过想按「总内存越大、比例越高」做分段。空载的网关已经量到了(78 MB),
+ * 试过想按「总内存越大、比例越高」做分段。空载的网关已经量到了(80 MB),
  * 但**负载下它怎么涨还没有实测** —— 而分段函数恰恰要靠那条曲线。
  * **没有数据支撑的分段只是把一个诚实的猜测包装成公式。**
  * 等有了网关侧的负载测量再说。
@@ -107,7 +110,7 @@ export interface DerivedCapacity {
  * ## 为什么不用固定值
  *
  * V0.4.5 起默认写死 `64`。**那个数对任何一台具体的机器都是猜的**:
- * 4 GB 机器上子进程就要 4032 MB,剩下的 64 MB 连网关自己(78 MB)都放不下;
+ * 4 GB 机器上子进程就要 4032 MB,剩下的 64 MB 连网关自己(80 MB)都放不下;
  * 64 GB 机器上又白白闲置四分之三的内存。写死一个数等于假设所有部署方
  * 的机器规格相同,而那个假设从来没成立过。
  *
