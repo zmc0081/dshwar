@@ -1,6 +1,6 @@
 {
   "name": "@dshwar/metering",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "description": "用量归属与成本核算。观测不阻断:丢一条用量记录是账目问题,断一次会话是事故。",
   "license": "MIT",
   "type": "module",

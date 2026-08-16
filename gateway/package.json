@@ -1,6 +1,6 @@
 {
   "name": "@dshwar/gateway",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "description": "API 平面服务。Hono,Web 标准,可跑 Node 与边缘。",
   "license": "MIT",
   "type": "module",

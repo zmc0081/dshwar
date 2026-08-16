@@ -1,6 +1,6 @@
 {
   "name": "@dshwar/auth-jwt",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "description": "JWKS 验签的 Auth 实现。验签通过后仍要过 Subject Mirror 与租户映射 —— 停用的用户拿着有效 token 也进不来。",
   "license": "MIT",
   "type": "module",

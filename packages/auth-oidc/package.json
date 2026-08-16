@@ -1,6 +1,6 @@
 {
   "name": "@dshwar/auth-oidc",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "description": "OIDC 接入:填一个 issuer URL 即可。discovery 解析后复用 auth-jwt 验签,不重复实现。",
   "license": "MIT",
   "type": "module",
