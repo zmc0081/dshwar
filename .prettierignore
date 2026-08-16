@@ -4,4 +4,5 @@ pnpm-lock.yaml
 *.tsbuildinfo
 feasibility/node_modules/
 feasibility/dsh-runtime/
+feasibility-v2/node_modules/
 CHANGELOG.md

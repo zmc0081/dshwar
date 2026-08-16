@@ -161,7 +161,11 @@ Harness agent 能执行 shell、读写文件系统。这决定了隔离级别不
 | **进程** | 一 principal 一 dsh 进程            | 跨信任边界             | 内存开销,需要进程池                     |
 | **容器** | 进程 + OS 沙箱                      | 多租户 SaaS            | 冷启动延迟,运维复杂度                   |
 
-进程级隔离顺带解决上游 SDK 协议**没有 cancel 与 session-close 方法**的问题——终止进程即是取消。这是 Supervisor 存在的第二个理由。
+进程级隔离顺带解决**上游 stdio SDK 协议**没有 cancel 与 session-close 方法的问题——终止进程即是取消。
+
+> ⚠️ **这条只适用于走 SDK 协议的消费方。** V0.2.0 Session 0 实测:**进程内**的 `Agent` 接口有显式的 `cancel(cause, options)`,`AgentHandle.dispose()` 亦然,两者都真的截断输出。DSHWAR 网关走进程内驱动,因此**不受此限**。见 `docs/FEASIBILITY-REPORT-V2.md` §4.1。
+>
+> Supervisor 的**第一个**理由(跨信任边界的安全隔离)完全不受影响,它仍在 V0.4.0。把「取消」列为它的动机会让人误以为 V0.2.0 的网关做不了取消,从而在错误的时间提前一个五周的组件。
 
 > README 与文档必须显著声明:逻辑隔离仅适用于互相信任的用户。宁可劝退采用者,不要让他们从事故中学会。
 

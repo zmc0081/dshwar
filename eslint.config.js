@@ -37,6 +37,7 @@ export default tseslint.config(
       '**/dist/**',
       '**/*.tsbuildinfo',
       'feasibility/**',
+      'feasibility-v2/**',
       '.changeset/**',
     ],
   },

@@ -11,8 +11,9 @@ const SKIP_DIRS = new Set([
   '.git',
   '.changeset',
   'coverage',
-  // Session 0 验证工作区不受产品代码纪律约束(feasibility/README.md 有说明)
+  // Session 0 验证工作区不受产品代码纪律约束(各自的 README 有说明)
   'feasibility',
+  'feasibility-v2',
 ])
 
 /**

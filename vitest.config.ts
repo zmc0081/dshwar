@@ -12,6 +12,7 @@ export default defineConfig({
       '**/dist/**',
       // Session 0 的验证脚本自成一套,不走 Vitest(见 feasibility/README.md)
       'feasibility/**',
+      'feasibility-v2/**',
     ],
   },
 })

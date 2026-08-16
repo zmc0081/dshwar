@@ -1,0 +1,7 @@
+# 独立 workspace 根 —— 与 feasibility/ 同样的理由:
+# 验证工作区有自己的 lockfile 与锁版,纳入主 workspace 会让它的依赖参与根解析。
+allowBuilds:
+  '@deepseek-ai/dsh-subprocess-local': true
+  koffi: true
+  node-pty: true
+  esbuild: true
