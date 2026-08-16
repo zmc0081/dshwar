@@ -53,7 +53,32 @@ export function repoPath(repoRoot, absolute) {
 }
 
 /**
+ * 行级豁免标记。
+ *
+ * ## 为什么必须有这个东西
+ *
+ * 执行一条规则的代码,往往长得像违反那条规则。`@dshwar/subject` 里那份
+ * **拒绝**密码字段的清单必须写出 `password` 这个词,于是它撞上了「不得出现
+ * password」的守卫 —— 而那份清单正是硬规则 4 的执行者。
+ *
+ * 没有豁免机制时,人会去做更糟的事:弱化守卫的正则,或者把字符串拆成
+ * `'pass' + 'word'` 绕过。前者让所有人失去保护,后者让代码变得没法读。
+ *
+ * ## 为什么是这个形状
+ *
+ * - **行级**,不是文件级或目录级 —— 豁免一整个文件等于在最该看紧的地方关掉监控。
+ *   写在被豁免行的**本行或上一行**,与 `eslint-disable-next-line` 的惯例一致。
+ * - **必须写理由**,空理由不算豁免。理由是给未来的评审看的,不是给脚本看的。
+ * - **可被一条 grep 审计完**:`grep -rn "dshwar-guard-allow" packages/ gateway/`
+ *   一次列出全仓所有豁免。豁免变多时是看得见的。
+ */
+const ALLOW_MARKER = /dshwar-guard-allow:\s*(\S.*)$/
+
+/**
  * 在若干文件中查找匹配行。
+ *
+ * 带 `dshwar-guard-allow: <理由>` 标记的行会被跳过,理由为空则**不算豁免**。
+ *
  * @param {string[]} files 绝对路径
  * @param {RegExp} pattern 需带 g 标志的正则
  * @param {string} repoRoot
@@ -72,9 +97,9 @@ export function grepFiles(files, pattern, repoRoot) {
     for (let i = 0; i < lines.length; i += 1) {
       const text = lines[i] ?? ''
       pattern.lastIndex = 0
-      if (pattern.test(text)) {
-        hits.push({ file: repoPath(repoRoot, file), line: i + 1, text: text.trim() })
-      }
+      if (!pattern.test(text)) continue
+      if (ALLOW_MARKER.test(text) || ALLOW_MARKER.test(lines[i - 1] ?? '')) continue
+      hits.push({ file: repoPath(repoRoot, file), line: i + 1, text: text.trim() })
     }
   }
   return hits

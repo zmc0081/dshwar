@@ -149,7 +149,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 | Session                     | 状态      | 说明                                              |
 | --------------------------- | --------- | ------------------------------------------------- |
 | 0 可行性证伪:SCIM 供给链    | ✅ 已完成 | **止损未触发**;验收基线由 Keycloak 换为 authentik |
-| 1 `@dshwar/subject`         | ⬜ 未开始 | Subject Mirror 契约与 storage 实现                |
+| 1 `@dshwar/subject`         | ✅ 已完成 | 内存与 storage 两个实现跑同一套断言;29 个单测     |
 | 2 `@dshwar/tenant-map`      | ⬜ 未开始 | 四种策略 + fallback reject                        |
 | 3 `@dshwar/auth-jwt`        | ⬜ 未开始 | JWKS 验签,替掉明文令牌表                          |
 | 4 `@dshwar/auth-oidc`       | ⬜ 未开始 | discovery + 与租户映射接合                        |
@@ -233,7 +233,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 
 ---
 
-### ⬜ Session 1: `@dshwar/subject` —— Subject Mirror
+### ✅ Session 1: `@dshwar/subject` —— Subject Mirror
 
 ```
 本次任务:身份镜像的契约与实现。

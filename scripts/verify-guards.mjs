@@ -317,6 +317,50 @@ try {
   }
 
   // ---------------------------------------------------------------------
+  // 11/12. 豁免标记本身必须受控
+  //
+  //      行级豁免(dshwar-guard-allow)是必要的:执行一条规则的代码往往长得像
+  //      违反那条规则 —— @dshwar/subject 里那份**拒绝**密码字段的清单就必须
+  //      写出 password 这个词。
+  //
+  //      但豁免机制没有负向测试就是个后门。这两条证明:
+  //        11 —— 没标记的违规照样红(豁免不是把整条守卫关掉)
+  //        12 —— 空理由不算豁免(理由是给评审看的,不是给脚本看的)
+  // ---------------------------------------------------------------------
+  {
+    writeFixture(
+      'packages/__guard_fixture__/src/unmarked.ts',
+      ['// 负向测试夹具', "export const leak = 'passwordHash'", ''].join('\n'),
+    )
+    const unmarked = runGuards()
+    expect(
+      '11 没有豁免标记的违规照样被拦住',
+      !unmarked.ok && /密码体系/.test(unmarked.output),
+      unmarked.ok ? '豁免机制把整条守卫关掉了' : undefined,
+    )
+    rmSync(p('packages/__guard_fixture__'), { recursive: true, force: true })
+  }
+
+  {
+    writeFixture(
+      'packages/__guard_fixture__/src/empty-reason.ts',
+      [
+        '// 负向测试夹具:空理由不算豁免',
+        '// dshwar-guard-allow:',
+        "export const leak = 'passwordHash'",
+        '',
+      ].join('\n'),
+    )
+    const empty = runGuards()
+    expect(
+      '12 空理由的豁免标记不生效',
+      !empty.ok && /密码体系/.test(empty.output),
+      empty.ok ? '空理由被当成了有效豁免 —— 那等于无条件后门' : undefined,
+    )
+    rmSync(p('packages/__guard_fixture__'), { recursive: true, force: true })
+  }
+
+  // ---------------------------------------------------------------------
   // 8/9. 契约冻结(Session 6 验收)
   //
   //     单测已经验过 diffContract 的判定,但那只证明**分类器**对。这里验的是
