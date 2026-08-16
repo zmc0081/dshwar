@@ -35,11 +35,37 @@ export interface RuntimeRouteOptions {
    * 429 由这里发。缺席 = 不限流(配额是 opt-in 的治理)。
    */
   readonly quota?: QuotaCheckLike
+  /**
+   * 模型裁决(V0.4.0)。挂在 createAgent 入口 —— 裁决完交回上游,
+   * 不碰请求路由。缺席 = 不治理。
+   */
+  readonly models?: ModelGateLike
 }
 
 /** `@dshwar/policy` 判定入口的结构性子集。 */
 export interface QuotaCheckLike {
   check(subjectId: string): Promise<{ kind: 'allow' } | { kind: 'deny'; reason: string }>
+}
+
+/**
+ * `@dshwar/model-router` 裁决入口的结构性子集。
+ * 部署方在闭包里自行接默认模型与预算水位 —— 网关不知道也不该知道价格表。
+ */
+export interface ModelGateLike {
+  resolve(input: {
+    subjectId: string
+    tenantId: string
+    provider: string | undefined
+    model: string | undefined
+  }): Promise<
+    | {
+        kind: 'allow'
+        provider: string | undefined
+        model: string | undefined
+        downgraded: boolean
+      }
+    | { kind: 'deny' }
+  >
 }
 
 function toWire(session: GatewaySession) {
@@ -70,11 +96,33 @@ export function registerRuntimeRoutes(options: RuntimeRouteOptions) {
       const principal = c.get('principal')!
       const body = parsed.data
 
+      // ---- 模型裁决(V0.4.0)----
+      // 挂在 createAgent 入口:准入答「许不许用」,降级答「用哪个」。
+      // 清单外 → 403(不是静默换);降级 → 响应头可见,用户有权知道被换了模型。
+      let provider = body.provider
+      let model = body.model
+      if (options.models !== undefined) {
+        const decision = await options.models.resolve({
+          subjectId: principal.id,
+          tenantId: principal.tenantId,
+          provider,
+          model,
+        })
+        if (decision.kind === 'deny') {
+          throw new ApiError('forbidden', 'model not allowed by tenant policy')
+        }
+        if (decision.downgraded) {
+          c.header('x-dshwar-model-downgraded', `${decision.provider}/${decision.model}`)
+        }
+        provider = decision.provider
+        model = decision.model
+      }
+
       const sessionId = crypto.randomUUID()
       const handle = await options.createAgent({
         sessionId,
-        model: body.model,
-        provider: body.provider,
+        model,
+        provider,
       })
 
       const session = options.store.register({
@@ -82,8 +130,9 @@ export function registerRuntimeRoutes(options: RuntimeRouteOptions) {
         principal,
         handle,
         includeReasoning: body.includeReasoning,
-        model: body.model ?? null,
-        provider: body.provider ?? null,
+        // 记裁决后的,不是请求的 —— 计量与审计要对上真正在跑的模型
+        model: model ?? null,
+        provider: provider ?? null,
         metadata: body.metadata ?? {},
       })
 

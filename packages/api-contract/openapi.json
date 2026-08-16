@@ -1461,29 +1461,9 @@
                 }
               }
             }
-          },
-          "501": {
-            "description": "端点已在契约中定义,但本版本尚未实现。响应头 `x-dshwar-planned-version` 指出计划版本",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "headers": {
-              "x-dshwar-planned-version": {
-                "description": "计划实现该端点的版本",
-                "schema": {
-                  "type": "string",
-                  "const": "V0.4.0"
-                }
-              }
-            }
           }
         },
-        "x-dshwar-status": "planned",
-        "x-dshwar-planned-version": "V0.4.0"
+        "x-dshwar-status": "implemented"
       }
     },
     "/v1/admin/audit": {

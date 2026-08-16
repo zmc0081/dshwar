@@ -23,6 +23,7 @@
     { "path": "./packages/audit" },
     { "path": "./packages/metering" },
     { "path": "./packages/policy" },
+    { "path": "./packages/model-router" },
     { "path": "./adapters/dsh-0.1.0" },
     { "path": "./gateway" },
     { "path": "./sdk/typescript" },

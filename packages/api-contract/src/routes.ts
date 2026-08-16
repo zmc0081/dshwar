@@ -85,12 +85,6 @@ const NOT_FOUND: RouteResponse = {
   schema: ErrorResponse,
 }
 
-const NOT_IMPLEMENTED: RouteResponse = {
-  description:
-    '端点已在契约中定义,但本版本尚未实现。响应头 `x-dshwar-planned-version` 指出计划版本',
-  schema: ErrorResponse,
-}
-
 const SessionIdParam = z.object({ id: SessionId })
 const SubjectIdParam = z.object({ id: SubjectId })
 
@@ -209,8 +203,6 @@ const RUNTIME_ROUTES: readonly RouteDef[] = [
 // ---------------------------------------------------------------------------
 // Admin API
 // ---------------------------------------------------------------------------
-
-const PLANNED_V4 = 'V0.4.0'
 
 const ADMIN_ROUTES: readonly RouteDef[] = [
   // ---- V0.2.0 实现 ----
@@ -338,12 +330,11 @@ const ADMIN_ROUTES: readonly RouteDef[] = [
     summary: '模型准入与预算策略',
     tags: ['admin', 'policies'],
     auth: 'admin',
-    status: 'planned',
-    plannedVersion: PLANNED_V4,
+    // V0.4.0 Session 4 转正 —— PLANNED_V4 全部清零。schema 未动。
+    status: 'implemented',
     query: PaginationQuery,
     responses: {
       200: { description: '策略列表', schema: ListPoliciesResponse },
-      501: NOT_IMPLEMENTED,
       ...COMMON_ERRORS,
     },
   },

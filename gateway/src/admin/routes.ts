@@ -64,6 +64,26 @@ export interface AdminRouteOptions {
    * 判定逻辑在 `@dshwar/policy`,这里只暴露状态查询与上限设置。
    */
   readonly quotaAdmin?: QuotaAdminLike
+  /**
+   * 模型策略只读(V0.4.0 Session 4)。`/v1/admin/policies` 从这里读。
+   * 写入口刻意留给控制平面(V0.5.0)—— 改准入清单是商务动作,该走后台的
+   * 审批流,不该是一个 curl 就能干的事。
+   */
+  readonly modelPolicies?: PolicyReaderLike
+}
+
+/** `@dshwar/model-router` 策略存储的只读子集。 */
+export interface PolicyReaderLike {
+  list(tenantId: string): Promise<ModelPolicyLike[]>
+}
+
+/** 契约 `Policy` 的行形状。 */
+export interface ModelPolicyLike {
+  readonly id: string
+  readonly tenantId: string
+  readonly allowedModels: readonly string[]
+  readonly fallbackModel: string | null
+  readonly updatedAt: string
 }
 
 /** `@dshwar/policy` 的管理面子集。 */
@@ -389,6 +409,39 @@ export function registerAdminRoutes(options: AdminRouteOptions) {
       })
 
       return c.json({ quota: after, requestId })
+    })
+
+    // ---- 模型策略(V0.4.0 Session 4,由 planned 转实现;PLANNED 至此清零)----
+    const modelPolicies = options.modelPolicies
+
+    app.get('/v1/admin/policies', async (c) => {
+      if (modelPolicies === undefined) throw notImplemented('V0.4.0')
+      const admin = c.get('admin')!
+      const requestId = c.get('requestId')
+
+      const parsed = PaginationQuery.safeParse(c.req.query())
+      if (!parsed.success) {
+        throw new ApiError('invalid_request', parsed.error.issues[0]?.message ?? 'invalid query')
+      }
+
+      const all = await modelPolicies.list(admin.tenantId)
+      const cursor = parsed.data.cursor
+      const start = cursor === undefined ? 0 : all.findIndex((p) => p.id === cursor) + 1
+      const page = all.slice(start, start + parsed.data.limit)
+      const nextCursor = start + parsed.data.limit < all.length ? (page.at(-1)?.id ?? null) : null
+
+      // 契约 Policy 的五个字段,不多不少
+      return c.json({
+        data: page.map((p) => ({
+          id: p.id,
+          tenantId: p.tenantId,
+          allowedModels: [...p.allowedModels],
+          fallbackModel: p.fallbackModel,
+          updatedAt: p.updatedAt,
+        })),
+        nextCursor,
+        requestId,
+      })
     })
 
     // ---- 审计查询(V0.4.0 Session 1,由 planned 转实现)----

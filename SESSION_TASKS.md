@@ -308,7 +308,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 
 ---
 
-### ⬜ Session 4: `@dshwar/model-router` —— 准入与降级
+### ✅ Session 4: `@dshwar/model-router` —— 准入与降级
 
 ```
 本次任务:模型治理,只在 createAgent 入口裁决。

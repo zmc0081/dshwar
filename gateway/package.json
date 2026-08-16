@@ -66,6 +66,7 @@
     "@dshwar/example-sdk-session": "workspace:*",
     "@dshwar/fs-tenant": "workspace:*",
     "@dshwar/metering": "workspace:*",
+    "@dshwar/model-router": "workspace:*",
     "@dshwar/policy": "workspace:*",
     "@dshwar/scim-server": "workspace:*",
     "@dshwar/storage-scoped": "workspace:*",

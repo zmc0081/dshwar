@@ -144,7 +144,9 @@ describe('跨租户 Admin Key', () => {
   })
 })
 
-describe('planned 端点', () => {
+// V0.4.0 Session 4 起契约里已无 planned 端点。本块测的是**部署级降级**:
+// 端点已实现,但这套部署没配对应后端时回落 501 —— 语义仍是「别猜路径」。
+describe('未配置后端的部署回落 501', () => {
   const PLANNED = [
     '/v1/admin/subjects',
     `/v1/admin/subjects/${alice.id}`,
@@ -156,7 +158,7 @@ describe('planned 端点', () => {
   ]
 
   // 404 会让第三方以为路径写错了，从而去猜别的路径
-  it('全部返回 501 而非 404', async () => {
+  it('缺后端时全部返回 501 而非 404', async () => {
     for (const path of PLANNED) {
       const res = await asAdmin('admin-acme', path)
       expect(res.status, `${path} 应返回 501`).toBe(501)
@@ -176,21 +178,11 @@ describe('planned 端点', () => {
     expect(res.headers.get('x-dshwar-planned-version')).toBe('V0.4.0')
   })
 
-  it('subjects 计划在 V0.3.0,usage 计划在 V0.4.0', async () => {
-    const subjects = await asAdmin('admin-acme', '/v1/admin/subjects')
-    const usage = await asAdmin('admin-acme', '/v1/admin/usage')
-
-    expect(subjects.headers.get('x-dshwar-planned-version')).toBe('V0.3.0')
-    expect(usage.headers.get('x-dshwar-planned-version')).toBe('V0.4.0')
-  })
-
-  // planned 清单从契约里读而非手写 —— 手写会漂移，
-  // 契约加了端点而这里忘了，第三方就撞 404 而不是 501
-  it('契约里的每个 planned 端点都已挂载', async () => {
+  // ★ V0.4.0 的里程碑:契约先行策略走完了 —— v1 里定义的每个端点都有实现
+  it('契约里不再有任何 planned 端点', async () => {
     const { ROUTES } = await import('@dshwar/api-contract')
     const planned = ROUTES.filter((r) => r.status === 'planned')
-    // V0.3.0 转正 subjects×2;V0.4.0 转正 audit、usage×2、quota×2 —— 只剩 policies
-    expect(planned.length).toBe(1)
+    expect(planned.length).toBe(0)
 
     for (const route of planned) {
       const path = route.path.replace('{id}', alice.id)
@@ -232,13 +224,9 @@ describe('审计埋点', () => {
     expect(JSON.stringify(audit.entries)).not.toContain('admin-acme')
   })
 
-  it('planned 端点的调用也被记录', async () => {
-    // 样本必须选仍是 planned 的端点 —— usage 在 V0.4.0 Session 2 转正后
-    // 不再走 planned 循环。Session 4 转正 policies 后本测试随 planned 清零一起退役。
-    await asAdmin('admin-acme', '/v1/admin/policies')
-    expect(audit.entries).toHaveLength(1)
-    expect(audit.entries[0]!.action).toBe('admin.listPolicies')
-  })
+  // 「planned 端点的调用也被记录」已随 planned 清零退役(V0.4.0 Session 4)。
+  // planned 循环的机制保留在 admin/routes.ts,契约将来再加 planned 端点时
+  // 埋点自动生效 —— 机制在,数据暂空。
 
   it('被拒的跨租户调用不产生成功记录', async () => {
     await asAdmin('admin-acme', `/v1/admin/subjects/${bob.id}/credentials`)
