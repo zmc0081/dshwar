@@ -1,0 +1,44 @@
+{
+  "name": "@dshwar/gateway",
+  "version": "0.2.0",
+  "description": "API 平面服务。Hono,Web 标准,可跑 Node 与边缘。",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@dshwar/api-contract": "workspace:*",
+    "@dshwar/auth": "workspace:*",
+    "@dshwar/principal": "workspace:*",
+    "hono": "^4.10.7",
+    "zod": "^4.4.3"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@dshwar/auth-static": "workspace:*"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

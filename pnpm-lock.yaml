@@ -97,6 +97,31 @@ importers:
         specifier: 0.1.0-rc.6
         version: 0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-brand@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1))
 
+  gateway:
+    dependencies:
+      '@dshwar/api-contract':
+        specifier: workspace:*
+        version: link:../packages/api-contract
+      '@dshwar/auth':
+        specifier: workspace:*
+        version: link:../packages/auth
+      '@dshwar/principal':
+        specifier: workspace:*
+        version: link:../packages/principal
+      hono:
+        specifier: ^4.10.7
+        version: 4.13.2
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.0.1
+        version: 4.0.1
+      '@dshwar/auth-static':
+        specifier: workspace:*
+        version: link:../packages/auth-static
+
   packages/api-contract:
     dependencies:
       zod:
@@ -906,6 +931,10 @@ packages:
   globals@17.11.0:
     resolution: {integrity: sha512-Z2I8hM+PbJDXQDq3Icgpzv+mPdwr68iZUU9d5WW4FuXfDUQfkZaZuvjMv42/5crNyw154+9+VWXbYrUgDXbxNw==}
     engines: {node: '>=18'}
+
+  hono@4.13.2:
+    resolution: {integrity: sha512-JydRilDRkYBQMt9qR9U92mXxmbGqsqSn/IKOrh4e7/gEbn+0zSr8igTu0obwJoNGN4sez28DIql7FBHWydoJpA==}
+    engines: {node: '>=16.9.0'}
 
   human-id@4.2.0:
     resolution: {integrity: sha512-K3GbkIWqyvvlpfhBPlbEvD97TtqBpAYA4kt+cn2lD2x2HuohzZCibcA2nOlnJT6exqvJLggoB5nv2dNf192nEA==}
@@ -2001,6 +2030,8 @@ snapshots:
       is-glob: 4.0.3
 
   globals@17.11.0: {}
+
+  hono@4.13.2: {}
 
   human-id@4.2.0: {}
 

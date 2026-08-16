@@ -124,7 +124,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 | ------------------------ | --------- | -------------------------------------------------------------------------------- |
 | 0 可行性证伪             | ✅ 已完成 | **止损未触发**,32 条断言全过(Win + Linux);报告见 `docs/FEASIBILITY-REPORT-V2.md` |
 | 1 OpenAPI v1 契约        | ✅ 已完成 | Zod 单一事实源 → OpenAPI 3.1;redocly lint 零警告;29 个单测                       |
-| 2 Gateway 骨架与会话路由 | ⬜ 未开始 |                                                                                  |
+| 2 Gateway 骨架与会话路由 | ✅ 已完成 | 分道鉴权在中间件层;22 个单测,含隔离槽位零增长                                    |
 | 3 运行时 API 与 SSE      | ⬜ 未开始 |                                                                                  |
 | 4 Admin API              | ⬜ 未开始 | 契约先行,实现分期                                                                |
 | 5 TS SDK                 | ⬜ 未开始 | 由 OpenAPI 生成,不手写                                                           |
@@ -278,7 +278,7 @@ docs/FEASIBILITY-REPORT-V2.md，包含：
 
 ---
 
-### ⬜ Session 2: Gateway 骨架与会话路由
+### ✅ Session 2: Gateway 骨架与会话路由
 
 ```
 读取 CLAUDE.md（第七节 安全与隔离)。
