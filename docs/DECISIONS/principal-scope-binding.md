@@ -96,6 +96,25 @@ resolveApiKey: () => runWithPrincipal(ctx, bound, (scoped) =>
 **缺陷是它依赖人记得。** 每新增一个 principal 消费方就要重入一次,而忘了的那次
 是静默的 —— 正是这次的失败模式。所以 **B 必须与守卫配套**,见下。
 
+### ★ C —— 进程隔离档:装配时把 principal 钉到根上(V0.4.6 实测可行)
+
+一进程一 principal,所以可以在装配时直接 `ctx.provide(PRINCIPAL_BINDING, principal)`。
+插件 fiber 派生自这个根,`agent.ctx` 于是看得到。实测:
+
+```
+根上 provide → agent 驱动一轮后 agent.ctx 读到 = alice-e6f1
+                                    工作区落点 = /acme/alice-e6f1/default
+```
+
+**不是脆弱的顺序依赖** —— 装配之前或之后 provide 都生效(绑定读的是槽位的
+当前值,不是插件加载时的快照)。
+
+⚠️ **只对进程档成立。** 逻辑档一进程多 principal,根上的绑定对**每个** agent
+都生效 —— 那不是修好了隔离,是把 bob 的会话也算成 alice 的。已有测试钉住这条
+反面(`gateway/test/principal-reach.test.ts`)。
+
+**范围影响**:进程档不需要任何逐点回调。三个消费方的改造**只有逻辑档要用**。
+
 ### A —— 在 `createAgent` 处一次绑定 ❌ **已证伪**
 
 原假设:`AsyncLocalStorage` 的存储会传播给在回调内启动的整条异步资源链,
@@ -117,6 +136,11 @@ await 到底)。**没有任何调用时的包裹能改变 agent.ctx 的来源。
 
 前者要提上游 issue(硬规则 1:需要改上游 → 提 issue,不建 patch)。
 **在上游给出钩子之前,A 不可行。**
+
+> 📌 **A 路线的外部依赖**:issue 草稿见
+> [`docs/UPSTREAM-ISSUE-agent-ctx.md`](../UPSTREAM-ISSUE-agent-ctx.md)。
+> 提交后把链接回填到那里与本处。现在提的理由:上游还在 `0.1.0-rc.x` 快速迭代,
+> API 未定型,这是影响它的最高性价比窗口;而且它是异步的,不阻塞任何事。
 
 ## 决策
 
@@ -149,8 +173,12 @@ V0.3.0 的生命周期校验(`@dshwar/subject` 的双路停用)发生在**建会
 这个 bug **现在就存在**,而 **A 已证伪、在上游给出钩子之前不可行**。
 B 是当前唯一验证过可行的修法,它的唯一缺陷(依赖人记得)由守卫补掉:
 
-- **B + 守卫** = 唯一可行的修法 → V0.4.7
+- **C(根上 provide)** = 进程档的修法,零逐点回调 → V0.4.7
+- **B + 守卫** = 逻辑档的修法 → V0.4.7
 - **A** = 需要上游钩子 → 提 issue,不排期
+
+⚠️ **守卫已在 V0.4.6 落地**(`principal.current()` 调用点白名单,
+含两个方向的负向验证 16 / 16b),不必重做。
 
 ⚠️ **B 对 `fs-tenant` 的形态与对凭据的不同。** 凭据那处可以在
 `resolveApiKey` 回调里显式重入;而 `fs-tenant` 的 `currentWorkspaceRoot()`
