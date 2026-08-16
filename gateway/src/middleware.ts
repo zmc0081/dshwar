@@ -14,6 +14,7 @@ import { runWithPrincipal } from '@dshwar/principal'
 import type { Context as CordisContext } from '@deepseek-ai/cordis'
 import type { Context as HonoContext, MiddlewareHandler } from 'hono'
 import type { AdminIdentity, AdminKeyResolver } from './admin-keys.ts'
+import type { ScimIdentity, ScimTokenResolver } from './scim-keys.ts'
 import { ApiError, renderError, unauthorized } from './errors.ts'
 
 /** Admin Key 的请求头名。与契约里的 securityScheme 一致。 */
@@ -28,6 +29,8 @@ export interface GatewayVariables {
   scopedCtx?: CordisContext
   /** Admin 端点:这把 key 的身份。 */
   admin?: AdminIdentity
+  /** SCIM 端点:这把 token 绑定的身份源。 */
+  scim?: ScimIdentity
 }
 
 export type GatewayEnv = { Variables: GatewayVariables }
@@ -130,6 +133,50 @@ export function adminAuth(resolver: AdminKeyResolver): MiddlewareHandler<Gateway
     if (admin === undefined) throw unauthorized()
 
     c.set('admin', admin)
+    await next()
+    return undefined
+  }
+}
+
+/**
+ * SCIM 鉴权 —— 三类令牌里的第三类。
+ *
+ * ⚠️ **SCIM token 只能进 `/scim/` 前缀,且只对它绑定的那个身份源有效。**
+ * 它配在**外部**供给系统里(authentik / Entra 的界面上),暴露面比 Admin Key
+ * 大得多 —— 泄漏一把 SCIM token 的爆炸半径必须止步于「一个身份源的镜像被改」。
+ *
+ * 认证失败返回 **SCIM 自己的错误格式**而不是契约的 ErrorResponse:
+ * 读这个响应的是 Entra / Okta / authentik 的同步引擎,它们只认 RFC 7644 §3.12。
+ *
+ * @param resolver token → 身份源
+ * @param mountedSource 本挂载点服务的身份源;token 属于别的源一样 401
+ */
+export function scimAuth(
+  resolver: ScimTokenResolver,
+  mountedSource: string,
+): MiddlewareHandler<GatewayEnv> {
+  const scim401 = (c: HonoContext<GatewayEnv>): Response =>
+    c.json(
+      {
+        schemas: ['urn:ietf:params:scim:api:messages:2.0:Error'],
+        status: '401',
+        detail: 'authentication failed',
+      },
+      401,
+    )
+
+  return async (c, next) => {
+    // Admin Key 不能写身份镜像 —— 分离签发的意义就在这里
+    if (c.req.header(ADMIN_KEY_HEADER) !== undefined) return scim401(c)
+
+    const token = bearerToken(c)
+    if (token === undefined) return scim401(c)
+
+    const identity = await resolver.resolve(token)
+    // token 无效,或属于另一个身份源 —— 两者同一个响应,不区分(预言机防护同款理由)
+    if (identity === undefined || identity.source !== mountedSource) return scim401(c)
+
+    c.set('scim', identity)
     await next()
     return undefined
   }

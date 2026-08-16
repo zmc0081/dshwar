@@ -181,9 +181,18 @@ importers:
       '@dshwar/fs-tenant':
         specifier: workspace:*
         version: link:../packages/fs-tenant
+      '@dshwar/scim-server':
+        specifier: workspace:*
+        version: link:../packages/scim-server
       '@dshwar/storage-scoped':
         specifier: workspace:*
         version: link:../packages/storage-scoped
+      '@dshwar/subject':
+        specifier: workspace:*
+        version: link:../packages/subject
+      '@dshwar/tenant-map':
+        specifier: workspace:*
+        version: link:../packages/tenant-map
       '@hono/node-server':
         specifier: ^1.19.7
         version: 1.19.17(hono@4.13.2)

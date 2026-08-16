@@ -63,7 +63,10 @@
     "@dshwar/credentials-multiuser": "workspace:*",
     "@dshwar/example-sdk-session": "workspace:*",
     "@dshwar/fs-tenant": "workspace:*",
+    "@dshwar/scim-server": "workspace:*",
     "@dshwar/storage-scoped": "workspace:*",
+    "@dshwar/subject": "workspace:*",
+    "@dshwar/tenant-map": "workspace:*",
     "@hono/node-server": "^1.19.7"
   },
   "publishConfig": {

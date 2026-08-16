@@ -243,12 +243,13 @@ const ADMIN_ROUTES: readonly RouteDef[] = [
     summary: '列出用户镜像',
     tags: ['admin', 'subjects'],
     auth: 'admin',
-    status: 'planned',
-    plannedVersion: PLANNED_V3,
+    // V0.3.0 Session 6 转正。契约(schema / 参数 / 路径)一个字段没动 ——
+    // 只有 x-dshwar-status 扩展消失,契约冻结检查对此不设防是正确的:
+    // 「planned 转实现」正是契约先行策略承诺过会发生的事。
+    status: 'implemented',
     query: PaginationQuery,
     responses: {
       200: { description: '用户镜像列表', schema: ListSubjectsResponse },
-      501: NOT_IMPLEMENTED,
       ...COMMON_ERRORS,
     },
   },
@@ -259,13 +260,11 @@ const ADMIN_ROUTES: readonly RouteDef[] = [
     summary: '读取一个用户镜像',
     tags: ['admin', 'subjects'],
     auth: 'admin',
-    status: 'planned',
-    plannedVersion: PLANNED_V3,
+    status: 'implemented',
     pathParams: SubjectIdParam,
     responses: {
       200: { description: '用户镜像', schema: GetSubjectResponse },
       404: NOT_FOUND,
-      501: NOT_IMPLEMENTED,
       ...COMMON_ERRORS,
     },
   },

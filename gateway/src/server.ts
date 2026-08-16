@@ -22,12 +22,16 @@
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { serve } from '@hono/node-server'
 import { InMemoryPrincipalCredentialStore } from '@dshwar/credentials-multiuser'
+import { createScimApp } from '@dshwar/scim-server'
+import { InMemorySubjectStore } from '@dshwar/subject'
+import type { TenantMapConfig } from '@dshwar/tenant-map'
 import { createPrincipal, type Principal } from '@dshwar/principal'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createGateway } from './app.ts'
 import { InMemoryAdminKeyResolver } from './admin-keys.ts'
+import { InMemoryScimTokenResolver } from './scim-keys.ts'
 import { ConsoleAuditSink } from './admin/audit.ts'
 import { registerAdminRoutes } from './admin/routes.ts'
 import { assembleRuntime, type StaticAuthEntry } from './runtime.ts'
@@ -62,6 +66,19 @@ export interface ServerConfig {
   }[]
   /** SSE 心跳间隔(毫秒)。默认 15000。 */
   readonly heartbeatMs?: number
+  /**
+   * SCIM 供给(V0.3.0)。配了它,身份源就能把用户推进来。
+   *
+   * ⚠️ SCIM token 与 Admin Key 分离签发:供给系统只能写身份镜像,
+   * 不能读用量与凭据配置(CLAUDE.md 第七节)。
+   */
+  readonly scim?: {
+    /** 身份源标识,同时是 token 的绑定对象。 */
+    readonly source: string
+    /** 供给方界面里配的那个 Bearer token。 */
+    readonly token: string
+    readonly tenantMap: TenantMapConfig
+  }
 }
 
 /** 极简参数解析。刻意不引 CLI 框架 —— 四个参数不值得一个依赖。 */
@@ -120,6 +137,18 @@ export async function startServer(
   const store = new GatewaySessionStore()
   const adminKeys = new InMemoryAdminKeyResolver((config.adminKeys ?? []).map((k) => ({ ...k })))
 
+  // Subject Mirror:静态令牌表的用户也进镜像,让 /v1/admin/subjects 有东西可看,
+  // 且 SCIM 推进来的用户与静态用户走同一张表
+  const subjects = new InMemorySubjectStore()
+  for (const entry of config.authEntries) {
+    await subjects.upsert({
+      source: 'static',
+      externalId: entry.id,
+      userName: entry.id,
+      tenantId: entry.tenantId,
+    })
+  }
+
   const app = createGateway({
     ctx: runtime.ctx,
     adminKeys,
@@ -129,10 +158,39 @@ export async function startServer(
       userMessage: runtime.userMessage,
       heartbeatMs: config.heartbeatMs ?? 15_000,
     }),
+    ...(config.scim === undefined
+      ? {}
+      : {
+          scim: {
+            source: config.scim.source,
+            app: createScimApp({
+              source: config.scim.source,
+              subjects,
+              tenantMap: config.scim.tenantMap,
+              onAudit: (r) =>
+                new ConsoleAuditSink().record({
+                  at: new Date().toISOString(),
+                  actor: `scim:${config.scim!.source}`,
+                  tenantId: '-',
+                  action: r.action,
+                  target: r.target,
+                  requestId: r.detail,
+                }),
+            }),
+            tokens: new InMemoryScimTokenResolver([
+              {
+                token: config.scim.token,
+                source: config.scim.source,
+                label: `${config.scim.source} 供给`,
+              },
+            ]),
+          },
+        }),
     adminRoutes: registerAdminRoutes({
       ctx: runtime.ctx,
       audit: new ConsoleAuditSink(),
       credentialRefs: [...new Set((config.credentials ?? []).map((c) => c.ref))],
+      subjectStore: subjects,
       subjects: {
         find: async (subjectId) => {
           const entry = config.authEntries.find((e) => e.id === subjectId)

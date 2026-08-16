@@ -41,6 +41,51 @@ export interface AdminRouteOptions {
    * 所以由部署方声明关心哪些。这也符合契约:`describe` 是按 ref 查询的。
    */
   readonly credentialRefs: readonly string[]
+  /**
+   * 身份镜像(V0.3.0 Session 6)。`/v1/admin/subjects*` 从这里读。
+   *
+   * 可选:没有 Subject Mirror 的部署(纯 auth-static)不强迫拉进 `@dshwar/subject`,
+   * 这两个端点在缺席时回落到 501 —— 与「契约先行,实现分期」的既有语义一致。
+   */
+  readonly subjectStore?: SubjectMirrorReader
+}
+
+/**
+ * `@dshwar/subject` 的 `SubjectStore` 里,本模块只读的那一小块。
+ *
+ * 结构性子集而不是直接 import 那个接口:网关不该因为两个只读端点
+ * 就把 `@dshwar/subject` 变成硬依赖。
+ */
+export interface SubjectMirrorReader {
+  get(id: string): Promise<MirrorSubject | undefined>
+  list(filter?: { tenantId?: string }): Promise<MirrorSubject[]>
+}
+
+/** 镜像记录里本模块用到的字段。 */
+export interface MirrorSubject {
+  readonly id: string
+  readonly tenantId: string
+  readonly displayName: string | null
+  readonly active: boolean
+  readonly createdAt: string
+  readonly updatedAt: string
+}
+
+/** 镜像记录 → 契约的 `Subject` 形状。字段一一对应,不多不少 —— 多给一个
+ * 字段就是契约外的泄漏面,少给一个会挂在响应校验上。
+ *
+ * `roles` 恒为空数组:镜像不存角色 —— 角色是**认证时**从 token 的 claims 里来的
+ * (见 auth-jwt),供给方推的镜像里没有这个概念。契约里它是数组,空数组合法。 */
+function toWireSubject(subject: MirrorSubject) {
+  return {
+    id: subject.id,
+    tenantId: subject.tenantId,
+    displayName: subject.displayName,
+    active: subject.active,
+    roles: [] as string[],
+    createdAt: subject.createdAt,
+    updatedAt: subject.updatedAt,
+  }
 }
 
 /** 注册 Admin 端点。 */
@@ -101,6 +146,64 @@ export function registerAdminRoutes(options: AdminRouteOptions) {
         start + parsed.data.limit < descriptors.length ? (page.at(-1)?.ref ?? null) : null
 
       return c.json({ data: page, nextCursor, requestId })
+    })
+
+    // ---- 用户镜像(V0.3.0 Session 6,由 planned 转实现)----
+    // ⚠️ 响应形状必须与冻结的契约逐字段一致 —— check:contract 已确认
+    // planned → implemented 不构成契约变更,这里不许再引入任何偏差。
+    const store = options.subjectStore
+
+    app.get('/v1/admin/subjects', async (c) => {
+      if (store === undefined) throw notImplemented('V0.3.0')
+      const admin = c.get('admin')!
+      const requestId = c.get('requestId')
+
+      const parsed = PaginationQuery.safeParse(c.req.query())
+      if (!parsed.success) {
+        throw new ApiError('invalid_request', parsed.error.issues[0]?.message ?? 'invalid query')
+      }
+
+      // 只列本租户 —— 一把 Admin Key 不得横跨租户,列表端点是最容易漏的一处:
+      // 它不接收 subjectId,没有 assertTenant 可挂,必须在查询层就圈死。
+      const all = await store.list({ tenantId: admin.tenantId })
+
+      const cursor = parsed.data.cursor
+      const start = cursor === undefined ? 0 : all.findIndex((s) => s.id === cursor) + 1
+      const page = all.slice(start, start + parsed.data.limit)
+      const nextCursor = start + parsed.data.limit < all.length ? (page.at(-1)?.id ?? null) : null
+
+      options.audit.record({
+        at: new Date().toISOString(),
+        actor: admin.label,
+        tenantId: admin.tenantId,
+        action: 'admin.listSubjects',
+        target: `tenant:${admin.tenantId}`,
+        requestId,
+      })
+
+      return c.json({ data: page.map(toWireSubject), nextCursor, requestId })
+    })
+
+    app.get('/v1/admin/subjects/:id', async (c) => {
+      if (store === undefined) throw notImplemented('V0.3.0')
+      const admin = c.get('admin')!
+      const requestId = c.get('requestId')
+      const subjectId = c.req.param('id')
+
+      const subject = await store.get(subjectId)
+      if (subject === undefined) throw new ApiError('not_found', 'subject not found')
+      assertTenant(admin, subject.tenantId)
+
+      options.audit.record({
+        at: new Date().toISOString(),
+        actor: admin.label,
+        tenantId: admin.tenantId,
+        action: 'admin.getSubject',
+        target: subjectId,
+        requestId,
+      })
+
+      return c.json({ subject: toWireSubject(subject), requestId })
     })
 
     // ---- planned 端点:从契约里读,不手写清单 ----

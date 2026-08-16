@@ -10,12 +10,14 @@
 import type { Context as CordisContext } from '@deepseek-ai/cordis'
 import { Hono } from 'hono'
 import type { AdminKeyResolver } from './admin-keys.ts'
+import type { ScimTokenResolver } from './scim-keys.ts'
 import { notFound } from './errors.ts'
 import {
   adminAuth,
   errorHandler,
   requestIdMiddleware,
   runtimeAuth,
+  scimAuth,
   type GatewayEnv,
 } from './middleware.ts'
 
@@ -37,6 +39,20 @@ export interface GatewayOptions {
   readonly runtimeRoutes?: RouteRegistrar
   /** Admin 端点(`/v1/admin/*`)。Session 4 提供。 */
   readonly adminRoutes?: RouteRegistrar
+  /**
+   * SCIM 挂载(V0.3.0 Session 6)。挂在 `/scim/v2`,**不占用 `/v1/`** ——
+   * SCIM 有自己的错误格式与版本节奏,混进 `/v1/` 会把两套契约绑在一起。
+   *
+   * 一个挂载点服务一个身份源。多 IdP 并存的 SCIM 挂载留给 V0.5.0 ——
+   * 那需要按 source 划分基址,而基址是配在供给方界面里的对外契约,不能反复改。
+   */
+  readonly scim?: {
+    /** 本挂载点服务的身份源。token 属于别的源一样 401。 */
+    readonly source: string
+    /** `createScimApp()` 的产物。 */
+    readonly app: Hono
+    readonly tokens: ScimTokenResolver
+  }
 }
 
 /**
@@ -64,6 +80,14 @@ export function createGateway(options: GatewayOptions): Hono<GatewayEnv> {
   app.use('/v1/admin/*', adminAuth(options.adminKeys))
   app.use('/v1/sessions', runtimeAuth(options.ctx))
   app.use('/v1/sessions/*', runtimeAuth(options.ctx))
+
+  // SCIM 是第三类令牌,自己的前缀、自己的鉴权、自己的错误格式。
+  // 三类令牌的互斥由各自的中间件保证:SCIM token 进 /v1/* 过不了
+  // runtimeAuth/adminAuth,运行时 token 与 Admin Key 进 /scim/* 过不了 scimAuth。
+  if (options.scim !== undefined) {
+    app.use('/scim/v2/*', scimAuth(options.scim.tokens, options.scim.source))
+    app.route('/scim/v2', options.scim.app)
+  }
 
   options.runtimeRoutes?.(app)
   options.adminRoutes?.(app)

@@ -43,7 +43,15 @@ export { EventBuffer, translateEvent } from './sessions/events.ts'
 export type { SequencedEvent, TranslateOptions, UpstreamSessionEvent } from './sessions/events.ts'
 
 export { registerAdminRoutes } from './admin/routes.ts'
-export type { AdminRouteOptions, SubjectLookup } from './admin/routes.ts'
+export type {
+  AdminRouteOptions,
+  MirrorSubject,
+  SubjectLookup,
+  SubjectMirrorReader,
+} from './admin/routes.ts'
+
+export { InMemoryScimTokenResolver } from './scim-keys.ts'
+export type { ScimIdentity, ScimTokenResolver } from './scim-keys.ts'
 
 export { ConsoleAuditSink, NullAuditSink } from './admin/audit.ts'
 export type { AuditRecord, AuditSink } from './admin/audit.ts'
