@@ -55,7 +55,7 @@ DeepSeek Harness（npm 依赖 @deepseek-ai/dsh-*，精确锁版）
 | V0.3.0     | 身份互操作:Subject Mirror + SCIM 2.0 + 租户映射 + Webhook | 2 周 | <span style="color:#d00000">开发完成</span>        |
 | V0.4.0     | 计量与治理:metering + policy + model-router + audit       | 3 周 | <span style="color:#d00000">开发完成</span>        |
 | V0.4.1     | `fs-tenant` 多工作区改造                                  | 3 天 | <span style="color:#d00000">开发完成</span>        |
-| **V0.4.5** | supervisor 进程隔离                                       | 2 周 | <span style="color:#d00000">开发中</span>          |
+| **V0.4.5** | supervisor 进程隔离                                       | 2 周 | <span style="color:#d00000">开发完成</span>        |
 | V0.5.0     | 控制平面 / **企业自服务配置台**                           | 5 周 | 待启动                                             |
 | **V0.5.5** | **工作台后端**:工作区 / 产物 / 预授权 / 作业 / 附件       | 3 周 | 待启动                                             |
 | V0.6.0     | 支付:billing 契约 + local + 首个 hosted 实现              | 3 周 | 待启动                                             |
@@ -141,7 +141,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 > 已发布版本的 Session 一律标 ✅;开发中版本按实际进度标记,每完成一个即更新。
 >
 > 已发布:(暂无)
-> 开发中:**V0.4.5(supervisor 进程隔离)**
+> 开发完成待发布:**V0.4.5(supervisor 进程隔离)**
 > 开发完成待发布:V0.4.1(Session 0-2) · V0.4.0(Session 0-5) · V0.3.0(Session 0-7) · V0.2.0(Session 0-6) · V0.1.0(Session 0-8)
 > 后续规划:V0.4.5 · V0.5.0 · V0.5.5 · V0.6.0 · V0.6.5 · V0.7.0 · V0.8.0(见「后续版本规划」)
 
@@ -305,7 +305,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 
 ---
 
-## <span style="color:#d00000">●</span> M0.4.5 · supervisor 进程隔离(Session 0-4) <span style="color:#d00000">[开发中]</span>
+## <span style="color:#d00000">●</span> M0.4.5 · supervisor 进程隔离(Session 0-4) <span style="color:#d00000">[开发完成]</span>
 
 > **这一版换来的是「敢卖给互不信任的用户」。** 到 V0.4.1 为止,隔离级别只有
 > **逻辑隔离**,而 README、CLAUDE.md 第七节、`fs-tenant` 的文档全都写死了
@@ -321,22 +321,44 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 > **不做的事**:不做容器隔离的实现(profile 里留档位,实现随部署方的编排系统);
 > 不做跨机调度(那是 V0.5.0 控制平面的事);不改 `/v1` 契约。
 
-### ⚠️ 开工前的一处更正:动机里不含「解决无 cancel」
+### 交付内容(改了什么)
 
-路线图里这一版的引言写着「顺带解决上游 SDK 协议没有 cancel 的问题」。
-**这句话是错的,且 `ARCHITECTURE.md` §2.4 明确警告过它会误导:**
+| 交付                              | 说明                                                                  |
+| --------------------------------- | --------------------------------------------------------------------- |
+| `@dshwar/supervisor`(新包)       | 一 principal 一进程的进程池。租约模型、进程上限、空闲回收、两种健康检查、僵尸进程防护 |
+| `gateway/src/worker.ts`(新)      | 子进程入口。装配复用 `assembleRuntime()`,不重写一份                     |
+| `gateway/src/sessions/remote.ts`(新) | 跨进程 agent 句柄,戴与进程内句柄相同的 `AgentHandleLike` 面孔          |
+| `gateway/src/isolation.ts`(新)   | 三档隔离的**唯一**分派点                                               |
+| `GatewaySessionStore.fail()`     | 崩溃终结会话 → SSE 推 `error` 后收流,不静默丢失                        |
+| `AgentHandleLike.agent.ctx`      | 由 `CordisContext` 收窄为 `SessionEventSource`(只含 `on('session/event')`) |
+| `AgentFactoryFn`                 | 入参加 `principal` —— 进程按主体分配                                   |
+| `gateway.config.json`            | 新增 `isolation` 段,并真的接进 `server.ts`                            |
+| README / CLAUDE.md §7 / ARCHITECTURE.md §2.4 / DEPLOYMENT.md §2.5 | 隔离矩阵改写,新增「进程隔离仍然不是什么」 |
 
-> V0.2.0 Session 0 实测:**进程内**的 `Agent` 接口有 `cancel(cause)`,
-> `AgentHandle.dispose()` 亦然,两者都真的截断输出。DSHWAR 网关走进程内驱动,
-> **不受此限**。把「取消」列为 supervisor 的动机,会让人误以为 V0.2.0 的网关
-> 做不了取消,从而在错误的时间提前一个组件。
+### 核心改进要点
 
-网关的取消**早在 V0.2.0 就能用**,`DELETE /v1/sessions/{id}` 有测试。
-**本版本唯一的动机是跨信任边界的安全隔离。**
+1. **红线 2 靠契约而非分支达成**。跨进程句柄满足与进程内句柄完全相同的
+   `AgentHandleLike`,于是会话簿、SSE、计量、`DELETE` 全部一行不改,
+   `/v1` 契约零变更。`process` 档复用既有验收路径**一字不改**跑通。
+2. **取消是代价不是收益**。进程内的 `Agent.cancel()` 从 V0.2.0 起就可用;
+   进程隔离把它变成待解问题。实现为三级降级:IPC 取消(正路,只停本路会话)
+   → SIGTERM → SIGKILL。已更正 `CLAUDE.md` 与 `ARCHITECTURE.md` 里反向的表述。
+3. **seq 原样透传,不重编号**。实测上游 seq 是每 agent 各自从 0 起算,
+   会话怎么分组都不影响它 —— 重编号只会制造两档不一致的风险面。
+4. **默认不变**(红线 1),且配错级别**拒绝启动**而非静默回退。
+5. **满了就拒绝,不排队**。排队会把「进程不够」升级成「网关被挂起的请求拖垮」。
 
-⚠️ 反过来说,**进程隔离会把已经好用的取消变成一个需要重新解决的问题** ——
-子进程里的 agent 不再有进程内句柄可调。这是本版本的**代价**而非收益,
-Session 0 必须先验证它能被解决。
+### 实测代价(五次采样,Windows 开发机)
+
+冷启动 **~115 ms**(其中插件装配仅 ~13 ms)、常驻 **~58 MB/进程**。
+冷启动九成花在进程创建与模块加载上 —— 优化装配代码没用,只能压进程复用率,
+这正是选「一 principal 一进程」而非「一会话一进程」的原因。
+
+### 已知缺口(已开独立任务)
+
+- 配额判定挂在发起轮次上,而进程在建会话时就起来 —— 配额耗尽的租户仍能占用进程槽位
+- `container` 档只是配置位,实现交给部署方的编排系统
+- 待发布前补:Linux 上重测性能数字;node-pty 两层嵌套
 
 ### Session 状态
 
@@ -375,298 +397,7 @@ Session 0 必须先验证它能被解决。
 4. **不重做沙箱。** 进程隔离之上的 OS 沙箱仍喂给上游 `sandbox-policy`,
    容器档只留配置位,实现交给部署方的编排系统。
 
----
-
-### ✅ Session 0: 可行性证伪:跨进程驱动(2 天,止损点)
-
-> **结论:可行,不触发止损。** 验证 A/B/C/D 全绿,E 延至 Session 1(理由见报告 §5)。
-> 关键结论:**验证 C 的手段 a 可行** —— IPC 送取消 + 子进程内 `agent.cancel()`
-> 真的截断输出(40 个增量只收到 4 个),**红线 3 保得住**。
-> 冷启动 **~115 ms**、常驻 **~58 MB**(11 插件全集,Windows 开发机)。
-> 验证落成常驻契约测试 `adapters/dsh-0.1.0/test/cross-process.test.ts`(10 条断言)。
->
-> **带进后续 Session 的三条结论:**
->
-> 1. **Session 1** —— 进程上限是必需项(58 MB/进程,100 principal ≈ 5.8 GB);
->    空闲回收默认值要保守;补测验证 E(node-pty 两层嵌套,Linux + Windows)。
-> 2. **Session 2** —— 取消走三级降级「IPC cancel 为正路 → SIGTERM 兜底 →
->    SIGKILL 最后手段」;**seq 的权威留在父进程会话簿**,子进程 seq 只作进程内序
->    (否则多进程混流会撞号,`Last-Event-ID` 续传就废了)。
-> 3. **Session 4** —— 报告 §6 的数字须在 Linux 上重测后才写进部署文档。
-
-> ⚠️ **与前四个版本的 Session 0 同级。** 本版本压在一条未验证的假设上:
-> **网关能在子进程里驱动 agent,并把流式事件完整拿回来。**
->
-> V0.2.0 Session 0 验证的是**进程内**驱动。跨进程是另一回事:上游只提供
-> stdio JSON-RPC 的 SDK 协议,而那条协议**没有 cancel 与 session-close**
-> (`ARCHITECTURE.md` §2.4)。若事件回传或取消做不到,进程隔离就只能靠
-> 「杀进程」这一种粗暴手段,而那会丢掉正在进行的一轮的全部输出。
-
-```
-读取 CLAUDE.md 与 ARCHITECTURE.md §2.4。
-
-本次任务:验证跨进程驱动可行。不写产品代码，产出验证报告。
-
-1. 验证 A —— 子进程能不能起来并装配
-   - 从父进程 spawn 一个 Node 子进程，在里面装配 gateway/src/runtime.ts 的插件集
-   - 确认 principal 能通过启动参数/IPC 传进去，且子进程只认那一个 principal
-   - 记录冷启动耗时（这是进程隔离的主要代价，要有数）
-
-2. 验证 B —— 流式事件能不能完整回传
-   - 子进程里发起一轮，事件经 IPC 回到父进程
-   - 断言：事件序列与进程内驱动**完全一致**（对照 V0.2.0 的事件词表）
-   - 断言：seq 单调，不丢事件
-
-3. 验证 C —— 取消 ★ 本版本的代价
-   - 父进程要求取消 → 子进程真的截断输出
-   - 三种手段各测一遍，记录哪种可用：
-     a. IPC 发取消消息，子进程内部调 agent.cancel()
-     b. SIGTERM
-     c. SIGKILL
-   - 关键问题：a 可行吗？可行则取消语义不退化；只有 b/c 可行则要评估
-     「杀进程」对正在进行的一轮意味着什么
-
-4. 验证 D —— 崩溃可观测
-   - 子进程异常退出时，父进程能否区分「正常结束」与「崩溃」
-   - 退出码与 stderr 是否足以定位
-
-5. 验证 E —— node-pty 在子进程里仍可用
-   - V0.1.0 验证 D 验过「外部拉起的子进程」，这里确认**两层嵌套**仍成立
-   - Linux 与 Windows 各跑一次（Windows 上游 ProcessInspector 不支持，记录退化行为）
-
-== 产出 ==
-- docs/FEASIBILITY-REPORT-V45.md，逐条断言 + 实际输出 + 冷启动耗时
-- 若验证 C 的 a 不可行：在报告里给出取消语义的替代方案，并更新任务书
-```
-
-验证:
-
-- 止损判据:**若事件无法完整回传**,进程隔离改为「只隔离文件系统与凭据,
-  仍在父进程驱动」的弱化形态,或整版推迟
-- `/publish chore: {v} session 0 cross-process feasibility`
-
----
-
-### ✅ Session 1: `@dshwar/supervisor` 契约与进程池
-
-> **交付**:`@dshwar/supervisor`(37 条测试)。核心设计三条 ——
->
-> 1. **租约模型**。`acquire(principal)` 返回 `Lease` 而非进程本身:同一 principal
->    的多个并发会话共用一个进程、各持一个 lease,IPC 消息打 `leaseId` 标签。
->    **取消因此只作用于本路会话**,不波及同进程的兄弟会话 —— 否则「隔离」
->    反而制造了新的越界。
-> 2. **满了就拒绝,不排队**(任务书要求选一个并说明)。排队会让「进程不够」
->    这个局部问题升级成「网关被挂起的请求拖垮」的全局问题。`AtCapacityError`
->    由网关映射成 `503` + `Retry-After`,沿用 `policy` 的判定与执行分离。
-> 3. **健康检查两种都做**。`isAlive`(没退出)与 `ping`(事件循环没卡死)是两回事;
->    只查存活会把死循环的进程一直留在池子里占着 58 MB。
->
-> **一处实测更正,写下来免得后人误信测试**:「父进程退出时子进程不残留」这条
-> 在本机与 CI 上**会白过** —— 绕开守卫直接 fork 的子进程同样随父进程消失,
-> 连不带 IPC 的也一样。那不是 Windows 语义(Windows 根本没有父子生命周期绑定),
-> 是**测试沙箱把整棵进程树放进了会连坐清理的作用域**。守卫本身改由两条
-> 平台无关的机制测试钉住(登记则杀、未登记则不杀)。
->
-> 验证 E 切开处理:「子进程还能否再拉起孙进程」是 supervisor 的风险,已测;
-> 「node-pty 原生绑定在深度 2」是 node-pty 的风险,supervisor 碰不到,留给 Session 3。
-
-```
-读取 CLAUDE.md。本次任务:进程池编排。
-
-1. 契约
-   - Supervisor.acquire(principal) → ProcessHandle
-   - ProcessHandle: 送消息 / 收事件 / 取消 / 释放
-   - 一 principal 一进程；同一 principal 的并发会话复用同一进程
-     （不是一会话一进程——那是数量级的差别）
-
-2. 生命周期（R2）
-   - spawn：冷启动，参数里带 principal 与 profile
-   - 健康检查：进程还活着吗、还能响应吗（两者不同）
-   - 空闲回收：多久没请求就回收，可配
-   - 上限：单机最多多少进程，超了怎么办（排队还是拒绝——选一个并说明）
-
-3. 与隔离级别的关系
-   - 本包只实现「进程」这一档
-   - 「逻辑」档不经过本包；「容器」档留接口，实现交给部署方
-
-== 测试 ==
-- 同一 principal 的两个会话复用同一进程
-- 不同 principal 落在不同进程（正反各测）
-- 空闲回收真的回收，且回收后再 acquire 能重新起来
-- 进程上限触发时的行为与声明一致
-- 父进程退出时子进程不残留（僵尸进程是运维噩梦）
-```
-
-验证:
-
-- `/publish feat: {v} session 1 supervisor process pool`
-
----
-
-### ✅ Session 2: 跨进程会话驱动
-
-> **交付**:`gateway/src/worker.ts`(子进程入口)+ `gateway/src/sessions/remote.ts`
-> (跨进程句柄)+ 13 条测试。
->
-> **红线 2 的实现方式**:不在路由里到处写 `if (isolation === 'process')`,而是让
-> 跨进程句柄**满足与进程内句柄完全相同的 `AgentHandleLike` 契约**。于是会话簿、
-> SSE 路由、计量采集、`DELETE /v1/sessions/{id}` 全部一行不改,分派只发生在
-> 创建句柄的那一处。为此把 `AgentHandleLike.agent.ctx` 从完整的 `CordisContext`
-> 收窄成只含 `on('session/event')` 的 `SessionEventSource`。
->
-> **红线 3 保住**:`agent.cancel()` 走 IPC 送指令,不杀进程。有测试断言取消后
-> **再等 300 ms 也没有迟到的事件**(只断言截断时的计数会漏掉「其实没停,只是慢」),
-> 另有一条断言取消一路不波及同进程的另一路。
->
-> **seq 不重编号**。Session 0 的报告曾建议把 seq 权威收归父进程,那是没实测时的
-> 保守取向。本 Session 实测:上游 seq 是**每 agent 各自从 0 起算**的,不是进程内
-> 全局递增 —— 所以「哪些会话挤在同一个进程里」根本不影响 seq。重编号只会凭空
-> 制造一个进程内与跨进程不一致的风险面。**对照测试逐条相同,含 seq。**
->
-> **R5 不静默丢失**:`GatewaySessionStore.fail()` 终结会话、推 `error` 事件、
-> SSE 冲完待发事件后收流(不再无限发心跳)。合成事件借 `lastSeq + 1` 是安全的,
-> 前提正是「终结之后不会再有上游事件进来」—— 没有后来者就没有撞号的对象。
->
-> **两处顺带发现,已开独立任务**(都不是 V0.4.5 引入的):
->
-> 1. 契约的映射表写着 `agent/error` → `error`,但那是 cordis **Context** 上的事件,
->    不是 `SessionEventMap` 成员,`translateEvent` 永远看不到它 —— agent 报错时
->    客户端的流只是静默停住。
-> 2. `assembleRuntime()` 装了 `dsh-llm` 却**从未注册任何 provider**,全仓唯一的
->    `registerAdapter` 在测试 harness 里。真实网关起得来但发不出一轮对话。
-
-```
-读取 CLAUDE.md。本次任务:把会话驱动搬到子进程,语义不退化。
-
-1. 事件回传（R3）
-   - 子进程的 session/event → IPC → 父进程的会话簿
-   - ★ SSE 语义必须不变：同样的事件词表、同样的 seq 单调、
-     同样的 Last-Event-ID 续传
-   - 对照测试：同一段输入，进程内驱动与跨进程驱动的事件序列逐条相同
-
-2. 可靠取消（R4）★ 红线 3
-   - 按 Session 0 验证 C 的结论实现
-   - DELETE /v1/sessions/{id} 在进程隔离下必须**仍然**立刻截断输出
-   - 有测试断言「取消后不再有事件到达」，而不只是「接口返回了 200」
-
-3. 崩溃恢复（R5）
-   - 子进程死亡 → 该进程上的全部会话标记为失败，SSE 发 error 事件后关闭
-   - **不静默丢失**：客户端必须知道会话没了，而不是流突然停住
-   - 崩溃进审计
-
-== 测试 ==
-- 进程内 vs 跨进程的事件序列逐条对照
-- 取消后不再有事件到达（不是只看接口返回码）
-- 杀掉子进程 → 相关会话收到 error 事件而非静默挂起
-- 崩溃记录进审计
-```
-
-验证:
-
-- 红线 3:取消语义不退化
-- `/publish feat: {v} session 2 cross-process session driving`
-
----
-
-### ✅ Session 3: 隔离级别与网关接线
-
-> **交付**:`gateway/src/isolation.ts` + 12 条测试。四条红线全部有断言。
->
-> - **红线 1**:`DEFAULT_ISOLATION_LEVEL === 'logical'`,且 `parseIsolationLevel`
->   对认不出的值**直接抛**而不是静默回退 —— 配置写错一个字母就跑在逻辑隔离上,
->   而部署方以为开了进程隔离,这个差别是安全等级的差别。
-> - **红线 2**:分派只在 `isolation.ts` 一处。`process` 档复用 V0.2.0 那套
->   「仅凭 HTTP 完成一次会话」的验收路径**一字不改**跑通,两档的事件类型序列相同。
->   为此给 `AgentFactoryFn` 加了 `principal`(进程按主体分配),这是内部接口,
->   `/v1` 契约零变更,`check:contract` 绿。
-> - **红线 4**:`container` 档只是配置位,构造时抛错并指出正路(自定义
->   `ProcessLauncher` 喂给 `Supervisor`)。
-> - **R7**:计量归属跨进程后仍正确;配额判定仍在父进程;
->   spawn / 回收 / 崩溃经 `auditSupervisorEvents` 进同一条审计管道,不另起一套。
->
-> **一处被红线逼出来的折中**:进程池满时返回 `rate_limited`(429)而非语义更贴切的
-> 503。契约的 `ErrorCode` 是闭集,加新码会被冻结检查判为破坏性变更,而红线 2 要求
-> `/v1` 零变更。闭集里唯一「退避后重试」的就是它,客户端与负载均衡器的处置恰好对。
-> 契约下次开口时(V0.5.0)应补 `unavailable`。
->
-> **一个已知缺口,已开独立任务并用测试钉住现状**:配额挂在 `/turns` 上,而进程在
-> **建会话**时就起来了 —— 配额耗尽的租户仍能不断建会话、占满进程槽位,把付费租户
-> 挤出去。逻辑隔离下这几乎没有成本,是进程隔离把它放大成了问题。
-
-```
-读取 CLAUDE.md 第七节。本次任务:三档隔离由 profile 选,治理照旧。
-
-1. 隔离级别（R6）
-   - logical | process | container 三档
-   - ★ 红线 1：默认仍是 logical。进程隔离要显式开
-   - container 档本版本只留配置位与文档，不实现（红线 4）
-
-2. 网关接线
-   - createAgent 的实现按隔离级别分派
-   - ★ 红线 2：/v1 契约零变更，check:contract 必须绿
-   - 客户端不该知道自己跑在哪种隔离下
-
-3. 治理联动（R7）
-   - 计量:子进程的用量事件回传后，归属逻辑不变
-   - 配额:判定仍在父进程（policy 不进子进程）
-   - 审计:进程 spawn / 回收 / 崩溃进审计
-
-== 测试 ==
-- 三档都能起来，且默认是 logical
-- 切到 process 档后，端到端会话仍跑通（复用 V0.2.0 的验收测试）
-- 计量归属在跨进程下仍正确
-- check:contract 绿
-```
-
-验证:
-
-- `/publish feat: {v} session 3 isolation levels and gateway wiring`
-
----
-
-### ✅ Session 4: 文档与发布准备
-
-> **交付**:README 隔离矩阵加「状态」列并新增「进程隔离**仍然不是**什么」一节;
-> `CLAUDE.md` 第七节与 `ARCHITECTURE.md` §2.4 同步并**更正了「进程隔离顺带解决
-> cancel」这句反向的表述**;`docs/DEPLOYMENT.md` 新增 §2.5(选型指引 + 实测的
-> 冷启动/内存数字 + 容量规划算法);`CHANGELOG.md` 加 0.4.5 节;
-> 发布清单标题从「V0.1.0」改为「首发清单(目标版本 0.4.5)」并加了 8 条确认项。
->
-> **一处本来会变成装饰品的东西**:隔离配置最初写进了 `profiles/*.yml`,
-> 但那些文件是顶层 YAML **序列**(dsh loader 的插件清单格式),加 mapping 键
-> 会让文件解析失败 —— 而漂移测试只比对插件名,没抓到。隔离级别是网关的部署决策
-> 而非 cordis 插件,已挪到 `gateway.config.json`,**并接进 `server.ts` 且有测试
-> 断言配错级别时拒绝启动**。一个「文档写了、示例配了、代码不读」的配置键
-> 比没有更糟:部署方以为开了进程隔离,实际跑在逻辑隔离上。
->
-> **两处留给发布前的实测**(已进发布清单):Linux 上重测冷启动与内存;
-> 补测 node-pty 在两层嵌套下是否可用。
-
-```
-读取 CLAUDE.md 第三节与第四节。本次任务:改写对外承诺。
-
-★ 本 Session 的重点是**文档的准确性**，因为隔离级别是安全承诺，
-写错的代价是采用者基于错误信息做部署决策。
-
-1. 隔离矩阵改写
-   - README 的隔离模型警告：进程档从「V0.4.5」变成「可用」
-   - 明确写出进程隔离**仍不是**什么：它不是容器，不防内核提权
-   - CLAUDE.md 第七节、ARCHITECTURE.md §2.4 同步
-
-2. 部署文档
-   - docs/DEPLOYMENT.md 加隔离级别一节：怎么选、代价是什么
-   - 冷启动耗时、内存开销要有实测数字（Session 0 的报告里有）
-
-3. profiles/
-   - enterprise.yml 切到 process 档
-   - team.yml 保持 logical（红线 1）
-
-4. 十道门禁 + 发布准备检查
-```
-
-验证:
-
-- `/publish docs: {v} session 4 isolation docs and release readiness`
+> 实现细节见 SESSION_TASKS_HISTORY.md
 
 ---
 
