@@ -25,12 +25,13 @@
 # ⚠️ **隔离级别:本文件是插件清单,隔离级别配在 gateway.config.json。**
 #
 # 🚨 若配多于一个令牌(本 profile 的典型用法),**必须**同时配
-#   { "isolation": { "level": "process", "maxProcesses": 64 } }
+#   { "isolation": { "level": "process" } }
+# maxProcesses 可省 —— V0.4.7 起按机器内存推导,启动时打印依据。
 # 否则网关拒绝启动(V0.4.7 配置层闸门)。
 #
 # 原因不是隔离强度不够,是逻辑档下 principal 到不了 agent 执行层 ——
 # 多用户的文件全落进 anonymous/anonymous/ 互相覆盖。见 ARCHITECTURE.md §2.4。
-# 跨信任边界请等 V0.4.0 的进程隔离 supervisor。这条不是免责声明,是采用边界 ——
+# 进程隔离自 V0.4.5 起可用(@dshwar/supervisor)。这条不是免责声明,是采用边界 ——
 # 宁可劝退,不要让人从事故里学会(CLAUDE.md 第七节)。
 #
 # 上游版本:0.1.0-rc.6(精确锁版)

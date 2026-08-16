@@ -1,3 +1,5 @@
+<!-- 本文件的 ALS 误判是 unverified-plausible-causation.md 的例 1 -->
+
 # principal 作用域绑定
 
 > **状态**:V0.4.7 实施 B + 守卫。**A 已证伪** —— 需要上游钩子,提 issue,不排期。

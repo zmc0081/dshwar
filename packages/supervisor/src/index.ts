@@ -5,10 +5,15 @@
  *
  * 到 V0.4.1 为止,DSHWAR 只有**逻辑隔离**:所有 principal 跑在同一个进程里,
  * 靠 `ctx.isolate()` 划分作用域。README、CLAUDE.md 第七节、`fs-tenant` 的文档
- * 都写死了「逻辑隔离仅适用于互相信任的用户」—— 那句话是对的,因为 Harness 的
- * agent 能执行 shell、读写文件系统,提示词注入、恶意 MCP、污染 skill 都可越界。
+ * 都写死了「逻辑隔离仅适用于互相信任的用户」。
  *
- * 一 principal 一进程之后,越界成本从「一段提示词」升到「一个进程逃逸漏洞」。
+ * ⚠️ **那句话已被 V0.4.6 的实测推翻,而且是往更糟的方向。** 它说的是恶意方
+ * 能不能越界;真实情况是逻辑档下 principal 到不了 agent 执行层,多用户的文件
+ * 全落进 `anonymous/anonymous/` **互相静默覆盖** —— 根本没有分隔可言。
+ *
+ * 所以逻辑档只支持单个 principal(V0.4.7 起配多用户身份拒绝启动),
+ * **本包是多用户的唯一可选项**,不再是「跨信任边界才需要的加强档」。
+ * 一 principal 一进程之后,越界成本才从「一段提示词」升到「一个进程逃逸漏洞」。
  *
  * ## 这个包**不**换来什么
  *
@@ -37,6 +42,15 @@ export {
   type LaunchSpec,
   type ProcessLauncher,
 } from './launcher.ts'
+
+export {
+  deriveMaxProcesses,
+  GATEWAY_BASELINE_RSS_MB,
+  MAX_PROCESSES_CEILING,
+  MEMORY_BUDGET_FRACTION,
+  RSS_PER_PROCESS_MB,
+  type DerivedCapacity,
+} from './cost.ts'
 
 export {
   asChildMessage,

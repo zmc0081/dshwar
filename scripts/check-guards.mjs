@@ -378,6 +378,88 @@ function checkStalePrincipalConsumers() {
   }))
 }
 
+/**
+ * CI 不得枚举门禁 —— 门禁的唯一清单是 `check:all`。
+ *
+ * ## 为什么这条守卫存在
+ *
+ * 首次真实 runner 复盘查出:本地 `check:all` 与 `ci.yml` 跑的不是同一组,
+ * 两边各有对方没有的项(CI 少 `typecheck:scripts` 与 `verify:assertions`,
+ * 本地少 `format:check` / `test:contract` / `verify:guards`)。
+ * 于是「本地全绿」从来就不代表 CI 会绿,而**漂移的那一刻是静默的**。
+ *
+ * 当时的修法是把两边对齐,再写一条「改门禁要同时改两处」的规矩。
+ * **规矩不够**:这个项目已经三次证明靠人记住的事会被忘
+ * (principal 消费方登记、新包的 test tsconfig、ci.yml 同步),
+ * 而每一次的最终解法都是加守卫。
+ *
+ * ## 这条守卫比「断言两个清单相等」更强
+ *
+ * 相等性守卫承认两个清单存在,只是要求同步。这条不允许第二个清单存在:
+ * **ci.yml 里除了 `pnpm check:all` 之外,不得出现 check:all 里的任何一条。**
+ * 漂移不是被检测到,是在结构上不可能发生。
+ *
+ * 两个方向都要断言,少一个就有绕过的路:
+ * 1. ci.yml **必须**有一步跑 `pnpm check:all` —— 否则删掉入口即可全绿
+ * 2. ci.yml **不得**单列 check:all 里的任何一条 —— 否则枚举会慢慢长回来
+ *
+ * ## 什么可以留在 ci.yml 里
+ *
+ * 判据是「**在开发机上跑没有意义**」:性能基线依赖固定机器规格、
+ * PTY 依赖 Linux。它们不属于 check:all,所以不在这条守卫的管辖内 ——
+ * 守卫只看 `pnpm <script>` 形式的调用,那两个 job 跑的是
+ * `node scripts/...` 与 `pnpm build`,不会误伤。
+ */
+function checkCiEnumeratesGates() {
+  const ciPath = p('.github/workflows/ci.yml')
+  if (!existsSync(ciPath)) {
+    return [{ file: '.github/workflows/ci.yml', line: 0, text: 'CI workflow 不存在' }]
+  }
+  const ci = readFileSync(ciPath, 'utf8')
+
+  // 门禁清单从 package.json 的 check:all 里现取 —— 不在这里另抄一份,
+  // 否则这条守卫自己就成了第二个清单,正是它要消灭的东西。
+  const checkAll = JSON.parse(readFileSync(p('package.json'), 'utf8')).scripts?.['check:all'] ?? ''
+  const gates = checkAll
+    .split('&&')
+    .map((s) => s.trim().replace(/^pnpm\s+/, ''))
+    .filter((s) => s !== '')
+
+  const hits = []
+
+  // 方向 1:入口必须在
+  if (!/\bpnpm\s+check:all\b/.test(ci)) {
+    hits.push({
+      file: '.github/workflows/ci.yml',
+      line: 0,
+      text: 'CI 里找不到 `pnpm check:all` —— 门禁入口被删了',
+    })
+  }
+
+  // 方向 2:不得单列任何一条
+  const lines = ci.split(/\r?\n/)
+  for (const [i, line] of lines.entries()) {
+    // 只看真正执行的地方(run:),注释与 name: 里提到脚本名是正常的说明文字
+    const run = /^\s*(?:-\s*)?run:\s*(.+)$/.exec(line)
+    if (run === null) continue
+    const command = run[1]
+    for (const gate of gates) {
+      if (gate === 'check:all') continue
+      // 词边界:避免 `check:contract` 被 `check:contract-foo` 之类误伤
+      if (
+        new RegExp(`\\bpnpm\\s+${gate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!\\S)`).test(command)
+      ) {
+        hits.push({
+          file: '.github/workflows/ci.yml',
+          line: i + 1,
+          text: `单列了门禁 \`pnpm ${gate}\` —— 它已在 check:all 里,这里重复即是第二份清单`,
+        })
+      }
+    }
+  }
+  return hits
+}
+
 /** 去掉 JSONC 注释。根 tsconfig 里有大段说明性注释,JSON.parse 咽不下。 */
 function stripJsonComments(text) {
   return text.replace(/^\s*\/\/.*$/gm, '')
@@ -482,6 +564,18 @@ if (unregistered.length === 0 && stale.length === 0) {
   console.log('        登记处见 scripts/check-guards.mjs 的 PRINCIPAL_CONSUMERS,')
   console.log('        背景见 docs/DECISIONS/principal-scope-binding.md')
   for (const h of [...unregistered, ...stale]) console.log(`        ${h.text}`)
+}
+
+const ciDrift = checkCiEnumeratesGates()
+if (ciDrift.length === 0) {
+  console.log('  通过  CI 只调 check:all 一个入口,没有第二份门禁清单')
+} else {
+  failed += 1
+  console.log(`  违规  CI 与 check:all 之间出现了第二份门禁清单  (${ciDrift.length} 处)`)
+  console.log('        门禁的唯一清单是 package.json 的 check:all。ci.yml 只调那一个入口。')
+  console.log('        首次真实 runner 复盘的根因就是两边各有对方没有的项 ——')
+  console.log('        而漂移的那一刻是静默的:本地全绿,CI 才红。')
+  for (const h of ciDrift) console.log(`        ${h.file}:${h.line}  ${h.text}`)
 }
 
 console.log('')

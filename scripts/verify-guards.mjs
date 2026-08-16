@@ -32,17 +32,10 @@
  * 退出码:全绿 0,任一守卫没拦住 1。
  */
 import { execFileSync } from 'node:child_process'
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-  copyFileSync,
-  unlinkSync,
-} from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
+import { withRestoredFiles } from './lib/mutate.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const p = (...seg) => join(REPO, ...seg)
@@ -167,9 +160,7 @@ try {
   // ---------------------------------------------------------------------
   {
     const target = p('README.md')
-    const backup = `${target}.guardbak`
-    copyFileSync(target, backup)
-    try {
+    withRestoredFiles([target], () => {
       const original = readFileSync(target, 'utf8')
       // 把兼容矩阵里的 DSHWAR 版本行改乱。
       // 不写死版本号,也不假设表格补白 —— prettier 会把表格列对齐,
@@ -188,10 +179,7 @@ try {
           version.ok ? 'check-version 放行了不一致的版本号' : undefined,
         )
       }
-    } finally {
-      copyFileSync(backup, target)
-      unlinkSync(backup)
-    }
+    })
   }
 
   // ---------------------------------------------------------------------
@@ -272,9 +260,7 @@ try {
     if (!existsSync(target)) {
       expect('6 篡改 adapters 假设后契约测试变红', false, 'adapters/dsh-0.1.0 尚未落地')
     } else {
-      const backup = `${target}.guardbak`
-      copyFileSync(target, backup)
-      try {
+      withRestoredFiles([target], () => {
         const original = readFileSync(target, 'utf8')
         const tampered = original.replace(
           /export const EXPECTED_UPSTREAM_VERSION = '[^']+'/,
@@ -296,10 +282,7 @@ try {
             contract.ok ? '契约测试放行了错误的上游版本假设 —— 它没在测上游' : undefined,
           )
         }
-      } finally {
-        copyFileSync(backup, target)
-        unlinkSync(backup)
-      }
+      })
     }
   }
 
@@ -462,15 +445,13 @@ try {
   // ---------------------------------------------------------------------
   {
     const target = p('packages/api-contract/openapi.json')
-    const backup = `${target}.guardbak`
-    copyFileSync(target, backup)
 
     // 显式带上 strip-types:Node 24 默认开,22.19 需要这个 flag,
     // 而 CI 的矩阵两个版本都跑
     const runContract = () =>
       run(['--experimental-strip-types', p('scripts', 'check-contract.mjs'), '--base', 'HEAD'])
 
-    try {
+    withRestoredFiles([target], (restore) => {
       // 8. 破坏性:删掉一个已发布的端点
       const doc = JSON.parse(readFileSync(target, 'utf8'))
       delete doc.paths['/v1/sessions/{id}/turns']
@@ -486,7 +467,7 @@ try {
       // 9b. 枚举**删值**仍是破坏性变更(V0.4.6 红线 3)
       //     这一条与 9c 成对:加值放宽了,删值不能跟着放宽 ——
       //     删值会让下游正在处理的分支变成死代码,而 default 兜不住。
-      copyFileSync(backup, target)
+      restore()
       const shrunk = JSON.parse(readFileSync(target, 'utf8'))
       shrunk.components.schemas.ErrorResponse.properties.error.properties.code.enum.pop()
       writeFileSync(target, JSON.stringify(shrunk, null, 2) + '\n', 'utf8')
@@ -499,7 +480,7 @@ try {
       )
 
       // 9c. 枚举**加值**被放行(V0.4.6 决策 1)
-      copyFileSync(backup, target)
+      restore()
       const grown = JSON.parse(readFileSync(target, 'utf8'))
       grown.components.schemas.ErrorResponse.properties.error.properties.code.enum.push('teapot')
       writeFileSync(target, JSON.stringify(grown, null, 2) + '\n', 'utf8')
@@ -515,7 +496,7 @@ ${added.output.slice(0, 400)}`,
       )
 
       // 9. 相容:加一个可选字段
-      copyFileSync(backup, target)
+      restore()
       const additive = JSON.parse(readFileSync(target, 'utf8'))
       additive.components.schemas.Session.properties.label = { type: 'string' }
       writeFileSync(target, JSON.stringify(additive, null, 2) + '\n', 'utf8')
@@ -526,10 +507,7 @@ ${added.output.slice(0, 400)}`,
         relaxed.ok && /property\.added/.test(relaxed.output),
         relaxed.ok ? undefined : `契约冻结检查误伤了相容变更:\n${relaxed.output.slice(0, 400)}`,
       )
-    } finally {
-      copyFileSync(backup, target)
-      unlinkSync(backup)
-    }
+    })
   }
 
   // ---------------------------------------------------------------------
@@ -701,11 +679,82 @@ ${added.output.slice(0, 400)}`,
   for (const file of created) {
     if (existsSync(file)) rmSync(file, { force: true })
   }
-  const bak = p('README.md.guardbak')
-  if (existsSync(bak)) {
-    copyFileSync(bak, p('README.md'))
-    unlinkSync(bak)
+  // 清理旧版本可能留下的备份残骸。现在的还原走 scripts/lib/mutate.mjs
+  // (原文留在内存里),不再产生 .guardbak —— 但历史上失败的运行会留下它。
+  for (const stale of [p('README.md.guardbak'), p('packages/api-contract/openapi.json.guardbak')]) {
+    if (existsSync(stale)) rmSync(stale, { force: true })
   }
+}
+
+// ---------------------------------------------------------------------
+// 21 CI 与 check:all 之间不得出现第二份门禁清单(V0.4.7 收口)
+//
+// ⚠️ **原本要求的负向验证是「故意在 check:all 里加一条 CI 看不到的检查,
+// 确认守卫红」。那个场景在新结构下已经不可能发生** —— CI 只调 check:all,
+// 新增的检查天然被 CI 跑到,没有「CI 看不到」这回事。
+//
+// 所以这里做三条,把话说全:
+//   21a 正向对照:往 check:all 里加一条 → 守卫**仍绿**
+//       (证明失败模式是被消灭了,不是被漏检了 —— 这两者在输出上长得一样)
+//   21b 负向:ci.yml 里单列一条门禁     → 守卫**必须红**(枚举长回来)
+//   21c 负向:ci.yml 里删掉 check:all   → 守卫**必须红**(入口没了)
+//
+// 21a 单独存在是必要的:只有 21b/21c 的话,一条「永远报红」的坏守卫
+// 也能全部通过。
+// ---------------------------------------------------------------------
+{
+  const pkgPath = p('package.json')
+  const ciPath = p('.github/workflows/ci.yml')
+  withRestoredFiles([pkgPath, ciPath], () => {
+    const pkgSrc = readFileSync(pkgPath, 'utf8')
+    const ciSrc = readFileSync(ciPath, 'utf8')
+
+    // 21a 正向对照 —— 加一条新门禁,不碰 ci.yml
+    {
+      const pkg = JSON.parse(pkgSrc)
+      pkg.scripts['check:probe'] = 'node -e "process.exit(0)"'
+      pkg.scripts['check:all'] = `${pkg.scripts['check:all']} && pnpm check:probe`
+      writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`, 'utf8')
+      const r = runGuards()
+      expect(
+        '21a 往 check:all 加一条新检查 → 守卫仍绿(CI 天然跑得到,不需要同步)',
+        r.ok,
+        r.ok ? undefined : '守卫报红了 —— 说明它在要求 ci.yml 同步,那正是要消灭的东西',
+      )
+      writeFileSync(pkgPath, pkgSrc, 'utf8')
+    }
+
+    // 21b 负向 —— ci.yml 里把一条门禁单列出来
+    {
+      writeFileSync(
+        ciPath,
+        ciSrc.replace(
+          '      - name: pnpm check:all\n        run: pnpm check:all',
+          '      - name: Lint\n        run: pnpm lint\n\n      - name: pnpm check:all\n        run: pnpm check:all',
+        ),
+        'utf8',
+      )
+      const r = runGuards()
+      expect(
+        '21b ci.yml 里单列 `pnpm lint` → 守卫变红(第二份清单长回来了)',
+        !r.ok,
+        !r.ok ? undefined : '守卫放行了枚举 —— 漂移会顺着这条路慢慢长回来',
+      )
+      writeFileSync(ciPath, ciSrc, 'utf8')
+    }
+
+    // 21c 负向 —— 把入口本身删掉
+    {
+      writeFileSync(ciPath, ciSrc.replace(/pnpm check:all/g, 'echo skipped'), 'utf8')
+      const r = runGuards()
+      expect(
+        '21c ci.yml 里删掉 `pnpm check:all` → 守卫变红(入口没了)',
+        !r.ok,
+        !r.ok ? undefined : '删掉门禁入口竟然还是绿的 —— 只查枚举、不查入口等于没查',
+      )
+      writeFileSync(ciPath, ciSrc, 'utf8')
+    }
+  })
 }
 
 // ---------------------------------------------------------------------

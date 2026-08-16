@@ -27,8 +27,8 @@ import type { AgentHandleLike, GatewaySessionStore } from './sessions/store.ts'
  *
  * | 档 | 越界成本 | 适用 |
  * | --- | --- | --- |
- * | `logical` | 一段提示词 | **仅限互相信任的用户** |
- * | `process` | 一个进程逃逸漏洞 | 跨信任边界 |
+ * | `logical` | 无 —— 多用户时根本没有分隔 | 🚨 **仅限单 principal**(V0.4.7) |
+ * | `process` | 一个进程逃逸漏洞 | **多用户的唯一可选项** |
  * | `container` | 一个内核提权漏洞 | 面向公众的多租户 SaaS |
  */
 export const ISOLATION_LEVELS = ['logical', 'process', 'container'] as const

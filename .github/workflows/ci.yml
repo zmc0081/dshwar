@@ -16,73 +16,46 @@ concurrency:
 permissions:
   contents: read
 
+# ════════════════════════════════════════════════════════════════════════
+# ⚠️ 本文件**不得枚举任何一条门禁**。
+#
+# 门禁的唯一清单是 `package.json` 的 `check:all`。这里只调那一个入口。
+#
+# 起因:首次真实 runner 复盘发现,本地 `check:all` 与 CI 跑的不是同一组 ——
+# 两边各有对方没有的项,于是「本地全绿」从来就不代表 CI 会绿。当时的修法是
+# 把两边对齐,并写下「改门禁要同时改两处」的规矩。
+#
+# **但这个项目已经反复证明,靠人记住的事会被忘,而且忘的那次是静默的**
+# (忘登记 principal 消费方、忘给新包加 test tsconfig、忘同步本文件)。
+# 每次的解法都是加守卫,这次也不例外 —— 只是这次能做得更彻底:
+# 与其守住「两个清单相等」,不如**只留一个清单**,漂移在结构上不存在。
+#
+# 这条不变式由 `scripts/check-guards.mjs` 的「CI 不得枚举门禁」守住,
+# 负向验证在 `scripts/verify-guards.mjs`。
+# ════════════════════════════════════════════════════════════════════════
+
 jobs:
-  # 守卫先跑、单独成 job:边界与锁版违规不该等 20 分钟的矩阵跑完才报出来,
-  # 而且它们与 Node 版本无关,跑两遍是浪费。
-  guards:
-    name: 纪律守卫
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
-      - name: 版本号一致性(CLAUDE.md 第四节)
-        run: pnpm check:version
-
-      - name: PR 自查清单(CLAUDE.md 第二节)
-        run: pnpm check:guards
-
-      - name: 开源纯净度(硬规则 9 —— SignPath 资格条件)
-        run: pnpm check:oss
-
-      - name: 守卫的负向测试 —— 确认守卫真的会拦
-        run: pnpm verify:guards
-
-      - name: Prettier
-        run: pnpm format:check
-
-  # 契约冻结单独成 job,因为它是唯一需要**历史**的检查:
-  # 基线是上一次提交里的那份 OpenAPI,而其它 job 用浅克隆就够了。
-  contract:
-    name: 契约冻结
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          # 浅克隆取不到基线,check-contract 会「跳过」而不是「通过」——
-          # 那正是这道检查最不该发生的事。
-          fetch-depth: 0
-
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
-      - name: 与目标分支比对 OpenAPI
-        env:
-          # PR 比目标分支;push 比上一个提交。
-          BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.event.pull_request.base.ref) || 'HEAD~1' }}
-        run: node --experimental-strip-types scripts/check-contract.mjs --base "$BASE_REF"
-
-  build:
-    name: 构建与测试 (Node ${{ matrix.node }})
+  gate:
+    name: 门禁 (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         # 与上游 engines 一致:^22.19.0 || >=24.0.0
+        #
+        # 矩阵直接架在 check:all 上,而不是另起一个「只跑测试」的 job ——
+        # 后者会把 typecheck / test / lint 的名字重新写进本文件,枚举就回来了。
+        # 代价是版本无关的检查(版本号一致性、Prettier、开源纯净度)跑两遍,
+        # 多花约一分钟。**用一分钟换掉一整类静默漂移,这个价很便宜。**
         node: [22, 24]
     steps:
       - uses: actions/checkout@v4
+        with:
+          # 契约冻结要读**上一个提交**里的 openapi.json 当基线。
+          # 浅克隆取不到,check-contract 会「跳过」而不是「通过」——
+          # 那正是这道检查最不该发生的事。
+          fetch-depth: 0
+
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -91,61 +64,24 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Typecheck
-        run: pnpm typecheck
+      # ★ 唯一的门禁入口。要加检查请改 package.json 的 check:all,不要改这里。
+      #   契约冻结的基线选择(PR 比目标分支 / push 比上一提交)已经收进
+      #   scripts/check-contract.mjs,不需要在这里算 --base。
+      - name: pnpm check:all
+        run: pnpm check:all
 
-      # 测试文件走独立的解决方案文件(各包的 tsconfig.json 把它们 exclude 掉了)。
-      # 不单独跑这一步,测试里的类型错误在所有门禁上都不会红。
-      - name: Typecheck(测试文件)
-        run: pnpm typecheck:test
-
-      # scripts/ 下的 .mjs 走 tsconfig.scripts.json(allowJs + checkJs)。
-      # 首次 CI 复盘发现这一条从 V0.4.6 加进 check:all 起就没进过 workflow ——
-      # 于是 CI 一直比本地弱一条,而弱的那条恰恰盯着门禁脚本自己。
-      - name: Typecheck(scripts/)
-        run: pnpm typecheck:scripts
-
-      - name: Lint(含 adapters 边界规则)
-        run: pnpm lint
-
-      - name: 单元测试
-        run: pnpm test
-
-      - name: 上游契约测试
-        run: pnpm test:contract
-
-  # 断言有效性探针 —— V0.4.6 的核心产出,首次 CI 复盘时发现它从没进过 workflow。
+  # ── 以下是 CI 独有的东西,不属于 check:all ────────────────────────────
   #
-  # 单独成 job 而不是塞进 build:它要跑 8 次 vitest(每次篡改一处源码再还原),
-  # 比整套单测还慢,挂在矩阵里等于把两个 Node 版本各拖一遍。
-  #
-  # ⚠️ 它**会临时改写工作区里的源文件**,`finally` 还原。在 CI 上是一次性检出,
-  # 没有副作用;本地跑之前请确认没有未提交的改动。
-  assertions:
-    name: 断言有效性探针
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-
-      # 必须先构建:网关的测试经 dist 解析 @dshwar/*,不构建就是在测上一次的产物。
-      - name: 构建
-        run: pnpm build
-
-      - name: 故意弄坏实现,确认对应的测试真的变红
-        run: pnpm verify:assertions
+  # 判据:**在开发机上跑没有意义**的才放这里。
+  # 性能基线依赖固定的机器规格,PTY 依赖 Linux —— 两者放进 check:all
+  # 会让贡献者在自己机器上随机变红,而那种红没有信息量。
 
   # 进程隔离的代价 —— 常驻测量 + 上界门禁。
   #
-  # 为什么它值得一个 job:README 的规模对照表、maxProcesses 的默认值、
-  # DEPLOYMENT.md 的容量规划,三处**全部**由这两个数推出,而采用者照着它们
-  # 买服务器。一次让内存翻倍的改动会让这三处同时变成谎话,
-  # **且不会让任何测试变红** —— 内存不在断言里。
+  # 为什么值得一个 job:README 的规模对照表、maxProcesses 的推导、
+  # DEPLOYMENT.md 的容量规划,全部由这两个数推出,而采用者照着它们买服务器。
+  # 一次让内存翻倍的改动会让这几处同时变成谎话,**且不会让任何测试变红** ——
+  # 内存不在断言里。
   #
   # 阈值的定法见 docs/DECISIONS/process-cost-thresholds.md。
   # 放宽它之前先读那份文档:阈值放宽一次,这道门禁就再也抓不到下一次翻倍。
@@ -167,7 +103,6 @@ jobs:
 
       # 阈值由 2026-08-16 的 Linux 实测(86 ms / 63 MB)× 系数推出,不是猜的 ——
       # 首次接入时刻意先跑了一版不带 `--assert` 的,拿到数之后才打开判定。
-      # 定法见 docs/DECISIONS/process-cost-thresholds.md。
       - name: 五次采样,与 V0.4.5 的 Windows 口径对齐
         run: node scripts/measure-process-cost.mjs --assert
 

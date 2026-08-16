@@ -123,7 +123,8 @@ profile 里有三条**默认不装**,每条都有理由:
   "isolation": {
     // logical(默认) | process | container
     "level": "process",
-    // ★ 必需项,不是调优项。见下方内存开销。
+    // 可省 —— V0.4.7 起按机器内存推导(min(64, 总内存 × 0.6 ÷ 63MB)),
+    // 启动时打印算出的值与依据。显式配置会覆盖推导,且不受上限 64 约束。
     "maxProcesses": 64,
     // 引用归零后多久回收该 principal 的进程
     "idleTimeoutMs": 300000,
@@ -151,14 +152,19 @@ profile 里有三条**默认不装**,每条都有理由:
 > 越界即红 —— 见 [`DECISIONS/process-cost-thresholds.md`](DECISIONS/process-cost-thresholds.md)。
 > 但 CI 用的是 GitHub 共享 runner,**上生产前仍请在你自己的机型上重测**。
 
-**容量规划的算法很简单:**
+**容量规划的算法很简单** —— 而且 V0.4.7 起网关会自己算:
 
 ```
-所需内存 ≈ 网关自身 + 活跃 principal 数 × 63 MB
-maxProcesses ≈ (可用内存 - 网关自身 - 留白) / 63 MB
+所需内存 ≈ 网关自身(实测 78 MB) + 活跃 principal 数 × 63 MB + 操作系统
+maxProcesses  = min(64, ⌊总内存 × 0.6 ÷ 63 MB⌋)      ← 缺省时的推导
 ```
 
-100 个活跃 principal ≈ 6.3 GB。**`maxProcesses` 必须设**:没有上限的进程池
+⚠️ **注意「网关自身」那一项 —— 它不在 README 的规模对照表里。**
+那张表是「N 人 × 63 MB」,只算子进程。照着「50 人 3.2 GB」配一台 4 GB 的机器
+会在网关加 OS 上撞穿。公式里那个 0.6 正是留给它们的。
+
+100 个活跃 principal ≈ 6.3 GB(还要另加网关与 OS)。**`maxProcesses` 缺省会被推导出来**,
+但显式设更稳妥:没有上限的进程池
 在流量尖峰下会把机器吃到 OOM,而 OOM killer 挑中谁是随机的 —— 可能是网关自己。
 
 进程池满时网关返回 **429**(契约的错误码是闭集,没有 503 位置;语义上它表示

@@ -5,7 +5,7 @@
 # 这与 team.yml ↔ single-user.yml 的对照是同一条纪律:换身份不改语义。
 #
 # ⚠️ 自 V0.4.5 起本 profile 切到**进程隔离**(一 principal 一进程)。
-# 这是本仓唯一默认开进程隔离的 profile —— enterprise 的典型场景是跨部门、
+# enterprise 的典型场景是跨部门、
 # 跨供应商、外部顾问混跑,那已经越过信任边界了。
 #
 # 代价:每个活跃 principal 常驻 ~63 MB、首次请求多 ~86 ms 冷启动(Linux 实测)。

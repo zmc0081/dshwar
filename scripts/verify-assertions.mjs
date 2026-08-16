@@ -37,9 +37,10 @@
  * 退出码:全绿 0,任一探针没能让测试变红 1。
  */
 import { execFileSync } from 'node:child_process'
-import { copyFileSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { withMutatedFiles } from './lib/mutate.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const p = (...seg) => join(REPO, ...seg)
@@ -86,20 +87,16 @@ function expect(name, passed, detail) {
  */
 function withMutation(rel, mutate, targets) {
   const target = p(rel)
-  const backup = `${target}.probebak`
-  copyFileSync(target, backup)
-  try {
-    const original = readFileSync(target, 'utf8')
-    const mutated = mutate(original)
-    if (mutated === original) {
-      return { red: false, unchanged: true }
-    }
-    writeFileSync(target, mutated, 'utf8')
-    return runTests(...targets)
-  } finally {
-    copyFileSync(backup, target)
-    unlinkSync(backup)
+
+  // 先判「锚点匹配上了没有」再动文件 —— 没匹配上就完全不碰磁盘。
+  if (mutate(readFileSync(target, 'utf8')) === readFileSync(target, 'utf8')) {
+    return { red: false, unchanged: true }
   }
+
+  // ⚠️ 还原走 scripts/lib/mutate.mjs,不用 copyFileSync + .probebak。
+  // 2026-08-16 实测:Windows 上还原那一步的 copyFileSync 会抛 UNKNOWN(-4094),
+  // 把 openapi.json 留在篡改状态且不报告 —— 详见该模块的说明。
+  return withMutatedFiles([{ path: target, mutate }], () => runTests(...targets))
 }
 
 console.log('DSHWAR · 断言有效性探针\n')
@@ -268,31 +265,30 @@ console.log('DSHWAR · 断言有效性探针\n')
 //    这一类没法靠「弄坏实现」测 —— 问题不在实现里,在**谁在什么作用域下调它**。
 //    能做的是确认那道兜底真的在。
 {
-  // 这条不跑 vitest,跑守卫本身 —— 所以不走 withMutation
-  let red = false
-  try {
-    copyFileSync(p('scripts/check-guards.mjs'), p('scripts/check-guards.mjs.probebak'))
-    const src = readFileSync(p('scripts/check-guards.mjs'), 'utf8')
-    writeFileSync(
-      p('scripts/check-guards.mjs'),
-      src.replace(
-        "    file: 'packages/fs-tenant/src/index.ts',",
-        "    file: 'packages/__none__.ts',",
-      ),
-      'utf8',
-    )
-    try {
-      execFileSync(process.execPath, [p('scripts', 'check-guards.mjs')], {
-        cwd: REPO,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      })
-    } catch {
-      red = true
-    }
-  } finally {
-    copyFileSync(p('scripts/check-guards.mjs.probebak'), p('scripts/check-guards.mjs'))
-    unlinkSync(p('scripts/check-guards.mjs.probebak'))
-  }
+  // 这条不跑 vitest,跑守卫本身 —— 但还原走同一条通路。
+  const red = withMutatedFiles(
+    [
+      {
+        path: p('scripts/check-guards.mjs'),
+        mutate: (s) =>
+          s.replace(
+            "    file: 'packages/fs-tenant/src/index.ts',",
+            "    file: 'packages/__none__.ts',",
+          ),
+      },
+    ],
+    () => {
+      try {
+        execFileSync(process.execPath, [p('scripts', 'check-guards.mjs')], {
+          cwd: REPO,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        })
+        return false
+      } catch {
+        return true
+      }
+    },
+  )
   expect(
     '7 把 fs-tenant 移出 principal 白名单 → 守卫变红(作用域类兜底)',
     red,

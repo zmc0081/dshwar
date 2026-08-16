@@ -52,6 +52,12 @@ import { fileURLToPath } from 'node:url'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const CHILD = join(REPO, 'adapters', 'dsh-0.1.0', 'test', 'fixtures', 'child-agent.mjs')
+const GATEWAY_FIXTURE = join(REPO, 'scripts', 'fixtures', 'gateway-baseline.mjs')
+
+// ★ 每进程开销的**唯一来源**。这里 import 而不是再抄一个 63:
+// 推导 maxProcesses 的是它,校验实测有没有漂移的也是它 ——
+// 两处若各写各的,门禁绿着而默认值已经错了,谁都不会发现。
+const { RSS_PER_PROCESS_MB } = await import('@dshwar/supervisor')
 
 // ---------------------------------------------------------------------------
 // 阈值
@@ -114,6 +120,39 @@ function measureOnce() {
   })
 }
 
+/**
+ * 量一次网关自身的空载常驻。拿不到时返回 -1(不算失败,理由见调用处)。
+ *
+ * 只量一次而不是五次:内存这个量很稳(子进程两次 CI 采样波动 ±1.6%),
+ * 而它不进门禁判定 —— 它服务的是文档里的**口径说明**,精度要求低一档。
+ */
+function measureGatewayBaseline() {
+  if (!existsSync(GATEWAY_FIXTURE)) return Promise.resolve(-1)
+  return new Promise((resolveOne) => {
+    const child = fork(GATEWAY_FIXTURE, { stdio: ['ignore', 'pipe', 'pipe', 'ipc'] })
+    const deadline = setTimeout(() => {
+      child.kill('SIGKILL')
+      resolveOne(-1)
+    }, 30_000)
+    child.on('message', (raw) => {
+      const msg = /** @type {{type: string, rssBytes?: number}} */ (raw)
+      if (msg.type !== 'ready') return
+      clearTimeout(deadline)
+      child.kill('SIGKILL')
+      resolveOne(Math.round((msg.rssBytes ?? 0) / 1024 / 1024))
+    })
+    child.on('error', () => {
+      clearTimeout(deadline)
+      resolveOne(-1)
+    })
+    child.on('exit', (_code, signal) => {
+      if (signal === 'SIGKILL') return
+      clearTimeout(deadline)
+      resolveOne(-1)
+    })
+  })
+}
+
 /** 中位数。偶数个取中间两个的均值。 */
 function median(values) {
   const sorted = [...values].sort((a, b) => a - b)
@@ -153,6 +192,28 @@ const assembleMs = median(results.map((r) => r.assembleMs))
 console.log('')
 console.log(`中位数    冷启动 ${coldStartMs} ms(其中插件装配 ${assembleMs} ms),常驻 ${rssMb} MB`)
 
+// ---------------------------------------------------------------------------
+// 网关自身的常驻 —— 容量规划的**口径**问题
+//
+// 上面那个 RSS 只含子进程。README 的规模对照表(50 人 ≈ 3.2 GB)也只是
+// 子进程的总和 —— 网关自己不在里面,OS 更不在。照着 3.2 GB 去配一台 4 GB
+// 的机器会撞穿,而那正是容量表最该防住的事。
+//
+// 量出这一块,`MEMORY_BUDGET_FRACTION = 0.6` 的那 40% 留白才有据可查。
+// ---------------------------------------------------------------------------
+const gatewayRssMb = await measureGatewayBaseline()
+if (gatewayRssMb > 0) {
+  console.log(`网关自身  ${gatewayRssMb} MB(空载基线,不含任何子进程)`)
+  console.log(
+    `口径      「N 人 × ${RSS_PER_PROCESS_MB} MB」**只算子进程** —— ` +
+      `实际还要加网关 ${gatewayRssMb} MB 与操作系统`,
+  )
+} else {
+  // 拿不到不算失败:这个数服务于文档口径,不是门禁判据。
+  // 但要说出来 —— 静默跳过会让人以为它量过了。
+  console.log('网关自身  未测到(需先 pnpm build;不影响下面的门禁判定)')
+}
+
 // GitHub Actions 的**注解**。摘要页(下面那段)要点进 run 才看得到,而注解
 // 直接挂在提交与 PR 上 —— 数字要有人看才有价值,埋在日志里的数字等于没量。
 //
@@ -160,7 +221,8 @@ console.log(`中位数    冷启动 ${coldStartMs} ms(其中插件装配 ${assem
 // **免认证可读**,而 job 日志需要 admin 权限。于是这两个数在仓库外也拿得到。
 if (process.env['GITHUB_ACTIONS'] === 'true') {
   console.log(
-    `::notice title=进程隔离代价::冷启动 ${coldStartMs} ms · 常驻 ${rssMb} MB · ` +
+    `::notice title=进程隔离代价::冷启动 ${coldStartMs} ms · 子进程常驻 ${rssMb} MB · ` +
+      `网关自身 ${gatewayRssMb > 0 ? `${gatewayRssMb} MB` : '未测'} · ` +
       `插件装配 ${assembleMs} ms(${platform} · Node ${process.version} · ${samples} 次采样中位数)`,
   )
 }

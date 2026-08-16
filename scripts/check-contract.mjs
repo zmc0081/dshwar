@@ -43,9 +43,47 @@ function git(subcommand) {
   })
 }
 
-/** 找一个能用的基线 ref。CI 上有 origin/main,本地开发时未必。 */
+/**
+ * 找一个能用的基线 ref。
+ *
+ * ## 为什么 CI 的选择写在这里,而不是 workflow 里
+ *
+ * 这段逻辑本来在 `ci.yml` 里,用一个三元表达式算出 `--base` 传进来。
+ * 那是**门禁的一部分散落进了 CI 配置** —— 而 CI 与本地的漂移正是
+ * 首次真实 runner 复盘查出来的根因。收进脚本之后 CI 只需要 `pnpm check:all`,
+ * 一处都不用复述。
+ *
+ * ⚠️ **`origin/main` 在 main 分支的 push 上是个陷阱。** 检出之后
+ * `origin/main` 就等于 `HEAD`,自己跟自己比,差异恒为空 ——
+ * 检查会**报「无破坏性变更」而不是报「基线取不到」**。
+ * 那种绿比红危险得多:它看起来是通过了。所以 CI 上必须显式选 `HEAD~1`。
+ */
 function resolveBaseRef() {
   if (baseArg !== undefined) return baseArg
+
+  // PR:比目标分支。GITHUB_BASE_REF 只在 pull_request 事件里非空。
+  const prBase = process.env['GITHUB_BASE_REF']
+  if (prBase !== undefined && prBase !== '') {
+    for (const ref of [`origin/${prBase}`, prBase]) {
+      try {
+        git(['rev-parse', '--verify', `${ref}^{commit}`])
+        return ref
+      } catch {
+        continue
+      }
+    }
+  }
+
+  // push(含 main 自己):比上一个提交。见上面那条陷阱。
+  if (process.env['GITHUB_ACTIONS'] === 'true') {
+    try {
+      git(['rev-parse', '--verify', 'HEAD~1^{commit}'])
+      return 'HEAD~1'
+    } catch {
+      // 首个提交没有 HEAD~1 —— 落到下面的通用回退,由它报「基线取不到」
+    }
+  }
+
   for (const ref of ['origin/main', 'main', 'HEAD']) {
     try {
       git(['rev-parse', '--verify', `${ref}^{commit}`])

@@ -35,7 +35,8 @@ import { createScimApp } from '@dshwar/scim-server'
 import { InMemorySubjectStore } from '@dshwar/subject'
 import type { TenantMapConfig } from '@dshwar/tenant-map'
 import { createPrincipal, type Principal } from '@dshwar/principal'
-import { forkLauncher, Supervisor } from '@dshwar/supervisor'
+import { deriveMaxProcesses, forkLauncher, Supervisor } from '@dshwar/supervisor'
+import { totalmem } from 'node:os'
 import { readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -86,8 +87,13 @@ export interface ServerConfig {
    * 隔离级别(V0.4.5)。**整段可选,缺省即逻辑隔离**(红线 1)——
    * 升级不会自动改变隔离级别。
    *
-   * 选型与代价见 `docs/DEPLOYMENT.md` §2.5。一句话:用户互相信任就用默认,
-   * 不信任就开 `process`,代价是每个活跃 principal 常驻 ~58 MB。
+   * 选型与代价见 `docs/DEPLOYMENT.md` §2.5。一句话:**只有一个用户就用默认,
+   * 一个以上必须开 `process`** —— 代价是每个活跃 principal 常驻 ~63 MB。
+   *
+   * ⚠️ 这里原本写的是「用户互相信任就用默认」。那个判据在 V0.4.7 之后不成立:
+   * 逻辑档下多 principal 是**根本没有分隔**(全落进 `anonymous/anonymous/`
+   * 互相覆盖),不是「隔离强度不够但信任可以补上」。配了也起不来 ——
+   * 见 {@link assertSinglePrincipalCapable}。
    */
   readonly isolation?: {
     /** `logical`(默认) | `process` | `container`(本版本仅配置位) */
@@ -292,6 +298,25 @@ export async function startServer(
   })
   let supervisor: Supervisor | undefined
   if (isolationLevel === 'process') {
+    // ★ V0.4.7:进程上限按机器内存推导,不用固定值。
+    //
+    // 之前写死 64 —— 那个数对任何一台具体的机器都是猜的:8 GB 机器上
+    // 64 × 63 MB ≈ 4 GB,加网关与 OS 直接吃穿;64 GB 机器上又闲置四分之三。
+    // 推导所用的每进程开销与 CI 性能门禁**同一个来源**(`@dshwar/supervisor` 的
+    // `RSS_PER_PROCESS_MB`),所以「实测值」与「用来推导的值」不可能分叉。
+    const derived = deriveMaxProcesses(totalmem())
+    const maxProcesses = config.isolation?.maxProcesses ?? derived.value
+
+    // 打印依据而不只是结果:一个说不出理由的默认值,部署方只能选择盲信或盲改。
+    if (config.isolation?.maxProcesses === undefined) {
+      console.log(`  进程上限 ${maxProcesses}(按内存推导:${derived.basis})`)
+      if (derived.raisedToFloor) {
+        console.log('  ⚠️ 内存不足以支撑进程隔离 —— 请扩容,或改用单用户部署')
+      }
+    } else {
+      console.log(`  进程上限 ${maxProcesses}(显式配置;按内存推导会得到 ${derived.value})`)
+    }
+
     supervisor = new Supervisor({
       launcher: forkLauncher(config.isolation?.workerPath ?? defaultWorkerPath(), {
         bootstrap: {
@@ -303,7 +328,7 @@ export async function startServer(
         },
       }),
       profile: 'gateway',
-      maxProcesses: config.isolation?.maxProcesses ?? 64,
+      maxProcesses,
       idleTimeoutMs: config.isolation?.idleTimeoutMs ?? 300_000,
       // R7:进程生命周期进同一条审计管道,不另起一套
       onEvent: auditSupervisorEvents((entry) => auditSink.record(entry)),
