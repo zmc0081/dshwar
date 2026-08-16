@@ -23,8 +23,9 @@
     "check:version": "node scripts/check-version.mjs",
     "check:guards": "node scripts/check-guards.mjs",
     "check:contract": "node --experimental-strip-types scripts/check-contract.mjs",
+    "check:oss": "node scripts/check-oss-purity.mjs",
     "verify:guards": "node scripts/verify-guards.mjs",
-    "check:all": "pnpm check:version && pnpm check:guards && pnpm check:contract && pnpm typecheck && pnpm lint && pnpm test"
+    "check:all": "pnpm check:version && pnpm check:guards && pnpm check:contract && pnpm check:oss && pnpm typecheck && pnpm lint && pnpm test"
   },
   "devDependencies": {
     "@changesets/cli": "^3.0.0",

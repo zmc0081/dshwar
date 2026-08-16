@@ -47,6 +47,12 @@
     apiKeyEnv: DEEPSEEK_API_KEY
 
 - id: fs
+  # 上游原生实现,不分租户也不分工作区 —— 对照基线本来就该是这样。
+  #
+  # V0.4.1 给 fs-tenant 加了工作区维度,本文件**刻意不跟** :
+  # 对照的意义在于「单用户场景下两个 profile 行为一致」,而单用户单工作区时
+  # team.yml 的四段路径塌缩成一个固定目录,可见行为与这里相同。
+  # 契约测试(adapters/dsh-0.1.0/test/profile-parity.test.ts)断言这一点。
   name: '@deepseek-ai/dsh-fs-local'
 
 - id: storage

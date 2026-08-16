@@ -32,6 +32,9 @@ jobs:
       - name: PR 自查清单(CLAUDE.md 第二节)
         run: pnpm check:guards
 
+      - name: 开源纯净度(硬规则 9 —— SignPath 资格条件)
+        run: pnpm check:oss
+
       - name: 守卫的负向测试 —— 确认守卫真的会拦
         run: pnpm verify:guards
 

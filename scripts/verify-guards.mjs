@@ -17,6 +17,7 @@
  *   7. TS 项目未登记进根 references    → 必须失败(V0.2.0 Session 5 实测教训)
  *   8. 破坏性契约变更                  → 必须失败(Session 6 验收)
  *   9. 加一个可选字段                  → **必须放行**(Session 6 验收,另一个方向)
+ *  13. 公开包依赖闭源组件              → 必须失败(硬规则 9,V0.4.1)
  *
  * 退出码:全绿 0,任一守卫没拦住 1。
  */
@@ -357,6 +358,38 @@ try {
       !empty.ok && /密码体系/.test(empty.output),
       empty.ok ? '空理由被当成了有效豁免 —— 那等于无条件后门' : undefined,
     )
+    rmSync(p('packages/__guard_fixture__'), { recursive: true, force: true })
+  }
+
+  // ---------------------------------------------------------------------
+  // 13. 开源纯净度(硬规则 9,V0.4.1)
+  //
+  //     闭源组件混进开源包**不会有任何报错**:构建通过、测试全绿、publish 成功。
+  //     发现它的通常是 SignPath 签名申请被拒,或客户法务在合规审查时发现 ——
+  //     那时包已经发出去了。所以这条守卫必须真的会拦。
+  // ---------------------------------------------------------------------
+  {
+    writeFixture(
+      'packages/__guard_fixture__/package.json',
+      JSON.stringify(
+        {
+          name: '@dshwar/__guard_fixture__',
+          version: '0.4.1',
+          files: ['dist', 'README.md'],
+          dependencies: { '@dshwar/billing-hosted': 'workspace:*' },
+        },
+        null,
+        2,
+      ) + '\n',
+    )
+
+    const oss = run([p('scripts', 'check-oss-purity.mjs')])
+    expect(
+      '13 公开包依赖闭源组件被拦住(硬规则 9)',
+      !oss.ok && /闭源依赖/.test(oss.output),
+      oss.ok ? '开源纯净度检查放行了闭源依赖 —— SignPath 资格会因此丢失' : undefined,
+    )
+
     rmSync(p('packages/__guard_fixture__'), { recursive: true, force: true })
   }
 

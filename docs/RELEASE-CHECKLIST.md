@@ -24,6 +24,17 @@
 能验出 `files` / `exports` / 依赖声明的所有遗漏 —— 这是 publish 之前
 能做的最接近的验证。
 
+> ⚠️ **必须是 `pnpm pack`,不能是 `npm pack`。**(V0.4.1 Session 2 实测)
+>
+> `npm pack` **不重写 `workspace:*` 协议**,打出来的 tarball 里
+> `"@dshwar/principal": "workspace:*"` 原样留着,安装时报
+> `EUNSUPPORTEDPROTOCOL Unsupported URL Type "workspace:"` —— 包是坏的。
+> `pnpm pack` 会把它重写成 `"0.4.1"`。
+>
+> 这条不只影响验证:**真发布时也必须走 `pnpm publish` 或 changesets**
+> (两者都做协议重写)。谁哪天图省事用 `npm publish`,发出去的就是装不上的包,
+> 而 npm 上的版本号不能重用 —— 只能发一个补丁版把它盖掉。
+
 ```bash
 # 打包
 for p in principal auth auth-static credentials-multiuser fs-tenant storage-scoped; do

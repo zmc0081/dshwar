@@ -51,7 +51,12 @@
 - id: fs
   name: '@dshwar/fs-tenant'
   config:
-    # 每个主体的实际根是 {root}/{tenantId}/{userId}
+    # 每个主体的实际根是 {root}/{tenantId}/{userId}/{workspaceId}(V0.4.1 起四段)。
+    # 未指定 workspaceId 时落到 default —— 本 profile 不配 workspaceOf,
+    # 因此全部操作都在 default 工作区里,行为与 V0.4.1 之前完全一致。
+    #
+    # 网关部署要按会话切工作区,见 profiles/gateway.yml 与
+    # docs/DECISIONS/workspace-in-api.md。
     root: !!js dshHomePath('workspaces')
 
 - id: storage

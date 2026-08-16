@@ -83,6 +83,10 @@
 - id: fs
   name: '@dshwar/fs-tenant'
   config:
+    # 四段路径 {root}/{tenantId}/{userId}/{workspaceId}。
+    # ⚠️ 同一用户的不同工作区之间也做路径钉死,但**隔离级别与租户间相同** ——
+    # 工作区分区解决的是「按项目分开干活」,不是信任问题。
+    # 跨信任边界靠本 profile 的进程/容器隔离,不靠路径。
     root: !!js dshHomePath('workspaces')
 
 - id: storage

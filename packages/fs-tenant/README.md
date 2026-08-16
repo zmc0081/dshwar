@@ -25,7 +25,16 @@ await innerCtx.plugin(LocalFileSystem, { cwd: root })
 await ctx.plugin(TenantFileSystem, { inner: innerCtx.fs, root })
 ```
 
-每个主体的工作区根是 `{root}/{tenantId}/{userId}`,每次操作现场计算。
+每个主体的工作区根是 `{root}/{tenantId}/{userId}/{workspaceId}`(V0.4.1 起四段),
+每次操作现场计算。省略 `workspaceId` 时落到 `default`,改造前的调用方零改动仍能工作。
+
+**`workspaceId` 与 `tenantId` / `userId` 同级对待** —— 同一套白名单校验与
+SHA-256 编码,不因它来自请求而放松。校验顺序是**先逐段校验 → 拼接 → resolve →
+断言仍在根内**,四步都要:只做「拼接后再检查」拦不住一个叫 `..` 的 workspaceId,
+它会先把路径抬回用户根、再由后续段落补回来,最终落在别人的目录下。
+
+⚠️ **缺省只发生在取值阶段,不发生在校验阶段。** 给缺省值开旁路,那条旁路就是
+攻击面 —— 非法的 `workspaceId` 会被直接拒绝,不会回落到 `default`。
 
 > 上游 `fs-local` 自己的文档写明:`cwd` 是「a resolution default, **NOT a containment
 > boundary** … enforce containment with a stricter backend」。`fs-tenant` 就是那个
