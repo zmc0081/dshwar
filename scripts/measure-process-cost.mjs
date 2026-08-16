@@ -149,6 +149,18 @@ const assembleMs = median(results.map((r) => r.assembleMs))
 console.log('')
 console.log(`中位数    冷启动 ${coldStartMs} ms(其中插件装配 ${assembleMs} ms),常驻 ${rssMb} MB`)
 
+// GitHub Actions 的**注解**。摘要页(下面那段)要点进 run 才看得到,而注解
+// 直接挂在提交与 PR 上 —— 数字要有人看才有价值,埋在日志里的数字等于没量。
+//
+// 顺带一个实际好处:注解走 `check-runs/{id}/annotations`,那个端点对公开仓库
+// **免认证可读**,而 job 日志需要 admin 权限。于是这两个数在仓库外也拿得到。
+if (process.env['GITHUB_ACTIONS'] === 'true') {
+  console.log(
+    `::notice title=进程隔离代价::冷启动 ${coldStartMs} ms · 常驻 ${rssMb} MB · ` +
+      `插件装配 ${assembleMs} ms(${platform} · Node ${process.version} · ${samples} 次采样中位数)`,
+  )
+}
+
 // GitHub Actions 的摘要页 —— 让数字不用翻日志就看得到,趋势也才有人看。
 if (process.env['GITHUB_STEP_SUMMARY'] !== undefined) {
   const { appendFileSync } = await import('node:fs')
