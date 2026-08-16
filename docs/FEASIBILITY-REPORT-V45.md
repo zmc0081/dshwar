@@ -141,6 +141,22 @@ V0.1.0 验证 D 已证明 node-pty 在**外部拉起的子进程**里可用。�
 **记入待测清单:Session 1 装配 supervisor 子进程时补测,Linux 与 Windows 各一次。**
 Windows 的退化行为(ProcessInspector 抛错)要在 Session 4 的部署文档里写明。
 
+### Session 1 补记:切开来测了能测的那一半
+
+验证 E 里有两件风险不对等的事,Session 1 把它们分开处理:
+
+| 子问题                                    | 谁的风险      | 状态                                     |
+| ----------------------------------------- | ------------- | ---------------------------------------- |
+| supervisor 的子进程还能不能**再拉起进程** | supervisor 的 | ✅ 已测(`packages/supervisor/test/process.test.ts`) |
+| node-pty 的**原生绑定**在深度 2 是否工作  | node-pty 的   | ⬜ 仍未测                                |
+
+第一条是 supervisor 可能破坏的 —— IPC 通道、stdio 继承、句柄传递都在它的影响范围内。
+已用一条真进程测试钉住:子进程 spawn 孙进程,拿回 stdout 与退出码。**agent 的
+shell 工具依赖的正是这个**;它若不成立,进程隔离下 agent 就没有执行能力,这一版白做。
+
+第二条 supervisor 碰不到,且 V0.1.0 验证 D 已证明深度 1 可用。
+**残余风险由 Session 3 装上 subprocess 之后补测。**
+
 ---
 
 ## 6. 进程隔离的代价 —— 给容量规划用的数字
