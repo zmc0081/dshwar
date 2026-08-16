@@ -1,7 +1,7 @@
 # CLAUDE.md — DSHWAR 项目约束(权威源)
 
 > **本文件由 Claude Code 每次启动自动加载,是约束的唯一权威源。** 任一违反 = PR 阻塞。
-> 当前版本(正在开发): **V0.4.0**
+> 当前版本(正在开发): **V0.4.1**
 > 仓库: `dshwar`(开源主仓,MIT) · `dshwar-console`(控制平面,M4 启用)
 
 ---
@@ -48,7 +48,7 @@ DeepSeek Harness（npm 依赖，精确锁版）
 
 ---
 
-## 二、硬规则(8 条,PR 阻塞级)
+## 二、硬规则(9 条,PR 阻塞级)
 
 1. **禁止 fork / patch 上游**。从 npm 消费 `@deepseek-ai/dsh-*`。需要改上游才能实现 → 提 issue,不建 patch 目录。
 2. **只有 `adapters/dsh-<version>/` 允许 import 上游内部实现**。`packages/**` 与 `gateway/**` 仅可依赖上游契约包的公开导出,禁止深链 `/lib/` `/src/` 路径。
@@ -58,6 +58,7 @@ DeepSeek Harness（npm 依赖，精确锁版）
 6. **缺失 principal 时一律 fail closed**。匿名 principal 解析不到任何凭据,不得回退到默认值或共享 key。
 7. **租户映射 fallback 默认 `reject`**。映射不出租户的用户宁可拒绝登录——落进默认租户意味着 A 公司的人能看到 B 公司的工作区。改为 `fixed` 需在 PR 描述中显式说明理由。
 8. **不改上游语义**。`profiles/single-user.yml` 与多用户 profile 在单用户场景下行为必须一致,契约测试强制。
+9. **开源分发的构建产物不得包含任何闭源组件**——`billing-hosted` 等闭源部分必须是独立构建产物。这既是 open-core 的边界,也是 SignPath Foundation 免费签名的资格条件(不得含维护者或关联组织发布的专有代码)
 
 ### PR 自查(grep 必须全为 0 / 全绿)
 
@@ -77,6 +78,9 @@ grep -rn "ANONYMOUS" packages/*/src --include=*.ts                            �
 
 # 配置只经 profile 注入，不散落 env 读取
 grep -rn "process\.env" packages/ --include=*.ts                              → 0
+
+# 9. 开源构建产物不含闭源组件
+node scripts/check-oss-purity.mjs   # 开源构建产物不含闭源组件（硬规则 9）        → 0
 
 # 门禁
 pnpm typecheck                                                                → clean
@@ -188,6 +192,8 @@ pnpm eslint . --max-warnings 0                                                �
 - Admin API Key **按租户签发**,一把钥匙不得横跨租户。
 - 所有 Admin 与 SCIM 调用进入 `@dshwar/audit`,记录调用者 / 目标 / 变更前后。
 - 沙箱策略喂给上游 `sandbox-policy` / `fs-sandbox`,**不另起炉灶**。
+- **同一用户的不同工作区之间也是隔离的**,但隔离级别与租户间相同——逻辑隔离仅适用于互相信任的场景
+- **不做运行时审批弹窗**。上游 SDK 协议的 server→client 请求是死能力;审批走**策略预授权 + 事后审计**,拒绝进 `@dshwar/audit`
 
 ---
 
@@ -198,6 +204,8 @@ pnpm eslint . --max-warnings 0                                                �
 **闭源**:仅两块 —— `billing-hosted`(Stripe / 微信 / 支付宝接入)与 DSHWAR Cloud 托管服务。
 
 开源用户拿到的是**可用的完整基座**;商业客户买的是省掉自建的时间。这条线公开写明,藏着会失去信任。
+
+- **客户端分发**:开源版由项目签名(Windows 走 SignPath Foundation 免费通道,macOS 走 Apple Developer $99/年);**客户白牌版本由客户自己签名**——界面挂客户品牌,签名主体就该是客户。DSHWAR 只提供打包与签名的 CI 模板,不代签
 
 ---
 
