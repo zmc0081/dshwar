@@ -1,7 +1,7 @@
 # DSHWAR 开发 Session 任务清单
 
 > 项目对外名称:DSHWAR;npm 作用域 `@dshwar/*`;开源主仓 `dshwar`,控制平面仓 `dshwar-console`。
-> 当前版本(正在开发): **V0.1.0** —— 本行强制为"正在开发的版本号",随新版本规划立即更新(见第三部分强制约束)
+> 当前版本(正在开发): **V0.2.0** —— 本行强制为"正在开发的版本号",随新版本规划立即更新(见第三部分强制约束)
 
 ---
 
@@ -48,15 +48,15 @@ DeepSeek Harness（npm 依赖 @deepseek-ai/dsh-*，精确锁版）
 
 ## 版本路线
 
-| 版本       | 内容                                                      | 周期 | 状态                                      |
-| ---------- | --------------------------------------------------------- | ---- | ----------------------------------------- |
-| **V0.1.0** | 运行时平面 MVP + 开源首发                                 | 3 周 | <span style="color:#d00000">规划中</span> |
-| V0.2.0     | API 平面:OpenAPI v1 + Gateway + SDK + Admin 端点          | 4 周 | 待启动                                    |
-| V0.3.0     | 身份互操作:Subject Mirror + SCIM 2.0 + 租户映射 + Webhook | 2 周 | 待启动                                    |
-| V0.4.0     | 计量与治理:metering + policy + model-router               | 3 周 | 待启动                                    |
-| V0.5.0     | 控制平面:租户/成员/订阅/运营后台                          | 5 周 | 待启动                                    |
-| V0.6.0     | 支付:billing 契约 + local + 首个 hosted 实现              | 3 周 | 待启动                                    |
-| V0.7.0+    | 端:移动端 SDK + 对话前端                                  | 持续 | 待启动                                    |
+| 版本       | 内容                                                      | 周期 | 状态                                               |
+| ---------- | --------------------------------------------------------- | ---- | -------------------------------------------------- |
+| V0.1.0     | 运行时平面 MVP + 开源首发                                 | 3 周 | <span style="color:#d00000">开发完成,待发布</span> |
+| **V0.2.0** | API 平面:OpenAPI v1 + Gateway + SDK + Admin 端点          | 4 周 | <span style="color:#d00000">开发中</span>          |
+| V0.3.0     | 身份互操作:Subject Mirror + SCIM 2.0 + 租户映射 + Webhook | 2 周 | 待启动                                             |
+| V0.4.0     | 计量与治理:metering + policy + model-router               | 3 周 | 待启动                                             |
+| V0.5.0     | 控制平面:租户/成员/订阅/运营后台                          | 5 周 | 待启动                                             |
+| V0.6.0     | 支付:billing 契约 + local + 首个 hosted 实现              | 3 周 | 待启动                                             |
+| V0.7.0+    | 端:移动端 SDK + 对话前端                                  | 持续 | 待启动                                             |
 
 ## 准备阶段(在开始 Session 之前)
 
@@ -98,7 +98,350 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 > 已发布版本的 Session 一律标 ✅;开发中版本按实际进度标记,每完成一个即更新。
 >
 > 已发布:(暂无)
-> 规划中(开发中,未上线):V0.1.0(Session 0-8)
+> 规划中(开发中,未上线):**V0.2.0(Session 0-6,当前)** · V0.1.0(Session 0-8,开发完成待发布)
+
+---
+
+## <span style="color:#d00000">●</span> M0.2.0 · API 平面(Session 0-6) <span style="color:#d00000">[未上线]</span>
+
+> **M2 是总闸。** API 契约没定,移动端、控制面、第三方接入全部堵住
+> (`ARCHITECTURE.md` §4.2)。V0.1.0 完成后应优先本版本,而非继续加运行时包。
+>
+> 📌 **核心论点**:那份稳定契约是客户接进来之后**换不掉**的东西。
+> 运行时插件可替换,控制面是标准 SaaS —— 只有 API 契约是护城河。
+>
+> 上游两条通道都不能直接用:SDK 协议是 stdio JSON-RPC(移动端连不上);
+> 内置 webserver 没有 TLS 与认证,仅有一道 Origin 栅栏,且**不带 `Origin` 头的请求
+> 直接放行**(实测见 `docs/FEASIBILITY-REPORT.md` §4.4)。
+>
+> **不做的事**(避免范围失控):不做 SCIM(V0.3.0)、不做 metering / policy 的
+> **实现**(V0.4.0)、不做控制平面(V0.5.0)、不做 supervisor 进程隔离(V0.4.0)、
+> 不做 Python SDK(V0.3.0)。
+
+### Session 状态
+
+| Session                  | 状态      | 说明                   |
+| ------------------------ | --------- | ---------------------- |
+| 0 可行性证伪             | ⬜ 未开始 | **止损点**,3 天        |
+| 1 OpenAPI v1 契约        | ⬜ 未开始 | ★ 护城河本体           |
+| 2 Gateway 骨架与会话路由 | ⬜ 未开始 |                        |
+| 3 运行时 API 与 SSE      | ⬜ 未开始 |                        |
+| 4 Admin API              | ⬜ 未开始 | 契约先行,实现分期      |
+| 5 TS SDK                 | ⬜ 未开始 | 由 OpenAPI 生成,不手写 |
+| 6 契约冻结与发布         | ⬜ 未开始 |                        |
+
+图例:✅ 已完成 · 🔄 进行中 · ⬜ 未开始 · 🟠 代码就绪待外部资源
+
+### 本次需求清单
+
+| 编号 | 需求                                                                       | 所属 Session |
+| ---- | -------------------------------------------------------------------------- | ------------ |
+| R0   | **可行性证伪**:进程内驱动 dsh agent、流式输出、取消语义                    | Session 0    |
+| R1   | OpenAPI 3.1 契约,Zod 为单一事实源,`info.version` 纳入版本一致性检查        | Session 1    |
+| R2   | 统一错误形状与分页/排序参数(让 Refine / Appsmith 能自动生成后台)           | Session 1    |
+| R3   | `gateway/`:Hono 服务、Bearer → `auth.verify` → `runWithPrincipal` 会话路由 | Session 2    |
+| R4   | 按租户签发的 Admin API Key,与运行时 token **分离**                         | Session 2    |
+| R5   | `/v1/sessions` 运行时 API + SSE 流式 + 取消                                | Session 3    |
+| R6   | `/v1/admin/subjects/{id}/credentials`:`describe` 语义,**永不返回值**       | Session 4    |
+| R7   | planned 端点返回 501 并在 OpenAPI 标注,契约完整、实现分期                  | Session 4    |
+| R8   | `sdk/typescript`:由 OpenAPI 生成                                           | Session 5    |
+| R9   | 契约冻结检查:OpenAPI 变更需显式声明兼容性                                  | Session 6    |
+| R10  | `profiles/gateway.yml`、部署文档、兼容矩阵更新                             | Session 6    |
+
+**本版本红线**:
+
+1. **契约是单一事实源** —— Zod → OpenAPI → SDK,**不手写客户端**
+2. **Admin 与运行时令牌分离签发**,Admin API Key 按租户签发,一把钥匙不得横跨租户
+3. **凭据端点只暴露 `describe`**,永不返回值(硬规则 5,原样传递上游约束)
+4. **`/v1/` 路径版本化**,破坏性变更升大版,双版本并行不少于 6 个月
+
+**开工前已确认的两个决定**(2026-08-15):
+
+- **Admin API 的 `subjects` / `usage` 端点:契约先行,实现分期。**
+  版本路线表原写 V0.2.0 交付这两个端点,但 Subject Mirror 在 V0.3.0、
+  metering 在 V0.4.0 —— V0.2.0 没有后端可依托。决定:OpenAPI 里把契约**完整定下**,
+  只实现有后端的 `credentials describe`,其余返回 501 并标 `x-dshwar-status: planned`。
+  理由:契约是换不掉的那一层,晚定一天成本高一天。
+- **SDK 首发只做 TS,Python 留到 V0.3.0。**
+  `ARCHITECTURE.md` §2.1 原写「TS / Python 首发」。M2 的验收标准
+  (第三方仅凭 SDK 完成一次完整会话)用 TS 即可证明;Python 意味着仓库引入第二套
+  工具链与发布渠道,约多 1 周且需长期维护。契约定下后,Python SDK 任何时候生成都一样快。
+
+---
+
+### ⬜ Session 0: 可行性证伪(3 天,止损点)
+
+> ⚠️ **与 V0.1.0 的 Session 0 同级。** 本版本压在一条未验证的上游行为上:
+> 网关要在**进程内**驱动 dsh 的 agent,而上游只提供 stdio JSON-RPC 的 SDK 协议,
+> 且该协议**没有 cancel 与 session-close 方法**(`ARCHITECTURE.md` §2.4)。
+> 不先验证,后面四周都是赌。
+
+```
+读取 CLAUDE.md 与 ARCHITECTURE.md §1.1、§2.4。
+
+本次任务:验证网关能否在进程内驱动 dsh agent。不写产品代码，产出验证报告。
+
+1. 环境准备
+   - 用 V0.1.0 的 team.yml 组合起一个进程内 cordis 运行时
+   - 确认 ctx.agent / ctx.session 的公开 API 形状
+
+2. 验证 A —— 进程内发起一次完整会话
+   - 不经 stdio JSON-RPC，直接用 cordis 服务发起一轮对话
+   - 断言：能拿到完整回复
+   - 若必须经 SDK 协议才能驱动 → 记录，架构需引入 supervisor 提前
+
+3. 验证 B —— 流式输出
+   - 确认 agent 的增量输出以何种形式暴露（事件 / AsyncIterable / 回调）
+   - 断言：可转成 SSE 而不需要缓冲整个回复
+
+4. 验证 C —— 取消
+   - 上游 SDK 协议无 cancel。确认进程内是否有别的途径
+     （AbortSignal / fiber dispose / ctx 作用域释放）
+   - 断言：取消后不再产生输出，且不泄漏 fiber
+   - 若无法取消 → supervisor 从 V0.4.0 提前，因为「终止进程即是取消」
+
+5. 验证 D —— 并发会话隔离
+   - 同一进程内并发两个 principal 的会话
+   - 断言：输出不串号，凭据不串号（复现 V0.1.0 验证 C 到 agent 层）
+
+== 产出 ==
+docs/FEASIBILITY-REPORT-V2.md，包含：
+- 四项验证的通过/失败结论与复现步骤
+- agent / session 的实际 API 形状
+- 若失败：失败点的最小复现与架构影响
+
+不要写产品代码。不要建 gateway/。
+```
+
+验证:
+
+- 四项全过 → 进入 Session 1,架构不变
+- **验证 A 失败** → 进程内驱动不可行 → `supervisor` 从 V0.4.0 提前到本版本
+- **验证 C 失败** → 无法取消 → 同上,且 SSE 断连会泄漏 fiber,必须先解决
+- `/publish chore: {v} session 0 gateway feasibility`
+
+---
+
+### ⬜ Session 1: OpenAPI v1 契约 ★ 护城河本体
+
+```
+读取 CLAUDE.md 与 IDENTITY-INTEROP.md §3.3。
+
+本次任务:定义 v1 全部契约。这是本版本最重要的产出——
+运行时插件可替换、控制面是标准 SaaS，只有这份契约是客户接进来之后换不掉的。
+
+1. packages/api-contract
+   - Zod schema 为单一事实源，OpenAPI 3.1 由其生成
+   - 禁止手写 OpenAPI yaml；禁止 schema 与文档两处维护
+
+2. 运行时 API
+   - POST /v1/sessions              创建会话
+   - GET  /v1/sessions/{id}         会话状态
+   - POST /v1/sessions/{id}/turns   发起一轮
+   - GET  /v1/sessions/{id}/stream  SSE 流式
+   - DELETE /v1/sessions/{id}       取消并释放
+
+3. Admin API（契约完整定下，实现分期）
+   - /v1/admin/subjects                    [planned]
+   - /v1/admin/subjects/{id}/quota         [planned]
+   - /v1/admin/subjects/{id}/usage         [planned]
+   - /v1/admin/subjects/{id}/credentials   ← V0.2.0 实现，describe 语义
+   - /v1/admin/usage                       [planned]
+   - /v1/admin/policies                    [planned]
+   - /v1/admin/audit                       [planned]
+   - planned 端点在 OpenAPI 标注 x-dshwar-status: planned
+
+4. 横切约定（R2 —— 决定第三方后台能不能自动生成）
+   - 统一错误形状：{ error: { code, message, requestId } }
+     错误 code 是**闭集**，SDK 可穷举
+   - 列表端点统一 ?limit&cursor&sort，游标分页不用 offset
+   - 所有响应带 requestId，与审计对得上
+
+5. 凭据端点的形状（硬规则 5）
+   - 只返回 configured / source / writable
+   - 契约层就不给「值」留位置——schema 里没有那个字段，
+     实现方即便想返回也没地方放
+
+6. info.version 纳入 check-version
+
+== 测试 ==
+- Zod → OpenAPI 生成结果快照测试
+- 凭据端点的 schema 里不存在任何可放值的字段
+- 错误 code 闭集与 SDK 的穷举一致
+```
+
+验证:
+
+- OpenAPI 3.1 可被 `@redocly/cli lint` 通过
+- `check-version` 覆盖 `info.version`
+- `/publish feat: {v} session 1 openapi v1 contract`
+
+---
+
+### ⬜ Session 2: Gateway 骨架与会话路由
+
+```
+读取 CLAUDE.md（第七节 安全与隔离)。
+
+本次任务:Hono 服务、认证、会话路由。
+
+1. gateway/
+   - Hono，Web 标准，可跑 Node 与边缘
+   - 契约来自 packages/api-contract，路由由 schema 校验
+
+2. 会话路由 —— 本 Session 的核心
+   - Bearer token → ctx.auth.verify() → Principal
+   - runWithPrincipal 派生会话作用域（**不是 withPrincipal**——
+     长命进程按请求派生会累积隔离槽位，V0.1.0 已实测）
+   - 此下所有插件按 principal 解析，消费方零改动
+
+3. 令牌分离（R4，第七节强制）
+   - 运行时 token 与 Admin API Key 分离签发
+   - Admin API Key 按租户签发，一把钥匙不得横跨租户
+   - 中间件层就分开，不在 handler 里判断
+
+4. 错误处理
+   - 统一错误形状，requestId 贯穿
+   - AuthError 原样传递「不携带原因」的语义——网关不得把它翻译成
+     「token 不存在」之类的具体消息
+
+5. 明确不做
+   - TLS 终结交给反向代理，网关不自己管证书
+   - 限流只留接口，实现在 V0.4.0 的 policy
+
+== 测试 ==
+- 无 token / 错 token / 过期 token 的响应形状完全一致
+- Admin Key 访问运行时端点被拒，反之亦然
+- 跨租户 Admin Key 被拒
+- 并发请求不串号（复现 V0.1.0 验证 C 到 HTTP 层）
+```
+
+验证:
+
+- `/publish feat: {v} session 2 gateway skeleton and session routing`
+
+---
+
+### ⬜ Session 3: 运行时 API 与 SSE
+
+```
+本次任务:让第三方仅凭 HTTP 就能完成一次完整会话。
+
+1. 会话生命周期
+   - 创建 / 查询 / 发起一轮 / 取消
+   - 会话归属 principal，跨 principal 访问一律 404（不是 403——
+     403 会泄漏「这个 id 存在」）
+
+2. SSE 流式
+   - 增量输出转 SSE，不缓冲整个回复
+   - 断连处理：客户端掉线必须释放 fiber（Session 0 验证 C 的落点）
+   - 心跳，穿透代理
+
+3. 取消
+   - DELETE 立即停止产出并释放
+   - 按 Session 0 验证 C 的结论实现
+
+== 测试 ==
+- 一次完整会话：创建 → 发起 → 流式收完 → 释放
+- 断连后 fiber 被释放（度量，不靠肉眼）
+- 跨 principal 访问会话返回 404
+- 并发两个 principal 的会话输出不串号
+```
+
+验证:
+
+- `/publish feat: {v} session 3 runtime api and sse`
+
+---
+
+### ⬜ Session 4: Admin API
+
+```
+读取 CLAUDE.md（硬规则 5)与 IDENTITY-INTEROP.md §3.3。
+
+本次任务:实现有后端可依托的 Admin 端点，其余按契约返回 501。
+
+1. /v1/admin/subjects/{id}/credentials
+   - 调 credentials.describe()，只返回 configured / source / writable
+   - **永不返回值**。PR 自查的 grep 会盯这一条
+
+2. planned 端点
+   - 返回 501，body 用统一错误形状，code 为 not_implemented
+   - 响应头带 x-dshwar-planned-version 指出哪个版本会实现
+   - 不返回 404——404 会让第三方以为路径写错了
+
+3. 列表端点的分页与排序
+   - 游标分页，让 Refine / Appsmith 直接吃
+
+4. 审计埋点
+   - 所有 Admin 调用记录调用者 / 目标 / 变更前后
+   - @dshwar/audit 在 V0.3.0，本版本先留接口并落日志
+
+== 测试 ==
+- credentials 端点的响应体不含任何 key 值（正则扫描，不靠人看）
+- planned 端点返回 501 而非 404
+- 跨租户 Admin Key 读不到别的租户的 subject
+```
+
+验证:
+
+- `/publish feat: {v} session 4 admin api`
+
+---
+
+### ⬜ Session 5: TS SDK
+
+```
+本次任务:由 OpenAPI 生成 TS SDK，不手写。
+
+1. sdk/typescript
+   - 由 packages/api-contract 的 OpenAPI 生成
+   - 生成脚本进 CI：契约改了 SDK 没重生成即失败
+
+2. SSE 客户端
+   - 生成器通常不管流式，这部分手写但**只写传输**，类型仍来自契约
+
+3. 错误
+   - 错误 code 闭集映射为可穷举的 TS 联合类型
+
+== 测试 ==
+- examples/sdk-session：仅凭 SDK 完成一次完整会话，不接触 dsh
+- 契约改一个字段，SDK 未重生成时 CI 必须红
+```
+
+验证:
+
+- M2 验收:第三方仅凭 SDK 完成一次完整会话
+- `/publish feat: {v} session 5 typescript sdk`
+
+---
+
+### ⬜ Session 6: 契约冻结与发布
+
+```
+本次任务:把「契约不能随便改」变成机制。
+
+1. 契约冻结检查
+   - OpenAPI 快照进仓库
+   - 变更时 CI 比对：破坏性变更必须在 PR 描述显式声明并升大版
+   - 非破坏性变更（加字段、加端点）放行
+
+2. profiles/gateway.yml
+   - 网关部署用的组合
+
+3. 文档
+   - README 加 API 平面一节与 SDK 快速上手
+   - 兼容矩阵更新
+   - 部署文档：TLS 由反向代理终结，网关不自己管证书
+
+== 测试 ==
+- 人为做一次破坏性契约变更，CI 必须红
+- 加一个可选字段，CI 必须绿
+```
+
+验证:
+
+- `/publish chore: {v} session 6 contract freeze and release`
 
 ---
 
