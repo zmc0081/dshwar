@@ -191,6 +191,48 @@ B 是当前唯一验证过可行的修法,它的唯一缺陷(依赖人记得)由
 `gateway/src/runtime.ts` 的 `DELIBERATELY_OMITTED` 里,而 **V0.5.5 工作台后端会
 装配它** —— 那时若还没修,同一个 bug 会以「跨租户键前缀混放」的形式再来一次。
 
+## 逻辑档:`principalOf()` 怎么知道「现在是谁在问」(V0.4.6 实测)
+
+进程档答案干净(根上一个值)。逻辑档是一个 runtime 多个 principal、
+**一个 `fs-tenant` 实例**,它的方法被调用时要能分辨这次操作属于谁。逐条测:
+
+| # | 问题                                          | 结果 |
+| - | --------------------------------------------- | ---- |
+| ① | 两个 agent 的 ctx 是不同对象吗                | ✅ 是,且都不是根 |
+| ② | 服务方法里的 `this.ctx` 按 agent 不同吗       | ✅ 不同 —— **原则上分得开** |
+| ③ | 能不能在**每个 agent 的 ctx 上** provide       | ❌ 见下 |
+| ④ | 能不能沿 fiber 链把 `this.ctx` 走回所属 agent | ❌ 见下 |
+
+**③ 的失败方式值得单记**:
+
+```
+agent A 上 provide → 成功
+agent B 上 provide → 失败: service "principalBinding" has been registered at <scope>
+经 A 的工具视角读到 → alice-e6f1
+经 B 的工具视角读到 → alice-e6f1     ← B 拿到了 A 的身份
+```
+
+第一个 agent 的 `provide` 把槽位占住,第二个直接报错;而**报错被忽略的话,
+B 会静默继承 A 的身份** —— 同一个跨租户失败模式,只是换了个值。
+`isolate + provide` 不报错,但返回的是**新 ctx**,不是 agent 自己的那个,
+工具仍然看不到。
+
+**④** 沿 `fiber.parent.ctx` 向上走会撞 `cannot get property "ctx" without inject` ——
+cordis 的 inject 保护同样拦住祖先链。
+
+### 结论:有判别依据,但没有公开 API 把它解回身份
+
+`this.ctx` 的对象标识按 agent 不同(②),所以**信息是在的**;
+但既不能在 agent ctx 上打标(③),也不能从工具视角走回 agent(④)。
+
+于是逻辑档的修法只剩:**给每个 agent 单独装一份服务实例**
+(把 `TenantFileSystem` / `storage-scoped` 插到该 agent 的 ctx 上,绑定它的
+principal)。这比「三个小回调」重,但比「服务生命周期全面改成 per-agent」轻 ——
+只涉及三个包,且范围限定在 agent ctx 上。
+
+⚠️ **仍有一处未验**:`agent.ctx.plugin(TenantFileSystem, …)` 能否**遮蔽**根上
+那一份。未验之前不要把工期按这条路排。
+
 ## 配套守卫
 
 B 靠人记得,所以必须有机器兜底:**`ctx.principal.current()` 的调用点必须登记在
