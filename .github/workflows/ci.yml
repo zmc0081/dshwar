@@ -38,6 +38,32 @@ jobs:
       - name: Prettier
         run: pnpm format:check
 
+  # 契约冻结单独成 job,因为它是唯一需要**历史**的检查:
+  # 基线是上一次提交里的那份 OpenAPI,而其它 job 用浅克隆就够了。
+  contract:
+    name: 契约冻结
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 浅克隆取不到基线,check-contract 会「跳过」而不是「通过」——
+          # 那正是这道检查最不该发生的事。
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: 与目标分支比对 OpenAPI
+        env:
+          # PR 比目标分支;push 比上一个提交。
+          BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.event.pull_request.base.ref) || 'HEAD~1' }}
+        run: node --experimental-strip-types scripts/check-contract.mjs --base "$BASE_REF"
+
   build:
     name: 构建与测试 (Node ${{ matrix.node }})
     runs-on: ubuntu-latest

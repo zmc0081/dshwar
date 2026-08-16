@@ -6,7 +6,8 @@ cordis 组合文件。每个 profile 是一份插件清单,决定「这套运行
 | ----------------- | ----------------------------- | ------------ | --------------------- |
 | `single-user.yml` | 上游原生插件 + 匿名 principal | **对照基线** | 骨架已就位(Session 1) |
 | `team.yml`        | JWT + SQLite,逻辑隔离         | 团队内多用户 | Session 3–6           |
-| `enterprise.yml`  | OIDC + Postgres + 进程隔离    | 跨信任边界   | V0.3.0+               |
+| `gateway.yml`     | team.yml + 驱动 agent 的插件  | API 平面部署 | ✅ V0.2.0             |
+| `enterprise.yml`  | OIDC + Postgres + 进程隔离    | 跨信任边界   | V0.4.0+               |
 
 ## 为什么 `single-user.yml` 是最重要的那一个
 
@@ -25,6 +26,22 @@ CLAUDE.md 硬规则 8 要求:单用户场景下,`single-user.yml` 与多用户 p
 | ----------------- | ---------------- | ------------------ |
 | `single-user.yml` | 无(本来就一个人) | 本地开发           |
 | `team.yml`        | **逻辑**         | 仅限互相信任的用户 |
+| `gateway.yml`     | **逻辑**         | 仅限互相信任的用户 |
 | `enterprise.yml`  | 进程 / 容器      | 跨信任边界         |
 
 逻辑隔离的边界见 [README 的隔离模型警告](../README.md#-隔离模型警告--先读这一段)。
+
+## `gateway.yml` —— 网关部署组合
+
+= `team.yml` + 驱动 agent 所需的三个上游插件
+(`dsh-tools` / `dsh-system-prompt` / `dsh-agent-loop`)。
+
+**身份与隔离部分与 `team.yml` 逐行相同** —— 网关只是换了个入口,不改变隔离语义。
+这一点由 `adapters/dsh-0.1.0/test/profile-parity.test.ts` 断言:
+两个 profile 的 `@dshwar/*` 插件集合必须完全相等,差异集必须恰好是那三个上游插件。
+
+少任何一个 agent 插件,`ctx.agents.create()` 能建出对象但 `followup()` 不产生输出 ——
+症状是「事件序列完全正确却收到 0 个增量」。清单来自
+[`docs/FEASIBILITY-REPORT-V2.md`](../docs/FEASIBILITY-REPORT-V2.md) §4.2 的实测装配。
+
+部署细节见 [`docs/DEPLOYMENT.md`](../docs/DEPLOYMENT.md)。

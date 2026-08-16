@@ -15,6 +15,8 @@
  *   5. Service 子类的 #private        → 必须失败(Session 0 §4.1)
  *   6. 篡改 adapters 的上游版本假设    → 契约测试必须红(Session 7 验收)
  *   7. TS 项目未登记进根 references    → 必须失败(V0.2.0 Session 5 实测教训)
+ *   8. 破坏性契约变更                  → 必须失败(Session 6 验收)
+ *   9. 加一个可选字段                  → **必须放行**(Session 6 验收,另一个方向)
  *
  * 退出码:全绿 0,任一守卫没拦住 1。
  */
@@ -313,6 +315,57 @@ try {
       guards.ok ? '守卫放行了未登记的 TS 项目 —— 该项目将不被任何类型检查覆盖' : undefined,
     )
   }
+
+  // ---------------------------------------------------------------------
+  // 8/9. 契约冻结(Session 6 验收)
+  //
+  //     单测已经验过 diffContract 的判定,但那只证明**分类器**对。这里验的是
+  //     **整条门禁**:改真实的 openapi.json,跑真实的脚本,看退出码。
+  //     两个方向都要:破坏性必须红,加可选字段必须绿 ——
+  //     只会说红的规则等于禁止一切演进。
+  //
+  //     基线用 HEAD:工作区被篡改而 HEAD 未变,正好是「本次 PR 改了契约」。
+  // ---------------------------------------------------------------------
+  {
+    const target = p('packages/api-contract/openapi.json')
+    const backup = `${target}.guardbak`
+    copyFileSync(target, backup)
+
+    // 显式带上 strip-types:Node 24 默认开,22.19 需要这个 flag,
+    // 而 CI 的矩阵两个版本都跑
+    const runContract = () =>
+      run(['--experimental-strip-types', p('scripts', 'check-contract.mjs'), '--base', 'HEAD'])
+
+    try {
+      // 8. 破坏性:删掉一个已发布的端点
+      const doc = JSON.parse(readFileSync(target, 'utf8'))
+      delete doc.paths['/v1/sessions/{id}/turns']
+      writeFileSync(target, JSON.stringify(doc, null, 2) + '\n', 'utf8')
+
+      const breaking = runContract()
+      expect(
+        '8 破坏性契约变更被契约冻结检查拦住',
+        !breaking.ok && /path\.removed/.test(breaking.output),
+        breaking.ok ? '契约冻结检查放行了删端点 —— 已接入的客户端会直接拿到 404' : undefined,
+      )
+
+      // 9. 相容:加一个可选字段
+      copyFileSync(backup, target)
+      const additive = JSON.parse(readFileSync(target, 'utf8'))
+      additive.components.schemas.Session.properties.label = { type: 'string' }
+      writeFileSync(target, JSON.stringify(additive, null, 2) + '\n', 'utf8')
+
+      const relaxed = runContract()
+      expect(
+        '9 加一个可选字段被放行(证明规则不是「禁止一切演进」)',
+        relaxed.ok && /property\.added/.test(relaxed.output),
+        relaxed.ok ? undefined : `契约冻结检查误伤了相容变更:\n${relaxed.output.slice(0, 400)}`,
+      )
+    } finally {
+      copyFileSync(backup, target)
+      unlinkSync(backup)
+    }
+  }
 } finally {
   // 无条件清理,失败路径也不留垃圾
   for (const dir of ['packages/__guard_fixture__', 'adapters/__guard_fixture__']) {
@@ -335,7 +388,7 @@ try {
   const guards = runGuards()
   const version = runVersion()
   expect(
-    '8 夹具已清理干净,守卫回到基线',
+    '10 夹具已清理干净,守卫回到基线',
     guards.ok && version.ok,
     guards.ok && version.ok ? undefined : '清理后守卫仍然失败,仓库可能残留夹具',
   )

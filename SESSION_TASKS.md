@@ -51,7 +51,7 @@ DeepSeek Harness（npm 依赖 @deepseek-ai/dsh-*，精确锁版）
 | 版本       | 内容                                                      | 周期 | 状态                                               |
 | ---------- | --------------------------------------------------------- | ---- | -------------------------------------------------- |
 | V0.1.0     | 运行时平面 MVP + 开源首发                                 | 3 周 | <span style="color:#d00000">开发完成,待发布</span> |
-| **V0.2.0** | API 平面:OpenAPI v1 + Gateway + SDK + Admin 端点          | 4 周 | <span style="color:#d00000">开发中</span>          |
+| **V0.2.0** | API 平面:OpenAPI v1 + Gateway + SDK + Admin 端点          | 4 周 | <span style="color:#d00000">开发完成,待发布</span> |
 | V0.3.0     | 身份互操作:Subject Mirror + SCIM 2.0 + 租户映射 + Webhook | 2 周 | 待启动                                             |
 | V0.4.0     | 计量与治理:metering + policy + model-router               | 3 周 | 待启动                                             |
 | V0.5.0     | 控制平面:租户/成员/订阅/运营后台                          | 5 周 | 待启动                                             |
@@ -98,7 +98,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 > 已发布版本的 Session 一律标 ✅;开发中版本按实际进度标记,每完成一个即更新。
 >
 > 已发布:(暂无)
-> 规划中(开发中,未上线):**V0.2.0(Session 0-6,当前)** · V0.1.0(Session 0-8,开发完成待发布)
+> 规划中(开发中,未上线):**V0.2.0(Session 0-6,开发完成待发布)** · V0.1.0(Session 0-8,开发完成待发布)
 
 ---
 
@@ -128,7 +128,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 | 3 运行时 API 与 SSE      | ✅ 已完成 | 端到端对真实 harness;19 个单测,含断连释放度量与 Last-Event-ID                    |
 | 4 Admin API              | ✅ 已完成 | credentials describe;8 个 planned 返 501;22 个单测                               |
 | 5 TS SDK                 | ✅ 已完成 | 由 OpenAPI 生成;M2 验收对真实端口跑通;12 个单测                                  |
-| 6 契约冻结与发布         | ⬜ 未开始 |                                                                                  |
+| 6 契约冻结与发布         | ✅ 已完成 | 基线取自 git 而非快照文件;18 个单测 + 2 条端到端负向测试                         |
 
 图例:✅ 已完成 · 🔄 进行中 · ⬜ 未开始 · 🟠 代码就绪待外部资源
 
@@ -416,7 +416,7 @@ docs/FEASIBILITY-REPORT-V2.md，包含：
 
 ---
 
-### ⬜ Session 6: 契约冻结与发布
+### ✅ Session 6: 契约冻结与发布
 
 ```
 本次任务:把「契约不能随便改」变成机制。

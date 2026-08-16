@@ -5,7 +5,8 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-> **开发者预览 · V0.1.0。** 运行时平面已可用;API 平面(Gateway / SDK)在 V0.2.0。
+> **开发者预览 · V0.2.0。** 运行时平面与 API 平面(Gateway / SDK)均已可用;
+> 身份互操作(SCIM / OIDC)在 V0.3.0,计量与治理在 V0.4.0。
 
 ---
 
@@ -110,6 +111,9 @@ Harness agent **能执行 shell、能读写文件系统**。这决定了隔离�
 | [`@dshwar/credentials-multiuser`](packages/credentials-multiuser) | per-principal 凭据          | ✅ V0.1.0 |
 | [`@dshwar/fs-tenant`](packages/fs-tenant)                         | 工作区按租户钉死            | ✅ V0.1.0 |
 | [`@dshwar/storage-scoped`](packages/storage-scoped)               | 租户前缀键                  | ✅ V0.1.0 |
+| [`@dshwar/api-contract`](packages/api-contract)                   | API v1 契约(Zod 单一事实源) | ✅ V0.2.0 |
+| [`@dshwar/gateway`](gateway)                                      | API 平面服务(Hono)          | ✅ V0.2.0 |
+| [`@dshwar/sdk`](sdk/typescript)                                   | TS SDK(由 OpenAPI 生成)     | ✅ V0.2.0 |
 | `@dshwar/auth-jwt` · `auth-oidc`                                  | JWKS / Keycloak / Authentik | 📋 V0.3.0 |
 | `@dshwar/metering` · `policy` · `model-router`                    | 计量与治理                  | 📋 V0.4.0 |
 | `@dshwar/supervisor`                                              | 进程隔离                    | 📋 V0.4.0 |
@@ -118,11 +122,95 @@ Harness agent **能执行 shell、能读写文件系统**。这决定了隔离�
 
 ---
 
+## API 平面
+
+上游有两条对外通道,**两条都不能直接用**:SDK 协议是 stdio JSON-RPC(移动端连不上);
+内置 webserver 没有 TLS 也没有认证,只有一道 Origin 栅栏,而且不带 `Origin` 头的请求
+直接放行(实测见 [`docs/FEASIBILITY-REPORT.md`](docs/FEASIBILITY-REPORT.md) §4.4)。
+
+DSHWAR 的 API 平面补的就是这一层。**它是客户接进来之后换不掉的那部分** ——
+运行时插件可替换,控制面是标准 SaaS,只有这份契约是护城河。
+
+| 端点                                               | 作用                         | 状态       |
+| -------------------------------------------------- | ---------------------------- | ---------- |
+| `POST /v1/sessions`                                | 建会话                       | ✅ V0.2.0  |
+| `GET /v1/sessions`                                 | 列出当前主体的会话           | ✅ V0.2.0  |
+| `GET /v1/sessions/{id}`                            | 会话状态                     | ✅ V0.2.0  |
+| `POST /v1/sessions/{id}/turns`                     | 发起一轮(不等跑完)           | ✅ V0.2.0  |
+| `GET /v1/sessions/{id}/stream`                     | SSE 流式,支持断线续传        | ✅ V0.2.0  |
+| `DELETE /v1/sessions/{id}`                         | 取消并释放                   | ✅ V0.2.0  |
+| `GET /v1/admin/subjects/{id}/credentials`          | 凭据配置状态(**永不返回值**) | ✅ V0.2.0  |
+| `/v1/admin/subjects` · `usage` · `quota` · `audit` | 契约已定,返回 501            | 📋 V0.3.0+ |
+
+**契约完整,实现分期。** 未实现的端点返回 501 并在 OpenAPI 里标
+`x-dshwar-status: planned` —— 而不是 404。404 会让第三方以为路径写错了,
+从而去猜别的路径。契约是换不掉的那一层,晚定一天成本高一天。
+
+契约以 Zod 为单一事实源,OpenAPI 3.1 由它生成,SDK 再由 OpenAPI 生成。
+**任何一处手写都会引入第二个事实源**,而两个事实源迟早分叉 ——
+分叉的表现是客户按文档写的客户端在生产上炸掉。
+
+### SDK 快速上手
+
+```bash
+npm install @dshwar/sdk
+```
+
+```ts
+import { DshwarClient } from '@dshwar/sdk'
+
+const client = new DshwarClient({
+  baseUrl: 'https://api.example.com',
+  token: process.env.DSHWAR_TOKEN!, // 由**你的** IdP 签发，不是 DSHWAR 发的
+})
+
+const session = await client.createSession()
+await client.createTurn(session.id, '用一句话介绍你自己')
+
+for await (const event of client.stream(session.id)) {
+  if (event.type === 'message.delta') process.stdout.write(event.text)
+  if (event.type === 'turn.completed') break
+}
+
+await client.deleteSession(session.id)
+```
+
+完整例子见 [`examples/sdk-session`](examples/sdk-session)。那个包**只依赖
+`@dshwar/sdk`** —— 没有 `@deepseek-ai/dsh-*`,没有 cordis。这不是巧合,
+是被测试钉住的验收标准:第三方仅凭 SDK 就能完成一次完整会话,不接触 dsh。
+
+SDK 的类型由 OpenAPI 生成,不手写。错误码是闭集,映射成可穷举的 TS 联合类型 ——
+`switch (error.code)` 漏掉分支时编译不过。详见
+[`sdk/typescript/README.md`](sdk/typescript/README.md)。
+
+### 契约稳定性承诺
+
+- `/v1/` 路径版本化。破坏性变更**升大版**,v1 与新版本**并行不少于 6 个月**。
+- 破坏性变更必须显式声明:CI 的契约冻结检查(`pnpm check:contract`)拿上一次提交里的
+  OpenAPI 做基线比对,检出破坏性差异且没有点名契约包的 `major` changeset 时直接变红。
+- **给闭集枚举加值也算破坏性。** 错误码定成 `z.enum` 就是为了让你写出可穷举的
+  `switch` —— 多一个值,你已经写全的 `switch` 立刻编译失败。这是设计后果,不是误判。
+
+### 部署
+
+见 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)。三件要点:
+
+- **TLS 由反向代理终结**,网关不自己管证书
+- **反向代理必须关缓冲、调长超时**,否则 SSE 会退化成「一次性收到一坨」
+- 部署组合用 [`profiles/gateway.yml`](profiles/gateway.yml)
+
+---
+
 ## 兼容矩阵
 
-| DSHWAR | DeepSeek Harness (`@deepseek-ai/dsh-*`) | cordis | Node               | 状态 |
-| ------ | --------------------------------------- | ------ | ------------------ | ---- |
-| 0.2.0  | 0.1.0-rc.6                              | 4.0.1  | ^22.19.0 \|\| >=24 | 当前 |
+| DSHWAR | API 契约 | DeepSeek Harness (`@deepseek-ai/dsh-*`) | cordis | Node               | 状态        |
+| ------ | -------- | --------------------------------------- | ------ | ------------------ | ----------- |
+| 0.2.0  | `/v1`    | 0.1.0-rc.6                              | 4.0.1  | ^22.19.0 \|\| >=24 | 当前        |
+| 0.1.0  | —        | 0.1.0-rc.6                              | 4.0.1  | ^22.19.0 \|\| >=24 | 无 API 平面 |
+
+`@dshwar/gateway` 与 `@dshwar/sdk` 跟随 DSHWAR 主版本号统一提升(changesets fixed 模式),
+但 **API 契约版本单独演进**:`/v1` 只在破坏性变更时才升,与包版本号解耦。
+包升到 0.9.0 而契约仍是 `/v1`,是正常状态,不是漏改。
 
 上游依赖**精确锁版**,禁止 `^` 与 `~`。版本不匹配时 `adapters/dsh-0.1.0` 的守卫会
 **拒绝启动**,而不是打一行警告 —— 带着不匹配的版本跑起来,故障会出现在离根因很远的地方。
@@ -193,6 +281,7 @@ pnpm check:all
 | `pnpm lint`                     | ESLint,含 **adapters 边界规则**                               |
 | `pnpm check:guards`             | PR 自查清单(grep 双保险)                                      |
 | `pnpm check:version`            | 版本号全仓一致性                                              |
+| `pnpm check:contract`           | **契约冻结** —— 与上一次提交比 OpenAPI,破坏性变更需显式声明   |
 | `pnpm verify:guards`            | **守卫的负向测试** —— 确认守卫真的会拦                        |
 
 > `typescript` 锁在 6.x:typescript-eslint 尚不支持 TS 7。

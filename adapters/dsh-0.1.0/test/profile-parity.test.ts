@@ -221,6 +221,38 @@ describe('两个 profile 的差异集恰好是预期的那几个插件', () => {
     expect(names).not.toContain('@deepseek-ai/dsh-session-query-sqlite')
   })
 
+  // gateway.yml 是 V0.2.0 Session 6 加的部署组合。它的价值同样在「差异集小」:
+  // 网关只是换了个入口,不该顺手改变隔离语义。
+  it('gateway.yml 的身份与隔离部分与 team.yml 逐行相同', async () => {
+    const team = await pluginNames('team.yml')
+    const gateway = await pluginNames('gateway.yml')
+
+    const dshwarIn = (names: string[]) => names.filter((n) => n.startsWith('@dshwar/')).sort()
+    expect(dshwarIn(gateway)).toEqual(dshwarIn(team))
+  })
+
+  it('gateway.yml 相对 team.yml 只多出驱动 agent 所需的插件', async () => {
+    const team = await pluginNames('team.yml')
+    const gateway = await pluginNames('gateway.yml')
+
+    const added = gateway.filter((n) => !team.includes(n)).sort()
+    const removed = team.filter((n) => !gateway.includes(n)).sort()
+
+    // 少任何一个,ctx.agents.create() 能建出对象但 followup() 不产生输出。
+    // 清单来自 docs/FEASIBILITY-REPORT-V2.md §4.2 的实测装配。
+    expect(added).toEqual([
+      '@deepseek-ai/dsh-agent-loop',
+      '@deepseek-ai/dsh-system-prompt',
+      '@deepseek-ai/dsh-tools',
+    ])
+    expect(removed).toEqual([])
+  })
+
+  it('gateway.yml 同样不含 session-query-sqlite', async () => {
+    const names = await pluginNames('gateway.yml')
+    expect(names).not.toContain('@deepseek-ai/dsh-session-query-sqlite')
+  })
+
   it('两个 profile 的上游插件部分逐个相同', async () => {
     const single = (await pluginNames('single-user.yml')).filter((n) =>
       n.startsWith('@deepseek-ai/'),

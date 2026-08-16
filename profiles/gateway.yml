@@ -1,0 +1,109 @@
+# profiles/gateway.yml —— API 平面部署用的组合
+#
+# = team.yml 的全部内容 + 网关驱动 agent 所需的那几个插件。
+#
+# ## 与 team.yml 的关系
+#
+# team.yml 面向「本机多用户」:有人在终端里直接跑 dsh。
+# 本 profile 面向「网关对外提供 HTTP」:没有终端,会话由 `/v1/sessions` 驱动。
+# 差别只在**多装了驱动 agent 需要的插件**,身份与隔离部分逐行相同 ——
+# 换句话说,网关不改变隔离语义,它只是换了一个入口。
+#
+# 七个插件的清单来自 docs/FEASIBILITY-REPORT-V2.md §4.2(实测装配顺序,
+# 不是从文档推断的)。
+#
+# ## 三件网关**不做**的事
+#
+# 1. **不管 TLS。** 证书由反向代理终结。自己管证书意味着每个部署都要处理续期、
+#    SNI、OCSP —— 那是反向代理已经做得很好的事,重做一遍只会做得更差。
+#    见 docs/DEPLOYMENT.md。
+# 2. **不做限流实现。** 契约里有 rate_limited 与 429,判定逻辑属于
+#    @dshwar/policy(V0.4.0)。这里只留位置。
+# 3. **不组装身份。** 令牌由部署方的 IdP 签发,DSHWAR 只验证与消费
+#    (硬规则 4:不存密码、不签发身份令牌、不实现注册流程)。
+#
+# ⚠️ **隔离级别:逻辑隔离(单进程多 principal)。仅适用于互相信任的用户。**
+# 跨信任边界请等 V0.4.0 的进程隔离 supervisor。这条不是免责声明,是采用边界 ——
+# 宁可劝退,不要让人从事故里学会(CLAUDE.md 第七节)。
+#
+# 上游版本:0.1.0-rc.6(精确锁版)
+
+# ---------------------------------------------------------------------------
+# 基础设施
+# ---------------------------------------------------------------------------
+- id: timer
+  name: '@deepseek-ai/cordis-plugin-timer'
+
+# ---------------------------------------------------------------------------
+# 身份 —— 与 team.yml 逐行相同
+# ---------------------------------------------------------------------------
+- id: principal
+  name: '@dshwar/principal'
+
+- id: auth
+  # ⚠️ auth-static 的 token 是明文配置,**禁止用于部署**。
+  # 这里保留它只是为了让本 profile 能零外部依赖地跑起来验证装配。
+  # 生产请换 @dshwar/auth-jwt 或 @dshwar/auth-oidc(V0.3.0)。
+  name: '@dshwar/auth-static'
+  config:
+    entries:
+      - token: dev-alice
+        id: alice-e6f1
+        tenantId: acme
+        roles: [member]
+
+# ---------------------------------------------------------------------------
+# 运行时契约 —— 与 team.yml 逐行相同的三处替换
+# ---------------------------------------------------------------------------
+- id: credentials
+  name: '@dshwar/credentials-multiuser'
+
+- id: fs
+  name: '@dshwar/fs-tenant'
+  config:
+    root: !!js dshHomePath('workspaces')
+
+- id: storage
+  name: '@dshwar/storage-scoped'
+
+- id: subprocess
+  name: '@deepseek-ai/dsh-subprocess-local'
+
+# ---------------------------------------------------------------------------
+# 会话
+# ---------------------------------------------------------------------------
+- id: session
+  name: '@deepseek-ai/dsh-session'
+
+- id: session-persistence-jsonl
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: !!js dshHomePath('sessions')
+
+# ---------------------------------------------------------------------------
+# 驱动 agent —— 本 profile 相对 team.yml 多出来的部分
+#
+# 网关要在进程内跑完整的一轮,光有 llm + agent 不够:
+# agent-loop 负责推进,tools 与 system-prompt 是 loop 的前置依赖。
+# 少任何一个,ctx.agents.create() 能建出对象但 followup() 不产生输出 ——
+# 症状是「事件序列完全正确却收到 0 个增量」,极难排查。
+# ---------------------------------------------------------------------------
+- id: llm
+  name: '@deepseek-ai/dsh-llm'
+
+- id: tools
+  name: '@deepseek-ai/dsh-tools'
+
+- id: system-prompt
+  name: '@deepseek-ai/dsh-system-prompt'
+
+- id: agent
+  name: '@deepseek-ai/dsh-agent'
+
+- id: agent-loop
+  name: '@deepseek-ai/dsh-agent-loop'
+  config:
+    agents: []
+# ⚠️ 与 team.yml 同样刻意**不含** session-query-sqlite:
+# 它是全局索引、不感知 principal,查询会跨租户。
+# 见 docs/DECISIONS/storage-scoping.md。

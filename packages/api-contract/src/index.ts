@@ -79,3 +79,6 @@ export { buildComponentSchemas, nameOf, SCHEMA_REGISTRY, schemaRef } from './reg
 
 export { buildOpenApiDocument } from './openapi.ts'
 export type { OpenApiDocument } from './openapi.ts'
+
+export { breakingChanges, diffContract } from './freeze.ts'
+export type { ContractChange, ContractChangeCode } from './freeze.ts'
