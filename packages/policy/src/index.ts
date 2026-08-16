@@ -87,6 +87,24 @@ export interface PolicyServiceOptions {
   readonly onMeteringUnavailable: (detail: string) => void
   /** 测试用时钟。 */
   readonly now?: () => Date
+  /**
+   * 准入快照的有效期(毫秒)。默认 5 秒。见 {@link PolicyService.admit}。
+   *
+   * 调大 = 欠费租户能多占一会儿资源;调小 = 建会话热路径上更频繁地触发
+   * 后台刷新。**不要调成 0** —— 那等于每次建会话都等一次 metering 查询,
+   * 正是这套快照要避免的事。
+   */
+  readonly admissionTtlMs?: number
+}
+
+/** 准入判定的结果。刻意与 {@link QuotaDecision} 分开 —— 两者的数据来源不同。 */
+export type AdmissionDecision =
+  | { readonly kind: 'allow' }
+  | { readonly kind: 'deny'; readonly reason: 'quota_exhausted' }
+
+interface AdmissionSnapshot {
+  readonly exhausted: boolean
+  readonly at: number
 }
 
 /**
@@ -99,9 +117,80 @@ export interface PolicyServiceOptions {
  */
 export class PolicyService {
   private readonly options: PolicyServiceOptions
+  /** 准入快照。见 {@link admit}。 */
+  private readonly snapshots = new Map<string, AdmissionSnapshot>()
+  /** 正在刷新的主体,防止热路径上并发打穿 metering。 */
+  private readonly refreshing = new Set<string>()
 
   constructor(options: PolicyServiceOptions) {
     this.options = options
+  }
+
+  /**
+   * **准入**判定 —— 建会话时用,与 {@link check} 的计费判定是两件事。
+   *
+   * ## 为什么需要两段
+   *
+   * `check()` 挂在发起轮次上,因为烧钱的是轮不是会话对象。但**资源**不是这样:
+   * 进程隔离下每建一个会话就可能起一个进程(实测常驻 58 MB),于是配额耗尽的
+   * 租户仍能不断建会话,把进程槽位占满、把付费租户挤出去。逻辑隔离下这几乎
+   * 没有成本,是进程隔离把它放大成了真实的拒绝服务向量。
+   *
+   * ## 为什么是同步的,读快照而不是现算
+   *
+   * **这是本方法最重要的性质。** `metering.query()` 是异步的,而建会话是热路径。
+   * 每次建会话都等一次用量查询,等于把计量组件放进会话创建的故障域 ——
+   * 与本包「计量是账目组件,不是安全组件」的立场直接矛盾(见模块说明的
+   * fail open 一节)。计量慢一点,建会话就慢一点;计量挂了,建会话就全挂。
+   *
+   * 所以这里读的是几秒前算好的快照:**判定不阻塞,也不引入新的故障域**。
+   * 代价是滞后 —— 一个刚刚烧完配额的租户能在 TTL 窗口内多建几个会话。
+   * 那是可接受的:窗口是秒级,而真正烧钱的那一步(`check()`)仍然是精确的。
+   *
+   * ## 没有快照时放行(fail open)
+   *
+   * 与本包既有语义一致。第一次建会话必然没有快照 —— 若那时拒绝,
+   * 等于「新用户一律先被拒一次」。
+   *
+   * @param subjectId 主体
+   * @returns 准入结论。**同步返回**,不 await 任何 IO
+   */
+  admit(subjectId: string): AdmissionDecision {
+    const now = (this.options.now ?? (() => new Date()))().getTime()
+    const ttl = this.options.admissionTtlMs ?? 5_000
+    const snapshot = this.snapshots.get(subjectId)
+
+    // 过期或缺失 → 后台刷一次,但**本次不等它**
+    if (snapshot === undefined || now - snapshot.at >= ttl) {
+      this.scheduleRefresh(subjectId)
+    }
+
+    // 只有「快照明确说烧完了」才拒。缺失、过期、读不到 —— 一律放行。
+    if (snapshot !== undefined && snapshot.exhausted && now - snapshot.at < ttl) {
+      return { kind: 'deny', reason: 'quota_exhausted' }
+    }
+    return { kind: 'allow' }
+  }
+
+  /**
+   * 后台刷新一个主体的准入快照。
+   *
+   * 同一主体同时只刷一次 —— 建会话是热路径,并发请求各刷一次会把 metering
+   * 打穿,而那正是「准入不引入新故障域」想避免的。
+   */
+  private scheduleRefresh(subjectId: string): void {
+    if (this.refreshing.has(subjectId)) return
+    this.refreshing.add(subjectId)
+
+    void this.check(subjectId)
+      .catch(() => undefined) // check 自己 fail open,这里只兜住意外
+      .finally(() => this.refreshing.delete(subjectId))
+  }
+
+  /** 供测试与诊断:当前快照。 */
+  admissionSnapshot(subjectId: string): { exhausted: boolean; at: number } | undefined {
+    const s = this.snapshots.get(subjectId)
+    return s === undefined ? undefined : { ...s }
   }
 
   private period(now: Date): { start: Date; end: Date } {
@@ -162,6 +251,7 @@ export class PolicyService {
 
     // 上限未设置或显式 null → 不限。先判它,连 metering 都不必读。
     if (limit === undefined || limit === null) {
+      this.snapshots.set(subjectId, { exhausted: false, at: now.getTime() })
       return {
         kind: 'allow',
         quota: {
@@ -183,6 +273,8 @@ export class PolicyService {
       this.options.onMeteringUnavailable(
         `policy: 配额判定时读不到用量,放行(subject=${subjectId}):${String(cause)}`,
       )
+      // 读不到就不更新快照 —— 保留上一次的结论比写一个「没烧完」的假事实好。
+      // 写 false 会让一个刚被判定为烧完的主体因为一次 metering 抖动就重新放行。
       return {
         kind: 'allow',
         quota: {
@@ -203,7 +295,12 @@ export class PolicyService {
       periodEnd: end.toISOString(),
     }
 
-    return used >= limit
+    const exhausted = used >= limit
+    // ★ 精确判定顺手把准入快照喂热 —— 两段判定共用同一个事实源,
+    // 而不是各算各的。这也让「发过轮的主体」的快照总是新鲜的。
+    this.snapshots.set(subjectId, { exhausted, at: now.getTime() })
+
+    return exhausted
       ? { kind: 'deny', reason: 'quota_exhausted', quota }
       : { kind: 'allow', quota }
   }

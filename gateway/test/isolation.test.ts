@@ -54,7 +54,7 @@ interface Booted {
 /** 按隔离级别装一个完整网关。**两档共用同一段接线** —— 那正是要证明的事。 */
 async function boot(
   level: IsolationLevel,
-  options: { maxProcesses?: number; quotaDenies?: boolean } = {},
+  options: { maxProcesses?: number; quotaDenies?: boolean; quotaDeniesTurnOnly?: boolean } = {},
 ): Promise<Booted> {
   const metering = new InMemoryMeteringStore()
   const supervisorEvents: SupervisorEvent[] = []
@@ -119,10 +119,21 @@ async function boot(
       createAgent: isolated.createAgent,
       userMessage: isolated.userMessage,
       heartbeatMs: 50,
+      ...(options.quotaDeniesTurnOnly === true
+        ? {
+            quota: {
+              check: async () => ({ kind: 'deny' as const, reason: 'quota_exhausted' }),
+              admit: () => ({ kind: 'allow' as const }),
+            },
+          }
+        : {}),
       ...(options.quotaDenies === true
         ? {
             quota: {
               check: async () => ({ kind: 'deny' as const, reason: 'quota_exhausted' }),
+              // V0.4.6:准入判定同步、读快照。这里直接返回 deny 模拟
+              // 「快照说这个租户烧完了」。
+              admit: () => ({ kind: 'deny' as const, reason: 'quota_exhausted' }),
             },
           }
         : {}),
@@ -236,7 +247,8 @@ describe('R7 治理联动:不另起一套', () => {
   }, 30_000)
 
   it('配额判定仍在父进程 —— policy 不进子进程', async () => {
-    const { app, supervisorEvents } = await boot('process', { quotaDenies: true })
+    // 只让**精确判定**拒绝,准入放行 —— 这样才测得到「发轮时的判定在父进程」
+    const { app, supervisorEvents } = await boot('process', { quotaDeniesTurnOnly: true })
     const created = await app.request('/v1/sessions', {
       method: 'POST',
       headers: { ...auth, 'content-type': 'application/json' },
@@ -258,17 +270,15 @@ describe('R7 治理联动:不另起一套', () => {
   }, 30_000)
 
   /**
-   * ⚠️ **记录一个真实缺口,不是断言正确行为。**
+   * ★ 缺口已修(V0.4.6 Session 2)。本条从「钉死现状」翻转成「断言正确行为」。
    *
-   * 配额挂在 `/turns` 上(`routes.ts` 的 `options.quota`),而进程在**建会话**时
-   * 就起来了。于是配额耗尽的租户仍能不断建会话、持续占用 58 MB 的进程槽位 ——
-   * 在逻辑隔离下这几乎没有成本,进程隔离把它变成了真实的资源放大。
+   * 曾经的形态:配额只挂在 `/turns` 上,而进程在**建会话**时就起来 ——
+   * 配额耗尽的租户能不断建会话、占满进程槽位,把付费租户挤出去。
+   * 逻辑隔离下这几乎没有成本,是进程隔离把它放大成了真实的拒绝服务向量。
    *
-   * 这条测试把现状钉死,免得将来有人以为「配额已经保护了进程池」。
-   * 修法要动配额的挂载点,影响逻辑档的既有行为,不在本 Session 范围内,
-   * 已开独立任务。
+   * 现在建会话走准入判定(同步、读快照、不等 metering),烧完即拒。
    */
-  it('【已知缺口】配额耗尽的租户仍能建会话并占用进程槽位', async () => {
+  it('★ 配额耗尽的租户建不了会话,进程池不被占用', async () => {
     const { app, supervisorEvents } = await boot('process', { quotaDenies: true })
     const created = await app.request('/v1/sessions', {
       method: 'POST',
@@ -276,8 +286,32 @@ describe('R7 治理联动:不另起一套', () => {
       body: JSON.stringify({}),
     })
 
-    expect(created.status, '若这里变成 429,说明缺口已修,请更新本测试').toBe(201)
-    expect(supervisorEvents.filter((e) => e.kind === 'spawn')).toHaveLength(1)
+    expect(created.status).toBe(429)
+    // 关键:**一个进程都没起**。这才是准入判定的意义 ——
+    // 拒绝发生在付出 115 ms 冷启动 + 58 MB 之前。
+    expect(supervisorEvents.filter((e) => e.kind === 'spawn')).toHaveLength(0)
+  }, 30_000)
+
+  it('★ 准入判定在两档隔离下行为一致(红线 2)', async () => {
+    // 客户端不该知道自己跑在哪种隔离下 —— 包括被拒的时候。
+    // 若只在 process 档做准入,两档就分叉了。
+    const logical = await boot('logical', { quotaDenies: true })
+    const logicalRes = await logical.app.request('/v1/sessions', {
+      method: 'POST',
+      headers: { ...auth, 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+    await logical.store.releaseAll()
+
+    const process_ = await boot('process', { quotaDenies: true })
+    const processRes = await process_.app.request('/v1/sessions', {
+      method: 'POST',
+      headers: { ...auth, 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+
+    expect(logicalRes.status).toBe(processRes.status)
+    expect(logicalRes.status).toBe(429)
   }, 30_000)
 
   it('进程 spawn / 回收 / 崩溃进审计', async () => {

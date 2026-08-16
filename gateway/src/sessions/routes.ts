@@ -56,7 +56,19 @@ export interface RuntimeRouteOptions {
 
 /** `@dshwar/policy` 判定入口的结构性子集。 */
 export interface QuotaCheckLike {
+  /**
+   * **精确**判定 —— 挂在发起轮次上,因为烧钱的是轮不是会话对象。
+   * 异步:它要现算当前周期的用量。
+   */
   check(subjectId: string): Promise<{ kind: 'allow' } | { kind: 'deny'; reason: string }>
+  /**
+   * **准入**判定 —— 挂在建会话上(V0.4.6)。
+   *
+   * ★ **同步**,读几秒前的快照,不等 metering。建会话是热路径,
+   * 每次都等一次用量查询等于把计量组件放进会话创建的故障域。
+   * 缺席即不做准入判定 —— 与配额本身一样是 opt-in。
+   */
+  admit?(subjectId: string): { kind: 'allow' } | { kind: 'deny'; reason: string }
 }
 
 /**
@@ -135,6 +147,21 @@ export function registerRuntimeRoutes(options: RuntimeRouteOptions) {
         }
         provider = decision.provider
         model = decision.model
+      }
+
+      // ---- 配额准入(V0.4.6)----
+      // 与发轮时的精确判定是两件事:那里管的是**钱**,这里管的是**资源**。
+      // 进程隔离下每个会话可能起一个进程(实测常驻 58 MB),配额耗尽的租户
+      // 若能不断建会话,就能把进程槽位占满、把付费租户挤出去 —— 逻辑隔离下
+      // 这几乎没有成本,是进程隔离把它放大成了真实的拒绝服务向量。
+      //
+      // ★ 同步调用,不 await。准入读的是快照,而**不引入新的故障域**正是
+      // 它存在的前提:计量挂了不该让建会话跟着挂。
+      if (options.quota?.admit !== undefined) {
+        const admission = options.quota.admit(principal.id)
+        if (admission.kind === 'deny') {
+          throw new ApiError('rate_limited', `quota exhausted (${admission.reason})`)
+        }
       }
 
       const sessionId = crypto.randomUUID()
