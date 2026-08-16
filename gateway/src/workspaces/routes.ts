@@ -19,8 +19,10 @@ import { tenantWorkspaceRoot } from '@dshwar/fs-tenant'
 import type { Hono } from 'hono'
 import { readdir, stat } from 'node:fs/promises'
 import { join, relative, sep } from 'node:path'
-import { ApiError, notFound } from '../errors.ts'
+import { ApiError, notFound, notImplemented } from '../errors.ts'
 import type { GatewayEnv } from '../middleware.ts'
+import type { AuditSink } from '../admin/audit.ts'
+import type { WorkspacePolicyStore } from './policy.ts'
 import type { WorkspaceStore } from './store.ts'
 
 export interface WorkspaceRouteOptions {
@@ -34,6 +36,15 @@ export interface WorkspaceRouteOptions {
   readonly workspaceRoot: string
   /** 单次列目录的上限。防一个几万文件的工作区把响应撑爆。 */
   readonly maxEntries?: number
+  /**
+   * 工作区执行策略(V0.5.5 Session 2)。缺席时策略端点回落 501。
+   *
+   * ⚠️ 缺席**不等于放行** —— 它意味着这个部署没接策略层,
+   * 而策略判定本身在 `createPolicyEnforcer` 里,不经过这两个端点。
+   */
+  readonly policies?: WorkspacePolicyStore
+  /** 改策略要进审计 —— 那是一次提权动作。 */
+  readonly audit?: AuditSink
 }
 
 /** 一条产物记录。与契约的 `Deliverable` 对齐。 */
@@ -140,6 +151,64 @@ export function registerWorkspaceRoutes(options: WorkspaceRouteOptions) {
       // 运维还能从磁盘上捞回来 —— 而磁盘空间是可以事后回收的,数据不是。
       // 真正的文件清理该是一个显式的、带确认的运维动作,不是一次 DELETE 的副作用。
       return c.body(null, 204)
+    })
+
+    app.get('/v1/workspaces/:id/policy', async (c) => {
+      const principal = c.get('principal')!
+      const requestId = c.get('requestId')
+      if (options.policies === undefined) throw notImplemented('V0.5.5')
+
+      // 先查归属 —— 策略里写着这个工作区允许访问哪些主机、哪些路径,
+      // 那本身就是敏感信息:它描述了这个项目在碰什么。
+      const workspace = await options.store.get(principal, c.req.param('id'))
+      if (workspace === undefined) throw notFound()
+
+      const policy = await options.policies.get(workspace.id)
+      return c.json({ policy, requestId })
+    })
+
+    app.patch('/v1/workspaces/:id/policy', async (c) => {
+      const principal = c.get('principal')!
+      const requestId = c.get('requestId')
+      if (options.policies === undefined) throw notImplemented('V0.5.5')
+
+      const workspace = await options.store.get(principal, c.req.param('id'))
+      if (workspace === undefined) throw notFound()
+
+      const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>
+      const patch: Record<string, unknown> = {}
+      for (const key of ['allowedTools', 'writablePaths', 'allowedHosts'] as const) {
+        const value = body[key]
+        if (value === undefined) continue
+        if (!Array.isArray(value) || value.some((v) => typeof v !== 'string')) {
+          throw new ApiError('invalid_request', `${key} 必须是字符串数组`)
+        }
+        patch[key] = value
+      }
+      if (body['allowShell'] !== undefined) {
+        if (typeof body['allowShell'] !== 'boolean') {
+          throw new ApiError('invalid_request', 'allowShell 必须是布尔值')
+        }
+        patch['allowShell'] = body['allowShell']
+      }
+
+      const policy = await options.policies.update(workspace.id, patch)
+
+      // ⚠️ **改策略必须进审计。** 它是一次提权动作 —— 把 allowShell 打开
+      // 的那一刻,这个工作区的 agent 就能执行任意命令了。
+      // 审计要能回答「谁在什么时候放开了什么」。
+      options.audit?.record({
+        at: new Date().toISOString(),
+        actor: principal.id,
+        tenantId: principal.tenantId,
+        action: 'workspace.policy.updated',
+        target: workspace.id,
+        before: null,
+        after: policy,
+        requestId,
+      })
+
+      return c.json({ policy, requestId })
     })
 
     app.get('/v1/workspaces/:id/deliverables', async (c) => {

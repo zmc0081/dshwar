@@ -113,3 +113,14 @@ export { registerWorkspaceRoutes } from './workspaces/routes.ts'
 export type { WorkspaceRouteOptions } from './workspaces/routes.ts'
 export { InMemoryWorkspaceStore } from './workspaces/store.ts'
 export type { Workspace, WorkspaceStore } from './workspaces/store.ts'
+export {
+  checkHost,
+  checkShell,
+  checkTool,
+  checkWrite,
+  defaultPolicy,
+  InMemoryWorkspacePolicyStore,
+} from './workspaces/policy.ts'
+export type { PolicyDecision, WorkspacePolicy, WorkspacePolicyStore } from './workspaces/policy.ts'
+export { createPolicyEnforcer } from './workspaces/enforce.ts'
+export type { GuardedAction, PolicyEnforcerOptions } from './workspaces/enforce.ts'
