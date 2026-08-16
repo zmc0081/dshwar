@@ -150,6 +150,9 @@ importers:
       '@dshwar/principal':
         specifier: workspace:*
         version: link:../packages/principal
+      '@dshwar/supervisor':
+        specifier: workspace:*
+        version: link:../packages/supervisor
       hono:
         specifier: ^4.10.7
         version: 4.13.2

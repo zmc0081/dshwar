@@ -95,6 +95,16 @@ export interface Lease {
   send(payload: unknown): void
   /** 只订阅本 lease 的消息。返回退订函数。 */
   onMessage(listener: (message: ChildMessage) => void): () => void
+  /**
+   * 订阅承载进程的死亡。返回退订函数。
+   *
+   * 崩溃恢复必须是**推送**的:SSE 是推送模型,没人会来轮询「我的会话还在吗」。
+   * 让调用方自己盯 `alive` 就等于让每个调用方各写一遍轮询,而漏写的那个
+   * 表现为「流突然停住,再也没有下文」。
+   *
+   * 进程已经死了才订阅的,立刻同步收到一次 —— 否则就漏掉了。
+   */
+  onDeath(listener: () => void): () => void
   /** 取消本路会话。**不波及同进程的其他 lease。** */
   cancel(): void
   /** 释放租约。幂等。 */
@@ -105,10 +115,23 @@ interface Pooled {
   readonly principalId: string
   readonly child: ChildProcessLike
   readonly listeners: Map<string, Set<(m: ChildMessage) => void>>
+  /** 进程死亡的订阅者。见 {@link Lease.onDeath}。 */
+  readonly deathListeners: Set<() => void>
   refs: number
   alive: boolean
+  /** 死亡通知只发一次 —— `terminate()` 与 `exit` 事件都会走到那里。 */
+  deathAnnounced: boolean
   idleTimer: ReturnType<typeof setTimeout> | undefined
   killTimer: ReturnType<typeof setTimeout> | undefined
+}
+
+/** 通知死亡订阅者。只发一次 —— `terminate()` 与 `exit` 事件都会走到这里。 */
+function announceDeath(pooled: Pooled): void {
+  if (pooled.deathAnnounced) return
+  pooled.deathAnnounced = true
+  const listeners = [...pooled.deathListeners]
+  pooled.deathListeners.clear()
+  for (const listener of listeners) listener()
 }
 
 /**
@@ -232,8 +255,10 @@ export class Supervisor {
       principalId: principal.id,
       child,
       listeners: new Map(),
+      deathListeners: new Set(),
       refs: 0,
       alive: true,
+      deathAnnounced: false,
       idleTimer: undefined,
       killTimer: undefined,
     }
@@ -262,11 +287,13 @@ export class Supervisor {
           signal,
         })
       }
+      announceDeath(pooled)
     })
 
     // 起不来与起来后崩溃,对调用方是同一件事:这个进程用不了。
     child.on('error', () => {
       pooled.alive = false
+      announceDeath(pooled)
     })
 
     this.pool.set(principal.id, pooled)
@@ -312,6 +339,16 @@ export class Supervisor {
       },
       send: (payload) => send('work', payload),
       onMessage: (listener) => this.subscribe(pooled, leaseId, listener),
+      onDeath: (listener) => {
+        // 已经死了才来订阅的,立刻同步通知一次。漏掉这一步的后果是
+        // 「进程死在 acquire 与 onDeath 之间」这个窄窗口里的会话永远不知情。
+        if (!pooled.alive) {
+          listener()
+          return () => {}
+        }
+        pooled.deathListeners.add(listener)
+        return () => pooled.deathListeners.delete(listener)
+      },
       // 取消只针对本 lease —— 同进程的其他会话不受影响。
       // 「杀进程」是 Session 2 三级降级里的兜底,不是这里的语义。
       cancel: () => send('cancel'),
@@ -347,6 +384,9 @@ export class Supervisor {
     if (this.pool.get(pooled.principalId) === pooled) this.pool.delete(pooled.principalId)
     pooled.alive = false
     pooled.child.kill('SIGTERM')
+    // 不等 exit 事件:主动回收时进程也许要几百毫秒才真正退出,而这期间
+    // 持有 lease 的会话应当立刻知道它没了,而不是继续往一条死通道上送消息。
+    announceDeath(pooled)
 
     // SIGTERM 之后不认账的进程要有人收尸,否则「回收」只是把它从池子里摘掉,
     // 内存还占着 —— 那是最难查的一类泄漏:监控看到进程数正常,机器却在涨。

@@ -43,7 +43,19 @@ export type {
 } from './sessions/routes.ts'
 
 export { GatewaySessionStore } from './sessions/store.ts'
-export type { AgentHandleLike, GatewaySession, UsageObservation } from './sessions/store.ts'
+export type {
+  AgentHandleLike,
+  GatewaySession,
+  SessionEventSource,
+  UsageObservation,
+} from './sessions/store.ts'
+
+// ---- 进程隔离(V0.4.5)----
+// 跨进程句柄戴的是与进程内句柄完全相同的面孔,所以路由、SSE、计量一行不改。
+export { createRemoteAgent, remoteUserMessage } from './sessions/remote.ts'
+export type { RemoteAgentInput } from './sessions/remote.ts'
+export { parseWorkerArgs, runWorker } from './worker.ts'
+export type { WorkerBootstrap, WorkerOptions } from './worker.ts'
 
 export { EventBuffer, translateEvent } from './sessions/events.ts'
 export type { SequencedEvent, TranslateOptions, UpstreamSessionEvent } from './sessions/events.ts'

@@ -42,7 +42,8 @@
     "@dshwar/policy": "workspace:*",
     "@dshwar/principal": "workspace:*",
     "hono": "^4.10.7",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "@dshwar/supervisor": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.1"

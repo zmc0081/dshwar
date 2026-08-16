@@ -5,7 +5,6 @@
  *
  * @module @dshwar/gateway/sessions/store
  */
-import type { Context as CordisContext } from '@deepseek-ai/cordis'
 // 仅为把上游对 cordis `Events` 的模块增强(`session/event`)带进来。
 // 空的 `import type {}` 会被完全擦除,不产生运行时依赖 ——
 // 网关不该为了一个事件名的类型就在运行时拉进 dsh-session。
@@ -16,12 +15,29 @@ import type {} from '@deepseek-ai/dsh-session'
 import type { Principal } from '@dshwar/principal'
 import { asUpstreamEvent, EventBuffer, translateEvent } from './events.ts'
 
+/**
+ * 会话事件的来源。
+ *
+ * **只声明会话簿真正调用的那一个方法。** V0.4.5 把它从 `CordisContext` 收窄到
+ * 这个接口:进程隔离下的句柄背后是一条 IPC 通道而不是一个 cordis Context,
+ * 若这里要求完整的 Context,跨进程实现就得伪造一个几十个成员的对象 ——
+ * 那些成员没有一个会被调用,伪造它们只是为了骗过类型检查。
+ *
+ * 真实的 `Context` 结构上满足本接口,所以进程内驱动一行不用改。
+ */
+export interface SessionEventSource {
+  on(
+    event: 'session/event',
+    listener: (session: unknown, event: unknown) => void,
+  ): () => unknown
+}
+
 /** 上游 agent 句柄的最小形状。刻意只声明用得到的部分。 */
 export interface AgentHandleLike {
   readonly agent: {
     readonly id: string
     readonly status: 'idle' | 'running'
-    readonly ctx: CordisContext
+    readonly ctx: SessionEventSource
     cancel(cause: { kind: 'user' | 'disposed' }): void
     followup(message: unknown): void
     whenIdle(): Promise<void>
@@ -48,6 +64,14 @@ export interface GatewaySession {
   readonly metadata: Readonly<Record<string, string>>
   /** 已发起的轮次数。 */
   turns: number
+  /**
+   * 会话已终结且不可再用(V0.4.5 R5)。
+   *
+   * 目前只有一个来源:**承载它的子进程死了**。置位之后 SSE 循环会在冲完
+   * 待发事件后退出,而不是继续挂着发心跳 —— 对着一个不存在的会话发心跳,
+   * 客户端会一直以为「还在算」。
+   */
+  terminated: boolean
   /** 事件缓冲,支撑 Last-Event-ID。 */
   readonly buffer: EventBuffer
   /** 活跃的 SSE 订阅者。断连时从这里移除。 */
@@ -148,6 +172,7 @@ export class GatewaySessionStore {
       createdAt: new Date().toISOString(),
       metadata: { ...input.metadata },
       turns: 0,
+      terminated: false,
       buffer,
       subscribers,
       unsubscribe: () => {
@@ -171,6 +196,36 @@ export class GatewaySessionStore {
     if (session === undefined) return undefined
     if (session.subjectId !== principal.id) return undefined
     return session
+  }
+
+  /**
+   * 终结一个会话并把失败告诉客户端(V0.4.5 R5)。
+   *
+   * ## 为什么必须发事件,而不是直接关流
+   *
+   * **静默是最糟的失败模式。** 直接关掉 SSE,客户端看到的是一次普通断连,
+   * 于是它会重连、带上 `Last-Event-ID`、然后拿到 404 —— 到这一步它才知道
+   * 出事了,而且不知道出的是什么事。发一条 `error` 事件,客户端立刻拿到
+   * 机器可读的原因,可以决定是重试还是报给用户。
+   *
+   * ## seq 用 `lastSeq + 1` 是安全的,前提是终结
+   *
+   * 合成事件没有上游 seq,而 `Last-Event-ID` 续传按 `seq >` 过滤,借号会撞。
+   * 这里能安全借用下一个号,**正是因为置位 `terminated` 之后不会再有上游事件
+   * 进来** —— 没有后来者,就没有撞号的对象。非终结的合成事件不能照抄这个做法。
+   *
+   * @param session 目标会话
+   * @param failure 机器可读的失败原因
+   */
+  fail(session: GatewaySession, failure: { code: string; message: string }): void {
+    if (session.terminated) return
+    session.terminated = true
+    session.unsubscribe()
+
+    const event = { type: 'error' as const, code: failure.code, message: failure.message }
+    const seq = session.buffer.lastSeq + 1
+    session.buffer.push({ seq, event })
+    for (const notify of session.subscribers) notify(seq, event)
   }
 
   /** 列出某主体的全部会话,按创建时间倒序。 */

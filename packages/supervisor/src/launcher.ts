@@ -88,14 +88,39 @@ export function trackedCount(): number {
   return live.size
 }
 
+export interface ForkOptions {
+  /**
+   * 追加给子进程的启动参数,拼在身份三项之后。
+   *
+   * 用于 worker 入口自己的开关(装哪个 provider、日志级别之类)。
+   * **不要往这里放密钥**:启动参数在 `ps` 里人人可见。
+   */
+  readonly args?: readonly string[]
+  /**
+   * 开机配置,fork 之后**立刻**经 IPC 送给子进程,子进程收到才开始工作。
+   *
+   * 走 IPC 而不是启动参数,是因为这里装的是工作区根、会话日志根这类东西 ——
+   * 启动参数在 `ps` 里人人可见,把部署的目录结构挂在那儿没有必要。
+   * 身份则相反,见下。
+   */
+  readonly bootstrap?: Readonly<Record<string, unknown>>
+}
+
+/** 开机配置消息的信封 id。不会与真实 lease 撞号 —— 真实 id 带前缀 `L`。 */
+export const BOOTSTRAP_LEASE = '#bootstrap'
+
 /**
  * 用 `child_process.fork` 拉起子进程的 launcher。
  *
- * `principal` 经**启动参数**传入而非环境变量:环境变量会被子进程 fork 出的
- * 孙进程继承(agent 会执行 shell 工具),principal 跟着漏下去没有意义,
- * 而且 `ps` 看得到环境的系统上等于把租户拓扑写在明面上。
+ * `principal` 经**启动参数**传入,不用环境变量。理由是环境变量会被子进程再
+ * fork 出的孙进程继承 —— 而 agent 的 shell 工具**就是**在拉孙进程。principal
+ * 漏进那些进程的环境里没有任何用处,却给了被执行的命令一个读取它的机会。
+ * 启动参数不继承,所以到此为止。
+ *
+ * (启动参数和环境变量在 `ps` 里同样可见,身份走 argv 并不隐藏什么 ——
+ * 隐藏也不是目的:运维需要一眼看出某个进程在为谁服务。)
  */
-export function forkLauncher(modulePath: string): ProcessLauncher {
+export function forkLauncher(modulePath: string, options: ForkOptions = {}): ProcessLauncher {
   return {
     launch(spec) {
       const child = fork(modulePath, [
@@ -105,10 +130,15 @@ export function forkLauncher(modulePath: string): ProcessLauncher {
         spec.tenantId,
         '--profile',
         spec.profile,
+        ...(options.args ?? []),
       ]) as unknown as ChildProcessLike
 
       const untrack = trackChild(child)
       child.on('exit', untrack)
+
+      if (options.bootstrap !== undefined) {
+        child.send({ leaseId: BOOTSTRAP_LEASE, kind: 'bootstrap', payload: options.bootstrap })
+      }
       return child
     },
   }

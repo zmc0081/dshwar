@@ -243,6 +243,11 @@ export function registerRuntimeRoutes(options: RuntimeRouteOptions) {
           wake?.()
         })
 
+        // 订阅之后立刻醒一次:会话可能在建立本次订阅**之前**就已经终结
+        // (子进程在客户端连上来的那一瞬间崩了)。不叫醒的话,这个流会挂在
+        // 下面的心跳循环里,直到客户端自己超时 —— 而 error 事件已经在缓冲里了。
+        if (session.terminated) wake?.()
+
         // 先补发缓冲里的历史事件(Last-Event-ID 续传)
         for (const item of session.buffer.since(Number.isFinite(afterSeq) ? afterSeq : undefined)) {
           await stream.writeSSE({
@@ -263,6 +268,10 @@ export function registerRuntimeRoutes(options: RuntimeRouteOptions) {
             })
           }
           if (closed) break
+
+          // 会话已终结(承载它的子进程死了)——待发事件已冲完,收流。
+          // 继续挂着发心跳等于告诉客户端「还在算」,而它已经不在了。
+          if (session.terminated) break
 
           // 等新事件,或到点发心跳
           await new Promise<void>((resolve) => {

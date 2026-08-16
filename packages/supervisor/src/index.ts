@@ -28,10 +28,12 @@
  */
 
 export {
+  BOOTSTRAP_LEASE,
   forkLauncher,
   trackChild,
   trackedCount,
   type ChildProcessLike,
+  type ForkOptions,
   type LaunchSpec,
   type ProcessLauncher,
 } from './launcher.ts'

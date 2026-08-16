@@ -137,6 +137,13 @@ export function translateEvent(
         isError: upstream.data?.isError ?? false,
       }
 
+    // ⚠️ 这里**没有** `agent/error` 分支,而契约的映射表写着它 —— 那张表把两条
+    // 不同的通道混为一谈了。实测(V0.4.5 Session 2,上游 0.1.0-rc.6):
+    // `agent/error` 是挂在 cordis **Context** 上的事件
+    // (`dsh-agent/lib/types/runtime-types.d.ts:316`,签名带 `this: Scoped<Agent>`),
+    // 不是 `SessionEventMap` 成员,因此永远不会以 `session/event` 信封的形式到达本函数。
+    // 接它要另开一条 `ctx.on('agent/error', …)` 订阅,且要解决合成事件的 seq 分配 ——
+    // 那是独立的一件事,不在本 Session 的 R5(进程死亡)范围内。
     default:
       // step/* · request/* · todo/* · user/message · session/* —— 刻意不透传
       return undefined
@@ -179,6 +186,17 @@ export class EventBuffer {
   /** 缓冲里最早的序号。客户端请求的序号早于它,说明已经丢了。 */
   get earliestSeq(): number | undefined {
     return this.items[0]?.seq
+  }
+
+  /**
+   * 缓冲里最晚的序号;空缓冲为 `-1`。
+   *
+   * 供网关自己合成的终结事件借号用(见 `GatewaySessionStore.fail`)。
+   * `-1` 而非 `undefined`:上游 seq 从 0 起算,`-1 + 1 = 0` 正好是
+   * 「一个事件都还没发过就崩了」时该用的号。
+   */
+  get lastSeq(): number {
+    return this.items[this.items.length - 1]?.seq ?? -1
   }
 
   get size(): number {
