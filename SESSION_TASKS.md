@@ -129,10 +129,13 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
    这三个本质是**库**,不是服务;控制平面的服务(租户 / 订阅 / 后台 UI)仍留给 V0.5.0
    的 `dshwar-console`。放主仓意味着立刻复用现成的门禁、changesets 与版本机制,
    省掉搭第二套工程骨架的 3-5 天。
-2. **SCIM 一期含 `User` + `Group` + `PATCH`。**
-   `Group` 是租户映射 `strategy: group` 的前提;`PATCH` 是 Okta / Azure AD / Entra
-   停用用户时的主要动作(`active:false` 常以 PATCH 下发)。缺 PATCH,本版本的验收标准
-   「停用后下次请求被拒」直接走不通。
+2. **SCIM 一期含 `User` + `Group`,且 `PUT` 与 `PATCH` 两条更新路径都要做。**
+   `Group` 是租户映射 `strategy: group` 的前提。
+   ⚠️ **Session 0 修正**:原写「PATCH 是停用的主要动作,缺它验收走不通」——
+   这只对 Entra / Okta 成立。实际选定的验收基线 authentik **用 PUT 更新用户**,
+   PATCH 只用于组成员增删。两条路径都必须能把 `active:false` 落到停用,
+   否则会出现「在 A 家能停用、在 B 家停不掉」,而停不掉意味着离职员工仍能调模型。
+   依据见 `docs/FEASIBILITY-REPORT-V3.md` §4。
 3. **不发布 V0.1.0 / V0.2.0,直接升 0.3.0 继续开发。**
    三个版本的内容并入未来一次性首发。CLAUDE.md 第四节的「开发版本号即时同步」照常执行。
 4. **Subject Mirror 复用上游 `storage` 契约 + `@dshwar/storage-scoped`,不引 Postgres。**
@@ -143,16 +146,16 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 
 ### Session 状态
 
-| Session                     | 状态      | 说明                                       |
-| --------------------------- | --------- | ------------------------------------------ |
-| 0 可行性证伪:SCIM 供给链    | ⬜ 未开始 | **止损点** —— 供给方真的推得进来吗         |
-| 1 `@dshwar/subject`         | ⬜ 未开始 | Subject Mirror 契约与 storage 实现         |
-| 2 `@dshwar/tenant-map`      | ⬜ 未开始 | 四种策略 + fallback reject                 |
-| 3 `@dshwar/auth-jwt`        | ⬜ 未开始 | JWKS 验签,替掉明文令牌表                   |
-| 4 `@dshwar/auth-oidc`       | ⬜ 未开始 | discovery + 与租户映射接合                 |
-| 5 `@dshwar/scim-server`     | ⬜ 未开始 | User + Group + PATCH                       |
-| 6 网关接入与令牌分离        | ⬜ 未开始 | SCIM 挂载、Admin subjects 转实现、三类令牌 |
-| 7 `@dshwar/webhooks` 与发布 | ⬜ 未开始 | 出站投递 + 端到端验收 + 文档               |
+| Session                     | 状态      | 说明                                              |
+| --------------------------- | --------- | ------------------------------------------------- |
+| 0 可行性证伪:SCIM 供给链    | ✅ 已完成 | **止损未触发**;验收基线由 Keycloak 换为 authentik |
+| 1 `@dshwar/subject`         | ⬜ 未开始 | Subject Mirror 契约与 storage 实现                |
+| 2 `@dshwar/tenant-map`      | ⬜ 未开始 | 四种策略 + fallback reject                        |
+| 3 `@dshwar/auth-jwt`        | ⬜ 未开始 | JWKS 验签,替掉明文令牌表                          |
+| 4 `@dshwar/auth-oidc`       | ⬜ 未开始 | discovery + 与租户映射接合                        |
+| 5 `@dshwar/scim-server`     | ⬜ 未开始 | User + Group + PATCH                              |
+| 6 网关接入与令牌分离        | ⬜ 未开始 | SCIM 挂载、Admin subjects 转实现、三类令牌        |
+| 7 `@dshwar/webhooks` 与发布 | ⬜ 未开始 | 出站投递 + 端到端验收 + 文档                      |
 
 图例:✅ 已完成 · 🔄 进行中 · ⬜ 未开始 · 🟠 代码就绪待外部资源
 
@@ -181,7 +184,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 
 ---
 
-### ⬜ Session 0: 可行性证伪:SCIM 供给链(2 天,止损点)
+### ✅ Session 0: 可行性证伪:SCIM 供给链(2 天,止损点)
 
 > ⚠️ **与 V0.1.0 / V0.2.0 的 Session 0 同级。** 本版本的验收标准写着
 > 「用 Keycloak 作为身份源,通过 SCIM 把两个用户推进 DSHWAR……全程不写一行定制代码」
@@ -365,6 +368,9 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 
 1. User 资源
    - POST / GET / PUT / PATCH / DELETE /Users
+   - ★ PUT 与 PATCH **两条路径都必须能把 active:false 落到停用**
+     (Session 0 §4:Entra/Okta 发 PATCH，authentik 发 PUT)
+   - ★ DELETE **不得**被当作停用信号(Entra 硬删除延迟 30 天才发)
    - filter 至少支持 userName eq 与 externalId eq(供给方最常用的两条)
    - 分页 startIndex / count
 
@@ -377,7 +383,9 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 
 4. 错误与 schema
    - SCIM 的错误响应格式与 DSHWAR 的 ErrorResponse 不同 —— 走 SCIM 自己的格式
-   - /ServiceProviderConfig 与 /Schemas 端点，供给方靠它探测能力
+   - /ServiceProviderConfig 与 /Schemas 端点 ★ **第一优先级，且必须如实声明能力**
+     authentik 读它来决定用 PATCH 还是 PUT，并**缓存一小时** ——
+     虚报一次，供给方接下来一小时都会用错方法(Session 0 §5)
 
 == 测试 ==
 - 用 Session 0 录下来的真实供给方请求体回放
@@ -437,10 +445,11 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
    - **不做投递保证**(那需要持久队列，属于控制平面)，明确写在文档里
 
 2. 端到端验收 ★ 本版本的存在理由
-   - 按 Session 0 选定的供给方，推两个用户进来
-   - 其中一个在供给方侧停用
-   - 该用户下次请求被拒
-   - 全程零定制代码
+   - **authentik 以容器起在 CI 里**，不依赖任何 SaaS 账号
+     (Session 0 裁决:Keycloak 没有出站 SCIM 客户端，原验收标准点名它是错的)
+   - 推两个用户进来，其中一个在 authentik 侧停用，该用户下次请求被拒，全程零定制代码
+   - ⚠️ 顺带实测 Session 0 标 ⚠️ 的三条:authentik 解绑用户的确切请求形状、
+     多 Group 命中时的样本、JWKS kid 轮换行为
 
 3. 文档
    - README 加身份互操作一节与集成矩阵
@@ -456,7 +465,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 
 验证:
 
-- M2.5 验收:供给方停用用户后,该用户下次请求被拒,全程零定制代码
+- M2.5 验收:**authentik**(容器)停用用户后,该用户下次请求被拒,全程零定制代码
 - `/publish chore: {v} session 7 webhooks and identity release`
 
 ---

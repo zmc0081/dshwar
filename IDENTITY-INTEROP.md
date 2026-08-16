@@ -229,7 +229,16 @@ tenantMapping:
 
 净增约 2 周,换来"能接 CMS"这个能力提前三个月可用。
 
-**新增验收标准**:用 Keycloak 作为身份源,通过 SCIM 把两个用户推进 DSHWAR,其中一个在 Keycloak 侧停用后,该用户下一次请求被拒绝——全程不写一行定制代码。
+**新增验收标准**:~~用 Keycloak 作为身份源~~,通过 SCIM 把两个用户推进 DSHWAR,其中一个在身份源侧停用后,该用户下一次请求被拒绝——全程不写一行定制代码。
+
+> ⚠️ **勘误(2026-08-16,V0.3.0 Session 0)**:上面点名 Keycloak 是错的。
+> **Keycloak 没有 SCIM 出站客户端**——它 26.6 的 `scim-api` 方向是反的
+> (让 Keycloak 成为 SCIM 服务提供方,即别人往 Keycloak 里推),而这里需要的是
+> 身份源往 DSHWAR 推。验收基线改为 **authentik**(原生出站 SCIM、MIT、可容器化,
+> 端到端验收因此能进 CI 而不依赖 SaaS 账号)。
+>
+> 原文保留不删——删掉会让读过旧版的人以为自己记错了。
+> 完整依据与选型对比见 [`docs/FEASIBILITY-REPORT-V3.md`](docs/FEASIBILITY-REPORT-V3.md)。
 
 ---
 
