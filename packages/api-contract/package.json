@@ -1,6 +1,6 @@
 {
   "name": "@dshwar/api-contract",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "DSHWAR API v1 契约 —— ★ 护城河。Zod 为单一事实源,OpenAPI 3.1 由其生成。",
   "license": "MIT",
   "type": "module",

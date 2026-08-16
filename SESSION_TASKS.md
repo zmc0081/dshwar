@@ -1,7 +1,7 @@
 # DSHWAR 开发 Session 任务清单
 
 > 项目对外名称:DSHWAR;npm 作用域 `@dshwar/*`;开源主仓 `dshwar`,控制平面仓 `dshwar-console`。
-> 当前版本(正在开发): **V0.2.0** —— 本行强制为"正在开发的版本号",随新版本规划立即更新(见第三部分强制约束)
+> 当前版本(正在开发): **V0.3.0** —— 本行强制为"正在开发的版本号",随新版本规划立即更新(见第三部分强制约束)
 
 ---
 
@@ -51,8 +51,8 @@ DeepSeek Harness（npm 依赖 @deepseek-ai/dsh-*，精确锁版）
 | 版本       | 内容                                                      | 周期 | 状态                                               |
 | ---------- | --------------------------------------------------------- | ---- | -------------------------------------------------- |
 | V0.1.0     | 运行时平面 MVP + 开源首发                                 | 3 周 | <span style="color:#d00000">开发完成,待发布</span> |
-| **V0.2.0** | API 平面:OpenAPI v1 + Gateway + SDK + Admin 端点          | 4 周 | <span style="color:#d00000">开发完成,待发布</span> |
-| V0.3.0     | 身份互操作:Subject Mirror + SCIM 2.0 + 租户映射 + Webhook | 2 周 | 待启动                                             |
+| V0.2.0     | API 平面:OpenAPI v1 + Gateway + SDK + Admin 端点          | 4 周 | <span style="color:#d00000">开发完成</span>        |
+| **V0.3.0** | 身份互操作:Subject Mirror + SCIM 2.0 + 租户映射 + Webhook | 2 周 | <span style="color:#d00000">开发中</span>          |
 | V0.4.0     | 计量与治理:metering + policy + model-router               | 3 周 | 待启动                                             |
 | V0.5.0     | 控制平面:租户/成员/订阅/运营后台                          | 5 周 | 待启动                                             |
 | V0.6.0     | 支付:billing 契约 + local + 首个 hosted 实现              | 3 周 | 待启动                                             |
@@ -98,7 +98,366 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 > 已发布版本的 Session 一律标 ✅;开发中版本按实际进度标记,每完成一个即更新。
 >
 > 已发布:(暂无)
-> 规划中(开发中,未上线):**V0.2.0(Session 0-6,开发完成待发布)** · V0.1.0(Session 0-8,开发完成待发布)
+> 规划中(开发中,未上线):**V0.3.0(Session 0-7,当前)** · V0.2.0(Session 0-6,开发完成)
+> · V0.1.0(Session 0-8,开发完成)
+
+---
+
+## <span style="color:#d00000">●</span> M0.3.0 · 身份互操作(Session 0-7) <span style="color:#d00000">[未上线]</span>
+
+> **这一版换来的是「能接 CMS / IdP」。** V0.2.0 把契约定死了,但用户还得靠
+> `auth-static` 的明文令牌表手工维护 —— 那不是能交付给客户的东西。
+> 本版本补齐:身份从哪来(OIDC / JWT)、用户怎么同步进来(SCIM)、
+> 属于哪个租户(租户映射)、变更怎么通知出去(Webhook)。
+>
+> 📌 **核心论点**:DSHWAR 是**身份消费者**,不是身份提供者。
+> 不存密码、不签发身份令牌、不做注册流程(CLAUDE.md 硬规则 4)。
+> 客户的用户目录在他们自己的 IdP 里,DSHWAR 只保留一份**镜像**用于归属与授权。
+>
+> 开工前必读 `CLAUDE.md` 与 `IDENTITY-INTEROP.md`。
+>
+> **不做的事**(避免范围失控):不做控制平面服务与后台 UI(V0.5.0)、
+> 不做 metering / policy 实现(V0.4.0)、不做进程隔离 supervisor(V0.4.0)、
+> 不做只读数据库视图(V0.5.0 随控制平面)、不做 Python SDK。
+
+### 开工前已确认的四个决定(2026-08-16)
+
+这四条原本是 `IDENTITY-INTEROP.md` §9 的待定项,开工前逐条定死:
+
+1. **`subject` / `scim-server` / `webhooks` 放主仓 `packages/`,不新建 `dshwar-console` 仓。**
+   `IDENTITY-INTEROP.md` §7 把它们划给控制平面,但那说的是**部署形态**,不是仓库归属。
+   这三个本质是**库**,不是服务;控制平面的服务(租户 / 订阅 / 后台 UI)仍留给 V0.5.0
+   的 `dshwar-console`。放主仓意味着立刻复用现成的门禁、changesets 与版本机制,
+   省掉搭第二套工程骨架的 3-5 天。
+2. **SCIM 一期含 `User` + `Group` + `PATCH`。**
+   `Group` 是租户映射 `strategy: group` 的前提;`PATCH` 是 Okta / Azure AD / Entra
+   停用用户时的主要动作(`active:false` 常以 PATCH 下发)。缺 PATCH,本版本的验收标准
+   「停用后下次请求被拒」直接走不通。
+3. **不发布 V0.1.0 / V0.2.0,直接升 0.3.0 继续开发。**
+   三个版本的内容并入未来一次性首发。CLAUDE.md 第四节的「开发版本号即时同步」照常执行。
+4. **Subject Mirror 复用上游 `storage` 契约 + `@dshwar/storage-scoped`,不引 Postgres。**
+   `IDENTITY-INTEROP.md` §7 按控制平面选型写的是 Postgres + Drizzle,但那是 V0.5.0
+   控制平面落地时的事。主仓引入数据库依赖与迁移体系,会让 CI 必须起容器,
+   与「运行时插件轻量」的定位冲突。存储是**能力**,上游已有契约 —— 不另起炉灶
+   (CLAUDE.md 一句话边界)。换 Postgres 时换实现包即可。
+
+### Session 状态
+
+| Session                     | 状态      | 说明                                       |
+| --------------------------- | --------- | ------------------------------------------ |
+| 0 可行性证伪:SCIM 供给链    | ⬜ 未开始 | **止损点** —— 供给方真的推得进来吗         |
+| 1 `@dshwar/subject`         | ⬜ 未开始 | Subject Mirror 契约与 storage 实现         |
+| 2 `@dshwar/tenant-map`      | ⬜ 未开始 | 四种策略 + fallback reject                 |
+| 3 `@dshwar/auth-jwt`        | ⬜ 未开始 | JWKS 验签,替掉明文令牌表                   |
+| 4 `@dshwar/auth-oidc`       | ⬜ 未开始 | discovery + 与租户映射接合                 |
+| 5 `@dshwar/scim-server`     | ⬜ 未开始 | User + Group + PATCH                       |
+| 6 网关接入与令牌分离        | ⬜ 未开始 | SCIM 挂载、Admin subjects 转实现、三类令牌 |
+| 7 `@dshwar/webhooks` 与发布 | ⬜ 未开始 | 出站投递 + 端到端验收 + 文档               |
+
+图例:✅ 已完成 · 🔄 进行中 · ⬜ 未开始 · 🟠 代码就绪待外部资源
+
+### 本次需求清单
+
+| 编号 | 需求                                                                | 所属 Session |
+| ---- | ------------------------------------------------------------------- | ------------ |
+| R0   | **可行性证伪**:SCIM 供给方能否零定制代码把用户推进来                | Session 0    |
+| R1   | `@dshwar/subject`:Subject Mirror 契约 + storage 实现,含停用态       | Session 1    |
+| R2   | `@dshwar/tenant-map`:`claim` / `group` / `issuer` / `fixed` 四策略  | Session 2    |
+| R3   | **fallback 默认 `reject`**,映射不出租户宁可拒登(硬规则 7)           | Session 2    |
+| R4   | `@dshwar/auth-jwt`:JWKS 验签 + 缓存 + 轮换                          | Session 3    |
+| R5   | `@dshwar/auth-oidc`:discovery 端点解析,与租户映射接合               | Session 4    |
+| R6   | `@dshwar/scim-server`:User + Group + PATCH,SCIM 2.0 子集            | Session 5    |
+| R7   | SCIM 令牌与 Admin 令牌**分离签发**,供给系统不得读用量与凭据配置     | Session 6    |
+| R8   | `/v1/admin/subjects*` 由 501 转为实现,契约不变                      | Session 6    |
+| R9   | `@dshwar/webhooks`:出站事件投递,含重试与签名                        | Session 7    |
+| R10  | **端到端验收**:供给方停用某用户后,该用户下次请求被拒,全程零定制代码 | Session 7    |
+
+**本版本红线**:
+
+1. **不存密码、不签发身份令牌、不做注册流程**(硬规则 4)。凡出现 `bcrypt` / `argon2` / `password` 字段即违规。
+2. **租户映射 fallback 默认 `reject`**(硬规则 7)。改 `fixed` 须在 PR 描述显式说明理由。
+3. **三类令牌分离签发**:运行时 token(终端用户)· Admin Key(按租户)· SCIM token(按身份源)。任一把钥匙不得跨类使用。
+4. **Subject Mirror 是镜像,不是事实源**。DSHWAR 不新建用户,只接受供给方推来的记录。
+
+---
+
+### ⬜ Session 0: 可行性证伪:SCIM 供给链(2 天,止损点)
+
+> ⚠️ **与 V0.1.0 / V0.2.0 的 Session 0 同级。** 本版本的验收标准写着
+> 「用 Keycloak 作为身份源,通过 SCIM 把两个用户推进 DSHWAR……全程不写一行定制代码」
+> (`IDENTITY-INTEROP.md` §8)。这句话压在一条**未验证的假设**上:
+> 供给方真的能主动把用户 push 过来。
+>
+> 已知风险:**Keycloak 本体不自带 SCIM 客户端**(SCIM 供给是社区扩展)。
+> 若属实,这条验收标准按原文无法达成,必须先换供给方或换验收方式 ——
+> 而不是写到 Session 7 才发现。
+
+```
+读取 CLAUDE.md 与 IDENTITY-INTEROP.md 全文。
+
+本次任务:验证 SCIM 供给链路真的能走通。不写产品代码，产出验证报告。
+
+1. 供给方调研
+   - Keycloak 是否自带 SCIM 客户端？若无，可选扩展是什么、成熟度如何
+   - Okta / Azure AD(Entra) / Authentik 各自的 SCIM 客户端行为
+   - 结论：本版本的验收标准用哪一个供给方，为什么
+
+2. 验证 A —— PATCH 的停用语义
+   - 抓取真实供给方发出的 "停用用户" 请求体
+   - 确认它是 PATCH 还是 PUT、active 字段的实际形状
+   - 若各家不一致，记录差异矩阵
+
+3. 验证 B —— Group 到租户的实际形状
+   - SCIM Group 的 members 是引用还是内联
+   - 一个用户属于多个 Group 时，租户映射如何裁决(必须确定，否则 R2 无从实现)
+
+4. 验证 C —— JWKS 轮换
+   - 起一个真实 IdP，取 discovery 与 jwks_uri
+   - 确认 kid 轮换时的行为，以及缓存该怎么失效
+
+5. 验证 D —— 令牌分离的可行性
+   - 供给方能否为 SCIM 单独配一个 bearer token(而非复用 admin)
+
+== 产出 ==
+- docs/FEASIBILITY-REPORT-V3.md，逐条断言 + 实际输出
+- 若验收标准无法按原文达成，在报告里给出替代方案并更新任务书
+```
+
+验证:
+
+- 止损判据:**若没有任何供给方能零定制代码推送用户**,本版本改为「只做 Subject 契约 + Admin 端点」,SCIM 推迟
+- `/publish chore: {v} session 0 scim provisioning feasibility`
+
+---
+
+### ⬜ Session 1: `@dshwar/subject` —— Subject Mirror
+
+```
+本次任务:身份镜像的契约与实现。
+
+1. 契约
+   - Subject：externalId / userName / active / tenantId / emails / groups / meta
+   - **不含密码字段**(硬规则 4)，契约层就不留位置
+   - 来源标记 source：哪个身份源推来的，用于多 IdP 并存时的归属
+
+2. SubjectStore 契约
+   - upsert(subject) / get(id) / getByExternalId(source, externalId)
+   - list(filter) / deactivate(id)
+   - **不提供 create 之外的"新建用户"入口** —— DSHWAR 不是身份提供者
+
+3. storage 实现
+   - 走上游 dsh-storage 契约 + @dshwar/storage-scoped 的租户前缀
+   - 记录键设计要能支撑 getByExternalId 的查询
+
+4. 停用态
+   - active:false 的用户必须能被 auth 层看到并拒绝
+   - 停用不删除记录(审计需要)
+
+== 测试 ==
+- 停用后 get 仍返回记录，但 active 为 false
+- 跨租户的 externalId 相同不冲突
+- 契约里不存在任何可放密码的字段(结构断言，与 CredentialDescriptor 同款)
+```
+
+验证:
+
+- `/publish feat: {v} session 1 subject mirror`
+
+---
+
+### ⬜ Session 2: `@dshwar/tenant-map` —— 租户映射
+
+```
+本次任务:把 IDENTITY-INTEROP.md §5 的映射规则变成代码。
+
+1. 四种策略
+   - claim：从 OIDC claim 取，如 org_id
+   - group：从 SCIM Group 名按前缀解析，如 tenant:acme
+   - issuer：一个身份源一个租户
+   - fixed：全部归入一个租户(单租户部署)
+
+2. fallback
+   - 默认 reject —— 映射不出租户宁可拒登(硬规则 7)
+   - fixed:<tenant> 需显式配置
+
+3. 多值裁决
+   - 一个用户命中多个 Group 时怎么办(Session 0 验证 B 的结论)
+   - 歧义必须**拒绝**而不是取第一个 —— 取第一个意味着顺序变了归属就变了
+
+== 测试 ==
+- 每种策略各一组正向用例
+- 映射不出租户时默认 reject，且错误信息说明是哪一步失败
+- 多 Group 歧义被拒绝
+- 配置 fixed fallback 需要显式写出租户名，空字符串被拒
+```
+
+验证:
+
+- `/publish feat: {v} session 2 tenant mapping`
+
+---
+
+### ⬜ Session 3: `@dshwar/auth-jwt` —— JWKS 验签
+
+```
+本次任务:替掉 auth-static 的明文令牌表。
+
+1. 验签
+   - 实现 @dshwar/auth 契约的 verify(token) → Principal
+   - 支持 RS256 / ES256；拒绝 alg:none 与对称算法(HS*)混用
+   - iss / aud / exp / nbf 全部校验，不给"宽松模式"开关
+
+2. JWKS
+   - 从 jwks_uri 拉取并缓存
+   - kid 未命中时刷新一次；刷新仍未命中即拒绝(不无限刷新，那是放大器)
+   - 缓存 TTL 与并发去重
+
+3. 与 subject / tenant-map 接合
+   - 验签通过后查 Subject Mirror：不存在或 active:false → 拒绝
+   - 租户由 tenant-map 决定，不直接信 token 里的 tenant 字段
+
+== 测试 ==
+- 过期 / 未生效 / 错误 aud / 错误 iss 各一条负向用例
+- alg:none 与 HS256 伪造被拒
+- kid 轮换后能自动恢复
+- 用户在 Subject Mirror 里被停用后，同一个仍然有效的 token 也被拒 ★ 本版本的核心验收
+```
+
+验证:
+
+- `/publish feat: {v} session 3 jwt authentication`
+
+---
+
+### ⬜ Session 4: `@dshwar/auth-oidc` —— OIDC 接入
+
+```
+本次任务:让部署方只填一个 issuer URL 就能接上。
+
+1. discovery
+   - 拉 /.well-known/openid-configuration
+   - 取 jwks_uri / issuer，交给 auth-jwt 复用
+
+2. claim 映射
+   - sub → subject 的 externalId
+   - preferred_username / email → userName(可配)
+   - 租户 claim 交给 tenant-map
+
+3. 与 auth-jwt 的关系
+   - auth-oidc 是 auth-jwt 的配置来源，不重复实现验签
+
+== 测试 ==
+- discovery 文档缺字段时给出可读错误，而不是运行时才炸
+- issuer 与 token 里的 iss 不一致时拒绝
+- 契约测试对着 Session 0 录下来的真实 discovery 文档回放
+```
+
+验证:
+
+- `/publish feat: {v} session 4 oidc integration`
+
+---
+
+### ⬜ Session 5: `@dshwar/scim-server` —— SCIM 2.0 子集
+
+```
+本次任务:SCIM 2.0 服务端，User + Group + PATCH。
+
+1. User 资源
+   - POST / GET / PUT / PATCH / DELETE /Users
+   - filter 至少支持 userName eq 与 externalId eq(供给方最常用的两条)
+   - 分页 startIndex / count
+
+2. Group 资源
+   - 同上；members 的增删走 PATCH
+
+3. PATCH
+   - RFC 7644 §3.5.2 的 add / remove / replace
+   - **active:false 必须落到 Subject Mirror 的停用**(本版本验收的关键路径)
+
+4. 错误与 schema
+   - SCIM 的错误响应格式与 DSHWAR 的 ErrorResponse 不同 —— 走 SCIM 自己的格式
+   - /ServiceProviderConfig 与 /Schemas 端点，供给方靠它探测能力
+
+== 测试 ==
+- 用 Session 0 录下来的真实供给方请求体回放
+- PATCH active:false 后，该用户经 auth 的请求被拒
+- 未知 filter 返回 501 而不是静默返回全量 ★ 静默返回全量是数据泄漏
+```
+
+验证:
+
+- `/publish feat: {v} session 5 scim server`
+
+---
+
+### ⬜ Session 6: 网关接入与令牌分离
+
+```
+本次任务:把 SCIM 挂上网关，并把三类令牌彻底分开。
+
+1. 三类令牌
+   - 运行时 token：Authorization: Bearer，终端用户
+   - Admin Key：x-dshwar-admin-key，按租户
+   - SCIM token：Authorization: Bearer，**按身份源**，只能写身份镜像
+   - 中间件层分道，与 V0.2.0 的分道鉴权同款
+
+2. SCIM 挂载
+   - /scim/v2/* 前缀，不占用 /v1/
+   - SCIM token 不得访问 /v1/ 的任何端点，反之亦然 ★ 必须有负向测试
+
+3. Admin subjects 端点转实现
+   - /v1/admin/subjects 与 /v1/admin/subjects/{id} 由 501 转为实现
+   - **契约一个字段都不许改** —— 契约冻结检查会拦
+
+4. 审计
+   - 所有 SCIM 写操作进 audit，记录来源身份源与变更前后
+
+== 测试 ==
+- SCIM token 打 /v1/sessions → 401
+- 运行时 token 打 /scim/v2/Users → 401
+- Admin Key 打 /scim/v2/Users → 401
+- pnpm check:contract 必须绿(planned 转实现不是契约变更)
+```
+
+验证:
+
+- `/publish feat: {v} session 6 scim mount and token separation`
+
+---
+
+### ⬜ Session 7: `@dshwar/webhooks` 与发布
+
+```
+本次任务:出站事件投递，端到端验收，收尾。
+
+1. webhooks
+   - 事件：subject.created / subject.updated / subject.deactivated
+   - 投递：HMAC 签名头、重试退避、失败落审计
+   - **不做投递保证**(那需要持久队列，属于控制平面)，明确写在文档里
+
+2. 端到端验收 ★ 本版本的存在理由
+   - 按 Session 0 选定的供给方，推两个用户进来
+   - 其中一个在供给方侧停用
+   - 该用户下次请求被拒
+   - 全程零定制代码
+
+3. 文档
+   - README 加身份互操作一节与集成矩阵
+   - docs/IDENTITY-SETUP.md：接 IdP 的实操步骤
+   - 兼容矩阵更新
+   - profiles/enterprise.yml：OIDC + SCIM 的部署组合
+
+== 测试 ==
+- webhook 签名可被第三方按文档独立验证(不能只有我们自己算得对)
+- 投递失败重试后仍失败 → 落审计，不静默丢弃
+- 端到端验收脚本进 CI(供给方不可用时跳过并说明，不静默变绿)
+```
+
+验证:
+
+- M2.5 验收:供给方停用用户后,该用户下次请求被拒,全程零定制代码
+- `/publish chore: {v} session 7 webhooks and identity release`
 
 ---
 
