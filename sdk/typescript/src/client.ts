@@ -260,4 +260,34 @@ export class DshwarAdminClient {
     }
     return (await response.json()) as { data: CredentialDescriptor[]; nextCursor: string | null }
   }
+
+  /**
+   * 部署容量:隔离档、进程上限、成员上限(V0.5.0)。
+   *
+   * 控制台首页那三个数从这里来。**它与服务端的开户闸门是同一个来源** ——
+   * 两处各算各的话,界面会显示一个管理员照着加人、加到一半被拒的数。
+   */
+  async capacity(): Promise<{
+    isolationLevel: string
+    maxProcesses: number | null
+    memberCap: number
+    memberCount: number
+    rssPerProcessMb: number
+    basis: string
+  }> {
+    const response = await this.fetchImpl(`${this.baseUrl}/v1/admin/capacity`, {
+      headers: { 'x-dshwar-admin-key': this.key },
+    })
+    if (!response.ok) {
+      const body = (await response.json()) as DshwarErrorBody
+      throw new DshwarApiError({
+        code: body.error.code,
+        message: body.error.message,
+        status: response.status,
+        requestId: body.error.requestId,
+        plannedVersion: response.headers.get('x-dshwar-planned-version') ?? undefined,
+      })
+    }
+    return (await response.json()) as Awaited<ReturnType<DshwarAdminClient['capacity']>>
+  }
 }

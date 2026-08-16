@@ -32,7 +32,7 @@
  * 退出码:全绿 0,任一守卫没拦住 1。
  */
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 import { withRestoredFiles } from './lib/mutate.mjs'
@@ -704,6 +704,101 @@ ${added.output.slice(0, 400)}`,
   //   1. 还原改走 scripts/lib/mutate.mjs 之后,本脚本**不可能再产生**那种文件
   //   2. 为一个不再发生的失败模式留着清理代码,正是会慢慢腐烂的东西
   // 那次事故留下的残骸已经手工清掉了。见 docs/DECISIONS/guards-must-not-write.md。
+}
+
+// ---------------------------------------------------------------------
+// 24 前端三条约束(V0.5.0,D7)—— 每条一负一正
+//
+// D7 原话:「加守卫,不是写进注释就算数。⚠️ 每条都要负向验证。」
+//
+// 正向对照不是凑数:少了它,一条「见到 console-web 就红」的坏守卫
+// 也能通过全部三条负向测试 —— 而那会让前端根本没法写。
+//
+// 24d 是空集守卫的负向验证:删掉 console-web/src 之后,
+// 三条约束会退化成扫描空目录 —— 那种「通过」是最危险的绿。
+// ---------------------------------------------------------------------
+{
+  const probe = 'console-web/src/__guard_probe__.tsx'
+
+  /** 植入一段违规源码,跑守卫,清理。 */
+  const withProbe = (/** @type {string} */ content) => {
+    writeFixture(probe, content)
+    const r = runGuards()
+    rmSync(p(probe), { force: true })
+    return r
+  }
+
+  // 24a 约束 1:路由
+  {
+    const r = withProbe(
+      [
+        '// 负向测试夹具:由 scripts/verify-guards.mjs 生成,跑完即删。',
+        "import { createBrowserRouter } from 'react-router'",
+        'export const router = createBrowserRouter([])',
+        '',
+      ].join('\n'),
+    )
+    expect(
+      '24a 前端用了 history router → 守卫变红(约束 1)',
+      !r.ok && /约束1 路由/.test(r.output),
+      r.ok ? 'history router 被放行 —— Tauri 里刷新任意路径会 404' : undefined,
+    )
+  }
+
+  // 24b 约束 2:浏览器专有 API
+  {
+    const r = withProbe(
+      ['// 负向测试夹具。', "export const token = localStorage.getItem('token')", ''].join('\n'),
+    )
+    expect(
+      '24b 前端用了 localStorage → 守卫变红(约束 2)',
+      !r.ok && /约束2 浏览器专有 API/.test(r.output),
+      r.ok ? 'localStorage 被放行 —— 它在 Tauri 的 WebView 里不跨会话可靠' : undefined,
+    )
+  }
+
+  // 24c 约束 3:统一 SDK 层
+  {
+    const r = withProbe(
+      ['// 负向测试夹具。', "export const load = () => fetch('/v1/admin/capacity')", ''].join('\n'),
+    )
+    expect(
+      '24c 组件里直接 fetch → 守卫变红(约束 3)',
+      !r.ok && /约束3 统一 SDK 层/.test(r.output),
+      r.ok ? '散落的 fetch 被放行 —— 它在远端同源能跑,在 Tauri 下全部失败' : undefined,
+    )
+  }
+
+  // 24d ★ 空集守卫:前端目录没了,三条约束不得静默通过
+  {
+    const src = p('console-web', 'src')
+    const stash = p('console-web', '__stash__')
+    renameSync(src, stash)
+    const r = runGuards()
+    renameSync(stash, src)
+    expect(
+      '24d ★ console-web/src 整个消失 → 守卫变红(而不是空集扫描静默通过)',
+      !r.ok && /空集扫描|没有任何源码/.test(r.output),
+      r.ok ? '前端代码全没了,三条约束却「通过」了 —— 那正是本仓反复强调的最危险的绿' : undefined,
+    )
+  }
+
+  // 24e 正向对照:合规写法必须被放行
+  {
+    const r = withProbe(
+      [
+        '// 负向测试夹具的**正向对照**:合规写法。',
+        "import { hrefOf } from './router.ts'",
+        "export const link = hrefOf('members')",
+        '',
+      ].join('\n'),
+    )
+    expect(
+      '24e 正向对照:合规的前端写法被放行(规则不是「见到前端就红」)',
+      r.ok,
+      r.ok ? undefined : `守卫误伤了合规写法,前端将无法编写:\n${r.output.slice(0, 300)}`,
+    )
+  }
 }
 
 // ---------------------------------------------------------------------

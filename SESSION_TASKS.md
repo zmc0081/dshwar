@@ -354,7 +354,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 
 ---
 
-## <span style="color:#d00000">●</span> M0.5.0 · 控制平面 / 企业自服务配置台(Session 0-4) <span style="color:#d00000">[开发中]</span>
+## <span style="color:#d00000">●</span> M0.5.0 · 控制平面 / 企业自服务配置台(Session 0-4) <span style="color:#d00000">[开发完成]</span>
 
 > **定位**:企业客户**自服务配置他们的解决方案** —— 配租户、成员、配额、模型准入,
 > 看用量与账单。不是「运营后台」,措辞要对,这是产品本体。
@@ -367,7 +367,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 | 1       | 契约:租户 / 成员 / 角色 / 配额 / 用量 / 审计查询 | ✅   |
 | 2       | Admin API + 开户闸门(D2:拦在「建第二个成员」)    | ⬜   |
 | 3       | 容量端点:隔离档 / maxProcesses / 成员上限        | ✅   |
-| 4       | console-web 最小前端 + SDK 层 + D7 三条守卫      | ⬜   |
+| 4       | console-web 最小前端 + SDK 层 + D7 三条守卫      | ✅   |
 
 **本版本的预先裁决**:D1(仓库拆分)· D2(隔离档表达)· D3(工作区语义)· D7(前端约束)
 —— 全文见 [`docs/DECISIONS/AUTOPILOT-LOG.md`](docs/DECISIONS/AUTOPILOT-LOG.md)。

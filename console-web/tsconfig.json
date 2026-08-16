@@ -1,0 +1,20 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "tsBuildInfoFile": "./dist/.tsbuildinfo",
+    "jsx": "react-jsx",
+    "jsxImportSource": "react",
+    // base 把 types 限成 ["node"],于是 React 19 的全局 JSX 命名空间进不来。
+    // 显式加回来 —— 而不是去掉 base 的限制:那条限制在别处是有用的。
+    "types": ["node", "react"],
+    // DOM 类型是必需的 —— 但**这不等于允许用浏览器专有 API**。
+    // 那条约束由 scripts/check-guards.mjs 的守卫管,不靠 lib 配置。
+    // 用 lib 卡会把 document/HTMLElement 也禁掉,那样连组件都写不了。
+    "lib": ["es2023", "dom"]
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["dist", "node_modules"],
+  "references": [{ "path": "../packages/console-contract" }, { "path": "../sdk/typescript" }]
+}

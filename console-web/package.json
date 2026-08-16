@@ -1,0 +1,20 @@
+{
+  "name": "@dshwar/console-web",
+  "version": "0.5.0",
+  "description": "控制台前端。最小但真实 —— D7 的三条约束需要一个真实的被检查对象。",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@dshwar/console-contract": "workspace:*",
+    "@dshwar/sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.2",
+    "react": "19.2.0"
+  }
+}

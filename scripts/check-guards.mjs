@@ -386,6 +386,93 @@ function checkStalePrincipalConsumers() {
 }
 
 /**
+ * 前端三条约束(V0.5.0,D7)—— 为 V0.7.0 的 Tauri 套壳预留。
+ *
+ * ## 为什么这三条现在就要守
+ *
+ * 三个宿主(远端 Web / 本地 sidecar / Tauri)要跑**同一份**前端代码。
+ * 违反任一条的后果都不是「在 Tauri 里表现不好」,而是**根本跑不起来**:
+ *
+ * | 约束 | 违反后在 Tauri 里会怎样 |
+ * | --- | --- |
+ * | 路由用 hash / memory | history router 依赖服务器把任意路径回落到 index.html。Tauri 没有服务器 —— 刷新 `/settings` 直接 404 |
+ * | 不依赖浏览器专有 API | `localStorage` 在 Tauri 的 WebView 里存在但**不跨会话可靠**;`window.location` 直接操作会指向 `tauri://localhost` |
+ * | 请求走统一 SDK 层 | 散落的 `fetch('/v1/…')` 在远端同源能跑,在 Tauri 下全部失败 |
+ *
+ * ⚠️ **现在写零成本,事后补是重构。** 路由散落进几十个组件、`fetch` 散落
+ * 进每个页面之后再改,每一处都要动 —— 而那时已经没有「重写一遍」的预算了。
+ *
+ * ## 为什么是守卫而不是注释
+ *
+ * D7 原话:「加守卫,不是写进注释就算数」。理由本仓已经证明过三次 ——
+ * 靠人记得的事会被忘,而忘的那次是静默的。
+ *
+ * ## 扫描范围
+ *
+ * `console-web/src/**`。⚠️ **这个目录必须真实存在且有代码** ——
+ * 空集扫描永远绿,而那是本仓反复强调的最危险的绿。
+ * 这正是把前端放主仓的理由(AUTOPILOT-LOG A1)。
+ *
+ * @returns {{file: string, line: number, text: string}[]}
+ */
+function checkFrontendConstraints() {
+  const root = p('console-web', 'src')
+  const files = collectFiles(root, (/** @type {string} */ f) => /\.(ts|tsx)$/.test(f))
+
+  // ★ 空集守卫。没有它,删掉 console-web 会让这三条全部「通过」。
+  if (files.length === 0) {
+    return [
+      {
+        file: 'console-web/src',
+        line: 0,
+        text: 'console-web/src 下没有任何源码 —— 三条前端约束会退化成空集扫描,永远绿',
+      },
+    ]
+  }
+
+  /** @type {{file: string, line: number, text: string}[]} */
+  const out = []
+
+  // 约束 1:路由。禁 history router 与 history API。
+  out.push(
+    ...grepFiles(
+      files,
+      /\b(createBrowserRouter|BrowserRouter|history\.pushState|history\.replaceState|useHistory)\b/g,
+      REPO,
+    ).map((h) => ({ ...h, text: `[约束1 路由] ${h.text}` })),
+  )
+
+  // 约束 2:浏览器专有 API。
+  //
+  // ⚠️ 刻意**不**禁 `document` 与 `window` 本身 —— React 组件树、事件、
+  // 测试夹具都要用到它们,禁掉等于禁止写前端。禁的是**那些在 Tauri 里
+  // 语义不同或不可用的具体入口**。规则要窄到能说清「为什么这一个不行」,
+  // 宽泛的禁令只会被加豁免绕过。
+  out.push(
+    ...grepFiles(
+      files,
+      /\b(localStorage|sessionStorage|window\.location\s*=|location\.assign|location\.replace|navigator\.serviceWorker|indexedDB)\b/g,
+      REPO,
+    ).map((h) => ({ ...h, text: `[约束2 浏览器专有 API] ${h.text}` })),
+  )
+
+  // 约束 3:请求走统一 SDK 层。
+  //
+  // 只有 `src/api.ts` 允许出现网络调用 —— 它就是那一层。
+  const nonApi = files.filter((f) => !repoPath(REPO, f).endsWith('console-web/src/api.ts'))
+  out.push(
+    ...grepFiles(nonApi, /\b(fetch\s*\(|XMLHttpRequest|axios|EventSource\s*\()/g, REPO).map(
+      (h) => ({
+        ...h,
+        text: `[约束3 统一 SDK 层] ${h.text} —— 请求只能在 console-web/src/api.ts 里发生`,
+      }),
+    ),
+  )
+
+  return out
+}
+
+/**
  * 守卫脚本不得越权写仓库。
  *
  * 起因是一次真实事故:`verify-guards` 还原 `openapi.json` 时 `copyFileSync`
@@ -767,6 +854,17 @@ if (unregistered.length === 0 && stale.length === 0) {
   console.log('        登记处见 scripts/check-guards.mjs 的 PRINCIPAL_CONSUMERS,')
   console.log('        背景见 docs/DECISIONS/principal-scope-binding.md')
   for (const h of [...unregistered, ...stale]) console.log(`        ${h.text}`)
+}
+
+const frontend = checkFrontendConstraints()
+if (frontend.length === 0) {
+  console.log('  通过  前端三条约束(路由 / 浏览器专有 API / 统一 SDK 层)')
+} else {
+  failed += 1
+  console.log(`  违规  前端三条约束(D7,为 V0.7.0 Tauri 套壳预留)  (${frontend.length} 处)`)
+  console.log('        三个宿主要跑同一份代码。违反任一条在 Tauri 里都不是「表现不好」,')
+  console.log('        是**根本跑不起来** —— 而那时前端已经写了几十个组件,改起来是重构。')
+  for (const h of frontend.slice(0, 10)) console.log(`        ${h.file}:${h.line}  ${h.text}`)
 }
 
 const guardWrites = checkGuardScriptsDoNotWrite()
