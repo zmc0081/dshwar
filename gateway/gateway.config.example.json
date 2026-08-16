@@ -46,6 +46,11 @@
     }
   ],
   "heartbeatMs": 15000,
+  "isolation": {
+    "level": "logical",
+    "maxProcesses": 64,
+    "idleTimeoutMs": 300000
+  },
   "governance": {
     "pricing": {
       "currency": "CNY",

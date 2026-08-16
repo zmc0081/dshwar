@@ -178,21 +178,28 @@ export function createIsolatedRuntime(config: IsolationConfig): IsolatedRuntime 
  */
 export function auditSupervisorEvents(
   record: (entry: {
-    tenantId: string
+    at: string
     actor: string
+    tenantId: string
     action: string
     target: string
-    detail: Record<string, unknown>
+    after: unknown
+    requestId: string
   }) => void,
 ): (event: SupervisorEvent) => void {
   return (event) => {
     record({
-      tenantId: event.tenantId,
+      at: new Date().toISOString(),
       actor: 'supervisor',
+      tenantId: event.tenantId,
       // `supervisor.spawn` / `.reclaim` / `.crash` / `.rejected`
       action: `supervisor.${event.kind}`,
       target: event.principalId,
-      detail: { ...event },
+      after: { ...event },
+      // 进程事件不是由某个 HTTP 请求直接触发的(回收与崩溃尤其如此),
+      // 所以没有真实的 requestId。留空字符串而不是编一个 ——
+      // 编出来的 id 在日志里查不到任何对应请求,比空更误导。
+      requestId: '',
     })
   }
 }

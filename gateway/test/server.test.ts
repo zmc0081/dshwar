@@ -257,3 +257,75 @@ describe('治理接线(冒烟抓到的两个 bug)', () => {
     expect((await fetch(`${srv!.url}/v1/admin/usage`, { headers: ADMIN })).status).toBe(200)
   })
 })
+
+/**
+ * V0.4.5 —— 配置里的 `isolation` 必须真的生效。
+ *
+ * 一个「文档里写了、示例配置里有、但代码从不读」的配置键,比没有更糟:
+ * 部署方以为开了进程隔离,实际跑在逻辑隔离上,而那是安全等级的差别。
+ */
+describe('隔离级别经配置文件生效', () => {
+  let tmp: string
+  let server: { url: string; close: () => Promise<void> } | undefined
+
+  const base = (root: string): ServerConfig => ({
+    host: '127.0.0.1',
+    port: 0,
+    workspaceRoot: join(root, 'workspaces'),
+    sessionRoot: join(root, 'sessions'),
+    defaultProvider: 'deepseek',
+    defaultModel: 'deepseek-chat',
+    authEntries: [{ token: 'dev-alice', id: 'alice-e6f1', tenantId: 'acme', roles: ['member'] }],
+  })
+
+  beforeEach(async () => {
+    tmp = await mkdtemp(join(tmpdir(), 'dshwar-iso-srv-'))
+  })
+
+  afterEach(async () => {
+    await server?.close()
+    server = undefined
+    await rm(tmp, { recursive: true, force: true }).catch(() => undefined)
+  })
+
+  it('不配 isolation 就是逻辑隔离,且能正常起来(红线 1)', async () => {
+    server = await startServer(base(tmp))
+    const res = await fetch(`${server.url}/v1/sessions`, {
+      headers: { authorization: 'Bearer dev-alice' },
+    })
+    expect(res.status).toBe(200)
+  })
+
+  it('显式配 logical 与不配等价', async () => {
+    server = await startServer({ ...base(tmp), isolation: { level: 'logical' } })
+    const res = await fetch(`${server.url}/v1/sessions`, {
+      headers: { authorization: 'Bearer dev-alice' },
+    })
+    expect(res.status).toBe(200)
+  })
+
+  it('配 process 时起得来 —— 说明 supervisor 真的被接上了', async () => {
+    server = await startServer({
+      ...base(tmp),
+      isolation: { level: 'process', maxProcesses: 2, idleTimeoutMs: 60_000 },
+    })
+    const res = await fetch(`${server.url}/v1/sessions`, {
+      headers: { authorization: 'Bearer dev-alice' },
+    })
+    expect(res.status).toBe(200)
+  })
+
+  it('配错级别时**拒绝启动**,不静默回退到默认', async () => {
+    // 静默回退的后果:配置写错一个字母,部署方以为开了进程隔离,
+    // 实际跑在逻辑隔离上。宁可起不来。
+    await expect(
+      startServer({ ...base(tmp), isolation: { level: 'proces' } }),
+    ).rejects.toThrow(/未知的隔离级别/)
+  })
+
+  it('container 档拒绝启动并指出正路(红线 4)', async () => {
+    await expect(
+      startServer({ ...base(tmp), isolation: { level: 'container' } }),
+    ).rejects.toThrow(/未实现/)
+  })
+})

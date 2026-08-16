@@ -35,14 +35,20 @@ import { createScimApp } from '@dshwar/scim-server'
 import { InMemorySubjectStore } from '@dshwar/subject'
 import type { TenantMapConfig } from '@dshwar/tenant-map'
 import { createPrincipal, type Principal } from '@dshwar/principal'
+import { forkLauncher, Supervisor } from '@dshwar/supervisor'
 import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createGateway } from './app.ts'
 import { InMemoryAdminKeyResolver } from './admin-keys.ts'
 import { InMemoryScimTokenResolver } from './scim-keys.ts'
 import { ConsoleAuditSink, StoreAuditSink, type AuditSink } from './admin/audit.ts'
 import { registerAdminRoutes } from './admin/routes.ts'
+import {
+  auditSupervisorEvents,
+  createIsolatedRuntime,
+  parseIsolationLevel,
+} from './isolation.ts'
 import { assembleRuntime, type StaticAuthEntry } from './runtime.ts'
 import { registerRuntimeRoutes } from './sessions/routes.ts'
 import { GatewaySessionStore } from './sessions/store.ts'
@@ -75,6 +81,29 @@ export interface ServerConfig {
   }[]
   /** SSE 心跳间隔(毫秒)。默认 15000。 */
   readonly heartbeatMs?: number
+  /**
+   * 隔离级别(V0.4.5)。**整段可选,缺省即逻辑隔离**(红线 1)——
+   * 升级不会自动改变隔离级别。
+   *
+   * 选型与代价见 `docs/DEPLOYMENT.md` §2.5。一句话:用户互相信任就用默认,
+   * 不信任就开 `process`,代价是每个活跃 principal 常驻 ~58 MB。
+   */
+  readonly isolation?: {
+    /** `logical`(默认) | `process` | `container`(本版本仅配置位) */
+    readonly level?: string
+    /** ★ `process` 档必需。没有上限的进程池会把机器吃到 OOM。 */
+    readonly maxProcesses?: number
+    /** 引用归零多久后回收该 principal 的进程。默认 5 分钟。 */
+    readonly idleTimeoutMs?: number
+    /**
+     * 子进程入口模块的绝对路径。缺省用本包自带的 `worker.js`。
+     *
+     * 需要自定义的场景:注册自己的 LLM provider —— `assembleRuntime()` 装了
+     * `dsh-llm` 这个 runtime 但不注册任何 adapter,那是部署决策
+     * (见 `runWorker` 的 `onReady` 钩子)。
+     */
+    readonly workerPath?: string
+  }
   /**
    * 治理(V0.4.0)。整段可选 —— 计量、配额、准入都是 opt-in。
    * ⚠️ pricing 必须把用到的每个模型配全:查不到价计 0,是「没配价」不是「免费」。
@@ -136,6 +165,18 @@ const USAGE = `
 
 配置文件示例与反向代理设置见 docs/DEPLOYMENT.md。
 `.trim()
+
+/**
+ * 本包自带的子进程入口。
+ *
+ * 与本文件同目录 —— 构建后是 `gateway/dist/worker.js`,源码运行时是
+ * `gateway/src/worker.ts`。两种情况下 `import.meta.url` 的扩展名都对得上,
+ * 所以直接跟着它走,不猜。
+ */
+function defaultWorkerPath(): string {
+  const here = fileURLToPath(import.meta.url)
+  return join(dirname(here), here.endsWith('.ts') ? 'worker.ts' : 'worker.js')
+}
 
 /** 启动一个网关。返回关闭函数,便于测试与优雅停机。 */
 export async function startServer(
@@ -238,13 +279,41 @@ export async function startServer(
     })
   }
 
+  // ---- 隔离级别(V0.4.5)----
+  // 分派只在这一处。红线 1:缺省 logical —— 升级不会自动改变隔离级别。
+  const isolationLevel = parseIsolationLevel(config.isolation?.level)
+  let supervisor: Supervisor | undefined
+  if (isolationLevel === 'process') {
+    supervisor = new Supervisor({
+      launcher: forkLauncher(config.isolation?.workerPath ?? defaultWorkerPath(), {
+        bootstrap: {
+          workspaceRoot: resolve(config.workspaceRoot),
+          sessionRoot: resolve(config.sessionRoot),
+          authEntries: config.authEntries,
+          defaultProvider: config.defaultProvider,
+          defaultModel: config.defaultModel,
+        },
+      }),
+      profile: 'gateway',
+      maxProcesses: config.isolation?.maxProcesses ?? 64,
+      idleTimeoutMs: config.isolation?.idleTimeoutMs ?? 300_000,
+      // R7:进程生命周期进同一条审计管道,不另起一套
+      onEvent: auditSupervisorEvents((entry) => auditSink.record(entry)),
+    })
+  }
+  const isolated = createIsolatedRuntime({
+    level: isolationLevel,
+    ...(isolationLevel === 'logical' ? { inProcess: runtime } : {}),
+    ...(supervisor === undefined ? {} : { supervisor, store }),
+  })
+
   const app = createGateway({
     ctx: runtime.ctx,
     adminKeys,
     runtimeRoutes: registerRuntimeRoutes({
       store,
-      createAgent: runtime.createAgent,
-      userMessage: runtime.userMessage,
+      createAgent: isolated.createAgent,
+      userMessage: isolated.userMessage,
       heartbeatMs: config.heartbeatMs ?? 15_000,
       quota: policyService,
       models: {
@@ -376,6 +445,9 @@ export async function startServer(
     url: `http://${host}:${boundPort}`,
     close: async () => {
       await new Promise<void>((done) => server.close(() => done()))
+      // 先停子进程再拆运行时:反过来的话,子进程可能在父进程已经拆掉
+      // 通道之后还在往回送事件。
+      supervisor?.dispose()
       await runtime.dispose()
     },
   }
