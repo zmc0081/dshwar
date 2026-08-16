@@ -233,9 +233,11 @@ describe('审计埋点', () => {
   })
 
   it('planned 端点的调用也被记录', async () => {
-    await asAdmin('admin-acme', '/v1/admin/usage')
+    // 样本必须选仍是 planned 的端点 —— usage 在 V0.4.0 Session 2 转正后
+    // 不再走 planned 循环。Session 4 转正 policies 后本测试随 planned 清零一起退役。
+    await asAdmin('admin-acme', '/v1/admin/policies')
     expect(audit.entries).toHaveLength(1)
-    expect(audit.entries[0]!.action).toBe('admin.listUsage')
+    expect(audit.entries[0]!.action).toBe('admin.listPolicies')
   })
 
   it('被拒的跨租户调用不产生成功记录', async () => {
