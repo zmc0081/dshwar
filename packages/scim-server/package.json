@@ -1,0 +1,35 @@
+{
+  "name": "@dshwar/scim-server",
+  "version": "0.3.0",
+  "description": "SCIM 2.0 服务端子集:User + Group,PUT 与 PATCH 两条路径都能落停用。供给方推,DSHWAR 收。",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@dshwar/subject": "workspace:*",
+    "@dshwar/tenant-map": "workspace:*",
+    "hono": "^4.10.7"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

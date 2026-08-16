@@ -18,6 +18,7 @@
     { "path": "./packages/tenant-map" },
     { "path": "./packages/auth-jwt" },
     { "path": "./packages/auth-oidc" },
+    { "path": "./packages/scim-server" },
     { "path": "./adapters/dsh-0.1.0" },
     { "path": "./gateway" },
     { "path": "./sdk/typescript" },

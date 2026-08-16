@@ -153,7 +153,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 | 2 `@dshwar/tenant-map`      | ✅ 已完成 | 四种策略 + 歧义即拒;29 个单测,负向多于正向        |
 | 3 `@dshwar/auth-jwt`        | ✅ 已完成 | 验签通过≠放行:停用即拒;23 个单测,真实密钥对       |
 | 4 `@dshwar/auth-oidc`       | ✅ 已完成 | 只解析 discovery,验签复用 auth-jwt;18 个单测      |
-| 5 `@dshwar/scim-server`     | ⬜ 未开始 | User + Group + PATCH                              |
+| 5 `@dshwar/scim-server`     | ✅ 已完成 | PUT 与 PATCH 双路停用;三家供给方形状实测;22 单测  |
 | 6 网关接入与令牌分离        | ⬜ 未开始 | SCIM 挂载、Admin subjects 转实现、三类令牌        |
 | 7 `@dshwar/webhooks` 与发布 | ⬜ 未开始 | 出站投递 + 端到端验收 + 文档                      |
 
@@ -361,7 +361,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 
 ---
 
-### ⬜ Session 5: `@dshwar/scim-server` —— SCIM 2.0 子集
+### ✅ Session 5: `@dshwar/scim-server` —— SCIM 2.0 子集
 
 ```
 本次任务:SCIM 2.0 服务端，User + Group + PATCH。
