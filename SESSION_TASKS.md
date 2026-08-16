@@ -168,7 +168,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 
 ---
 
-### ⬜ Session 0: 可行性证伪:用量可观测(1 天,止损点)
+### ✅ Session 0: 可行性证伪:用量可观测(1 天,止损点)
 
 > 本版本压在一条未验证的假设上:**上游会把 token 用量报出来,且能归属到
 > principal**。metering 的全部设计都建立在这上面 —— 若上游根本不报用量,
