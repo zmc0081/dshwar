@@ -9,6 +9,7 @@
  */
 import { LlmAdapter, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import { runWorker } from '../../src/worker.ts'
+import { WorkspaceEchoAdapter } from './workspace-echo.ts'
 import { FakeLlmAdapter } from '../harness.ts'
 
 /** 一开口就炸 —— 用来验证 agent/error 能不能穿过进程边界。 */
@@ -36,5 +37,14 @@ runWorker(process, {
     }
     ctx.llm.registerAdapter(['fake'], new FakeLlmAdapter({ tokens, delayMs }))
     ctx.llm.registerAdapter(['boom'], new ExplodingAdapter())
+    // 冒烟用:把解析到的工作区根吐回客户端。子进程的根 ctx 上有
+    // assembleRuntime({ principal }) 钉下的绑定 —— 这条链路正是要证的东西。
+    const workspaceRoot = at('workspace-root')
+    if (workspaceRoot !== undefined) {
+      ctx.llm.registerAdapter(
+        ['echo-workspace'],
+        new WorkspaceEchoAdapter(ctx as unknown as { get(n: string): unknown }, workspaceRoot),
+      )
+    }
   },
 })

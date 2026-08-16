@@ -17,6 +17,18 @@ export default defineConfig({
       // 会在一个没装依赖的树上执行整套测试 —— 红得毫无信息量。
       // 那份副本在它自己的根目录下跑自己的门禁。
       '.claude/worktrees/**',
+      // 第二层冒烟(真实 API key)只在**有 key 时**才纳入。
+      //
+      // 为什么按条件排除而不是写死:写死会让「手工跑一次」这件事也做不到,
+      // 而那正是它存在的意义 —— 它是发布清单上的一个待办项,不是死代码。
+      // 无 key 时排除掉,是为了让 check:all 的输出里不出现一个永远 skip 的文件。
+      //
+      // 跑法:把 DEEPSEEK_API_KEY 放进 .env(已在 .gitignore 里),然后
+      //   pnpm vitest run gateway/test/live-smoke.test.ts
+      ...(process.env['DEEPSEEK_API_KEY'] === undefined ||
+      process.env['DEEPSEEK_API_KEY'] === ''
+        ? ['gateway/test/live-smoke.test.ts']
+        : []),
     ],
   },
 })

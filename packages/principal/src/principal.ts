@@ -126,6 +126,26 @@ function assertIdentifier(value: string, field: 'id' | 'tenantId'): void {
 }
 
 /**
+ * 身份层的保留字。**现在就保留,而不是等到需要时再说。**
+ *
+ * ## 为什么现在做
+ *
+ * `shared` 是「一租户一进程」形态里共享工作区的候选哨兵值
+ * (见 `docs/DECISIONS/one-process-per-tenant.md`)。那个形态**尚未采纳**,
+ * 但保留字必须**在有存量数据之前**定下来 —— 等将来真走那条路时再处理碰撞,
+ * 手里已经有一批 id 是 `shared` 的真实用户,那时只剩迁移一条路。
+ *
+ * 现在保留的成本是零(拒绝一个几乎不会有人用的 id),将来的代价是一次迁移。
+ *
+ * ⚠️ **保留的是 id,不是 tenantId。** 租户名叫 `shared` 完全合理
+ * (一家公司真的可能这么起名),而哨兵值只出现在 userId 那一段。
+ *
+ * 与 `fs-tenant` 的 `DEFAULT_WORKSPACE_ID`(`default`)同款处理:
+ * 那里也是一个约定位置,靠「它走与任何其它值完全相同的校验路径」保证安全。
+ */
+const RESERVED_IDS = new Set(['shared'])
+
+/**
  * 构造一个冻结的 {@link Principal}。
  *
  * 这是构造 principal 的**唯一**受祝福路径。直接写对象字面量在类型上也能通过,
@@ -140,6 +160,14 @@ function assertIdentifier(value: string, field: 'id' | 'tenantId'): void {
 export function createPrincipal(init: PrincipalInit): Principal {
   assertIdentifier(init.id, 'id')
   assertIdentifier(init.tenantId, 'tenantId')
+
+  if (RESERVED_IDS.has(init.id.toLowerCase())) {
+    throw new InvalidPrincipalError(
+      `principal.id 不得使用保留字 ${JSON.stringify(init.id)}(保留:${[...RESERVED_IDS].join(' / ')})。` +
+        '保留字被留给路径与键前缀里的约定位置 —— 一个真实用户占用它,' +
+        '会让他的工作区与那个约定位置指向同一个目录。',
+    )
+  }
 
   if (EMAIL_SHAPED.test(init.id)) {
     throw new InvalidPrincipalError(

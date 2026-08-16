@@ -227,6 +227,28 @@ console.log('DSHWAR · 断言有效性探针\n')
   )
 }
 
+// 8. principal 抵达 agent 执行层(V0.4.7)—— 拿掉根上的 provide
+//    这一条同时属于「弄坏实现」与「作用域」两类:它弄坏的是实现,
+//    但只有在**真实时序下**(HTTP → 网关 → 子进程 → 适配器)才照得到。
+{
+  const r = withMutation(
+    'gateway/src/runtime.ts',
+    (s) =>
+      s.replace(
+        '    ctx.provide(PRINCIPAL_BINDING, options.principal)',
+        '    void PRINCIPAL_BINDING',
+      ),
+    ['gateway/test/real-path-smoke.test.ts'],
+  )
+  expect(
+    '8 拿掉根上的 principal provide → 真实路径冒烟变红',
+    r.red,
+    r.unchanged
+      ? '锚点没匹配上'
+      : '★ 进程档下 principal 不再抵达执行层,而端到端冒烟竟然还是绿的',
+  )
+}
+
 // ===========================================================================
 // 第三类:作用域 —— 在真实时序下调用,而不是在测试里直接调
 // ===========================================================================

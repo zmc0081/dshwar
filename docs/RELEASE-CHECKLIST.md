@@ -113,8 +113,18 @@ package.json → 0.4.1  (没被提升)
 - [x] `gateway.config.example.json` 有 `isolation` 段,且该配置键**真的生效**
       (`gateway/test/server.test.ts` 断言配错级别时拒绝启动)
 - [x] `profiles/enterprise.yml` 指向 process 档,`team.yml` 保持 logical
-- [ ] ⚠️ **在 Linux 上重测冷启动与内存**,并更新 `FEASIBILITY-REPORT-V45.md` §6
-      与 `DEPLOYMENT.md` §2.5 —— 当前数字来自 Windows 开发机
+- [ ] 🚨 **在 Linux 上重测冷启动与内存** —— **已从待办升级到关键路径**
+      (V0.4.7)。之前它可有可无,因为逻辑档是默认、进程档是可选;
+      现在**进程档是唯一的多租户路径**,58 MB / 115 ms 撑着三样东西:
+      README 的成本模型、`maxProcesses: 64` 的默认值、以及 5/20/50/200 人
+      那张规模对照表。Linux 上若明显不同,**那三样全是错的** ——
+      而错的后果是部署方照文档配置把机器吃到 OOM。
+      需更新:`FEASIBILITY-REPORT-V45.md` §6、`DEPLOYMENT.md` §2.5、
+      `README.md` 的规模对照表、`gateway.config.example.json` 的默认值
+- [ ] 🟠 **人工跑一次 live smoke** —— `gateway/test/live-smoke.test.ts`
+      从未在 CI 中运行过(需真实 API key)。跑法见该文件头部;
+      key 走 `.env`,**绝不写进受版本控制的文件**。
+      记录结果(模型回复的前 80 字)到本清单
 - [ ] ⚠️ **补测 node-pty 在两层嵌套下是否可用**(需先装
       `dsh-subprocess-local`)。当前只验证了「子进程能再拉起孙进程」,
       pty 的原生绑定在深度 2 未验

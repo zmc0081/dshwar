@@ -57,7 +57,7 @@ DeepSeek Harness（npm 依赖 @deepseek-ai/dsh-*，精确锁版）
 | V0.4.1     | `fs-tenant` 多工作区改造                                  | 3 天 | <span style="color:#d00000">开发完成</span>        |
 | V0.4.5     | supervisor 进程隔离                                       | 2 周 | <span style="color:#d00000">开发完成</span>        |
 | V0.4.6     | 测试有效性与门禁补强                                      | 1 周 | <span style="color:#d00000">开发完成(Session 1-4)</span> |
-| **V0.4.7** | **principal 抵达 agent 执行层**(🚨 发布阻塞)              | 3 天 | <span style="color:#d00000">开发中</span>          |
+| V0.4.7     | principal 抵达 agent 执行层(发布阻塞已解除)              | 3 天 | <span style="color:#d00000">开发完成</span>        |
 | V0.5.0     | 控制平面 / **企业自服务配置台**                           | 5 周 | 待启动                                             |
 | **V0.5.5** | **工作台后端**:工作区 / 产物 / 预授权 / 作业 / 附件       | 3 周 | 待启动                                             |
 | V0.6.0     | 支付:billing 契约 + local + 首个 hosted 实现              | 3 周 | 待启动                                             |
@@ -151,7 +151,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 > 已发布版本的 Session 一律标 ✅;开发中版本按实际进度标记,每完成一个即更新。
 >
 > 已发布:(暂无)
-> 开发中:**V0.4.7(principal 抵达 agent 执行层)—— 🚨 发布阻塞**
+> 开发完成待发布:**V0.4.7(principal 抵达 agent 执行层)—— 发布阻塞已解除**
 > 开发完成待发布:V0.4.6(Session 1-4;真实路径冒烟因架构阻塞归入 V0.4.7)
 > 开发完成待发布:V0.4.5(Session 0-4) · V0.4.1(Session 0-2) · V0.4.0(Session 0-5) · V0.3.0(Session 0-7) · V0.2.0(Session 0-6) · V0.1.0(Session 0-8)
 > 后续规划:V0.5.0 · V0.5.5 · V0.6.0 · V0.6.5 · V0.7.0 · V0.8.0(见「后续版本规划」)
