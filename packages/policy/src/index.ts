@@ -208,3 +208,94 @@ export class PolicyService {
       : { kind: 'allow', quota }
   }
 }
+
+// ============================================================================
+// 工作区配额(V0.4.1 R7)
+//
+// 与 token 配额**同一套判定形状**:同样的 allow/deny 联合,同样的
+// 「未设置即不限」,同样的 fail open 取向。任务书要求「与已完成的
+// policy / metering 对齐,不另起一套」—— 这里是那条要求的落点。
+//
+// 但它与 token 配额有一处**刻意的不同**:工作区数与容量的判定**不 fail open**。
+// 理由是数据源不同 —— token 用量来自 metering(账目组件,可能挂),
+// 而工作区数来自调用方现场给出的当前值,读不到就是调用方的 bug,不是外部故障。
+// 把这两种失败混为一谈,会让一个真 bug 伪装成「计量暂时不可用」。
+// ============================================================================
+
+/** 工作区维度的上限。两项都可为 null,表示不限。 */
+export interface WorkspaceLimits {
+  /** 每用户可拥有的工作区数上限。 */
+  readonly maxWorkspaces: number | null
+  /** 单个工作区的容量上限(字节)。 */
+  readonly maxBytesPerWorkspace: number | null
+}
+
+/** 工作区配额存储。与 {@link QuotaStore} 并列,不合并 —— 两者的生命周期不同。 */
+export interface WorkspaceQuotaStore {
+  /** @returns 该主体的工作区上限;从未设置过时 `undefined`(视同不限)。 */
+  getWorkspaceLimits(subjectId: string): Promise<WorkspaceLimits | undefined>
+  setWorkspaceLimits(subjectId: string, limits: WorkspaceLimits): Promise<void>
+}
+
+/** 内存实现。 */
+export class InMemoryWorkspaceQuotaStore implements WorkspaceQuotaStore {
+  private readonly limits = new Map<string, WorkspaceLimits>()
+
+  async getWorkspaceLimits(subjectId: string): Promise<WorkspaceLimits | undefined> {
+    return this.limits.get(subjectId)
+  }
+
+  async setWorkspaceLimits(subjectId: string, limits: WorkspaceLimits): Promise<void> {
+    this.limits.set(subjectId, limits)
+  }
+}
+
+/** 与 {@link QuotaDecision} 同形。deny 的两种原因对应两条上限。 */
+export type WorkspaceDecision =
+  | { readonly kind: 'allow' }
+  | {
+      readonly kind: 'deny'
+      readonly reason: 'workspace_limit_exceeded' | 'workspace_size_exceeded'
+      /** 触发的上限值,便于错误信息与审计写清「超了什么」。 */
+      readonly limit: number
+    }
+
+/**
+ * 能不能再建一个工作区。
+ *
+ * @param currentCount 该主体**当前已有**的工作区数,由调用方现场统计
+ * @returns allow / deny
+ */
+export async function checkWorkspaceCount(
+  store: WorkspaceQuotaStore,
+  subjectId: string,
+  currentCount: number,
+): Promise<WorkspaceDecision> {
+  const limits = await store.getWorkspaceLimits(subjectId)
+  const max = limits?.maxWorkspaces
+  // 未设置或显式 null → 不限。与 token 配额的语义完全一致。
+  if (max === undefined || max === null) return { kind: 'allow' }
+
+  return currentCount >= max
+    ? { kind: 'deny', reason: 'workspace_limit_exceeded', limit: max }
+    : { kind: 'allow' }
+}
+
+/**
+ * 某个工作区还能不能再写入。
+ *
+ * @param currentBytes 该工作区**当前**占用字节数,由调用方现场统计
+ */
+export async function checkWorkspaceSize(
+  store: WorkspaceQuotaStore,
+  subjectId: string,
+  currentBytes: number,
+): Promise<WorkspaceDecision> {
+  const limits = await store.getWorkspaceLimits(subjectId)
+  const max = limits?.maxBytesPerWorkspace
+  if (max === undefined || max === null) return { kind: 'allow' }
+
+  return currentBytes >= max
+    ? { kind: 'deny', reason: 'workspace_size_exceeded', limit: max }
+    : { kind: 'allow' }
+}

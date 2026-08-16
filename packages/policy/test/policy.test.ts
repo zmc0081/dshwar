@@ -3,7 +3,15 @@
  */
 import { InMemoryMeteringStore, type MeteringStore, type RawUsage } from '@dshwar/metering'
 import { describe, expect, it } from 'vitest'
-import { InMemoryQuotaStore, monthlyPeriod, PolicyService } from '../src/index.ts'
+import {
+  checkWorkspaceCount,
+  checkWorkspaceSize,
+  InMemoryQuotaStore,
+  InMemoryWorkspaceQuotaStore,
+  monthlyPeriod,
+  PolicyService,
+  type WorkspaceLimits,
+} from '../src/index.ts'
 
 const raw = (over: Partial<RawUsage> = {}): RawUsage => ({
   subjectId: 'alice',
@@ -190,5 +198,60 @@ describe('quotaOf —— 契约形状的状态查询', () => {
   it('租户未知的主体返回 undefined(端点侧 → 404)', async () => {
     const { service } = makeService({})
     expect(await service.quotaOf('stranger')).toBeUndefined()
+  })
+})
+
+// ============================================================================
+// 工作区配额(V0.4.1 R7)
+// ============================================================================
+describe('工作区配额 —— 与 token 配额同一套形状', () => {
+  const make = async (limits?: WorkspaceLimits) => {
+    const store = new InMemoryWorkspaceQuotaStore()
+    if (limits !== undefined) await store.setWorkspaceLimits('alice', limits)
+    return store
+  }
+
+  it('未设置上限 → 不限', async () => {
+    const store = await make()
+    expect((await checkWorkspaceCount(store, 'alice', 9999)).kind).toBe('allow')
+    expect((await checkWorkspaceSize(store, 'alice', 9e12)).kind).toBe('allow')
+  })
+
+  it('显式 null → 不限(与 tokenLimit: null 同义)', async () => {
+    const store = await make({ maxWorkspaces: null, maxBytesPerWorkspace: null })
+    expect((await checkWorkspaceCount(store, 'alice', 100)).kind).toBe('allow')
+  })
+
+  it('未达上限放行,达到即拒绝', async () => {
+    const store = await make({ maxWorkspaces: 3, maxBytesPerWorkspace: null })
+    expect((await checkWorkspaceCount(store, 'alice', 2)).kind).toBe('allow')
+    // 已有 3 个时再建就是第 4 个 —— 用 >= 而不是 >
+    expect(await checkWorkspaceCount(store, 'alice', 3)).toMatchObject({
+      kind: 'deny',
+      reason: 'workspace_limit_exceeded',
+      limit: 3,
+    })
+  })
+
+  it('容量上限同理,且 deny 带上限值供错误信息与审计使用', async () => {
+    const store = await make({ maxWorkspaces: null, maxBytesPerWorkspace: 1024 })
+    expect((await checkWorkspaceSize(store, 'alice', 1023)).kind).toBe('allow')
+    expect(await checkWorkspaceSize(store, 'alice', 1024)).toMatchObject({
+      kind: 'deny',
+      reason: 'workspace_size_exceeded',
+      limit: 1024,
+    })
+  })
+
+  it('两条上限互不干扰', async () => {
+    const store = await make({ maxWorkspaces: 1, maxBytesPerWorkspace: 1_000_000 })
+    // 数量超了但容量没超
+    expect((await checkWorkspaceCount(store, 'alice', 5)).kind).toBe('deny')
+    expect((await checkWorkspaceSize(store, 'alice', 100)).kind).toBe('allow')
+  })
+
+  it('别的主体不受影响', async () => {
+    const store = await make({ maxWorkspaces: 1, maxBytesPerWorkspace: null })
+    expect((await checkWorkspaceCount(store, 'bob', 100)).kind).toBe('allow')
   })
 })

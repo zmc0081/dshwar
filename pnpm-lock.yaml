@@ -132,6 +132,9 @@ importers:
       '@dshwar/auth':
         specifier: workspace:*
         version: link:../packages/auth
+      '@dshwar/fs-tenant':
+        specifier: workspace:*
+        version: link:../packages/fs-tenant
       '@dshwar/metering':
         specifier: workspace:*
         version: link:../packages/metering
@@ -211,9 +214,6 @@ importers:
       '@dshwar/example-sdk-session':
         specifier: workspace:*
         version: link:../examples/sdk-session
-      '@dshwar/fs-tenant':
-        specifier: workspace:*
-        version: link:../packages/fs-tenant
       '@dshwar/scim-server':
         specifier: workspace:*
         version: link:../packages/scim-server

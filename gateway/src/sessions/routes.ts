@@ -6,6 +6,9 @@
  * @module @dshwar/gateway/sessions/routes
  */
 import { CreateSessionRequest, CreateTurnRequest, PaginationQuery } from '@dshwar/api-contract'
+// 缺省工作区名从 fs-tenant 引,不在这里另写一个字面量 —— 两处各写一个 'default'
+// 就是两个事实源,而它们迟早会分叉。
+import { DEFAULT_WORKSPACE_ID } from '@dshwar/fs-tenant'
 import type { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import { ApiError, notFound } from '../errors.ts'
@@ -72,6 +75,7 @@ function toWire(session: GatewaySession) {
   return {
     id: session.id,
     subjectId: session.subjectId,
+    workspaceId: session.workspaceId,
     status: session.handle.agent.status,
     model: session.model,
     provider: session.provider,
@@ -95,6 +99,12 @@ export function registerRuntimeRoutes(options: RuntimeRouteOptions) {
       }
       const principal = c.get('principal')!
       const body = parsed.data
+
+      // ---- 工作区(V0.4.1)----
+      // 只在建会话时取一次,此后由会话 id 承载 —— 发轮 / SSE / 删除都不必再带。
+      // 这消除了「漏带参数静默落到 default」这一整类错误。
+      // 决策见 docs/DECISIONS/workspace-in-api.md。
+      const workspaceId = body.workspaceId ?? DEFAULT_WORKSPACE_ID
 
       // ---- 模型裁决(V0.4.0)----
       // 挂在 createAgent 入口:准入答「许不许用」,降级答「用哪个」。
@@ -128,6 +138,7 @@ export function registerRuntimeRoutes(options: RuntimeRouteOptions) {
       const session = options.store.register({
         id: sessionId,
         principal,
+        workspaceId,
         handle,
         includeReasoning: body.includeReasoning,
         // 记裁决后的,不是请求的 —— 计量与审计要对上真正在跑的模型
@@ -146,7 +157,11 @@ export function registerRuntimeRoutes(options: RuntimeRouteOptions) {
         throw new ApiError('invalid_request', parsed.error.issues[0]?.message ?? 'invalid query')
       }
       const principal = c.get('principal')!
-      const all = options.store.list(principal)
+      // 可选过滤:省略则返回全部工作区的会话,与改造前行为一致(R2)
+      const workspaceFilter = c.req.query('workspaceId')
+      const all = options.store
+        .list(principal)
+        .filter((s) => workspaceFilter === undefined || s.workspaceId === workspaceFilter)
 
       // 游标就是上一页最后一条的 id。简单、稳定、不受插入影响。
       const cursor = parsed.data.cursor

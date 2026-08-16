@@ -35,6 +35,11 @@ export interface GatewaySession {
   /** 归属主体。跨主体访问一律 404。 */
   readonly subjectId: string
   readonly tenantId: string
+  /**
+   * 会话所属工作区(V0.4.1)。与 `subjectId` 同级 —— 它是归属信息的一部分,
+   * 而不是一个可选的标签。`fs-tenant` 的 workspaceOf 从这里取值。
+   */
+  readonly workspaceId: string
   readonly handle: AgentHandleLike
   readonly includeReasoning: boolean
   readonly model: string | null
@@ -96,6 +101,7 @@ export class GatewaySessionStore {
     includeReasoning: boolean
     model: string | null
     provider: string | null
+    workspaceId: string
     metadata: Record<string, string>
   }): GatewaySession {
     const buffer = new EventBuffer()
@@ -133,6 +139,7 @@ export class GatewaySessionStore {
     const session: GatewaySession = {
       id: input.id,
       subjectId: input.principal.id,
+      workspaceId: input.workspaceId,
       tenantId: input.principal.tenantId,
       handle: input.handle,
       includeReasoning: input.includeReasoning,

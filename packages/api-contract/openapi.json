@@ -1854,6 +1854,10 @@
             "maxLength": 256,
             "description": "主体标识。必须是 IdP 的不可变主键(OIDC sub / SCIM id / 目录 object id),不得使用邮箱"
           },
+          "workspaceId": {
+            "description": "会话所属工作区",
+            "type": "string"
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -1926,6 +1930,10 @@
           },
           "provider": {
             "description": "模型提供方路由。省略则用默认",
+            "type": "string"
+          },
+          "workspaceId": {
+            "description": "工作区 id。省略则落到 default",
             "type": "string"
           },
           "includeReasoning": {

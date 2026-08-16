@@ -25,6 +25,15 @@ export const CreateSessionRequest = z
     model: z.string().optional().meta({ description: '模型 id。省略则用部署方配置的默认值' }),
     provider: z.string().optional().meta({ description: '模型提供方路由。省略则用默认' }),
     /**
+     * 会话在哪个工作区里干活(V0.4.1)。
+     *
+     * **省略即 `default`**,改造前的调用方零改动仍能工作。
+     * 工作区只在建会话时指定一次,此后由会话 id 承载 —— 发轮、SSE、删除都不必再带,
+     * 这消除了「漏带参数静默落到 default」这一整类错误。
+     * 决策见 `docs/DECISIONS/workspace-in-api.md`。
+     */
+    workspaceId: z.string().optional().meta({ description: '工作区 id。省略则落到 default' }),
+    /**
      * 推理增量开关 —— **默认 false**。
      *
      * 开启后 SSE 流里会出现 `reasoning.delta` 事件。默认关的理由见
@@ -55,6 +64,13 @@ export const Session = z
      * 而会话 id 的存在性本身就是信息。
      */
     subjectId: SubjectId,
+    /**
+     * 会话所属工作区(V0.4.1)。
+     *
+     * ⚠️ **schema 上是可选的,语义上恒有值。** 把它加进 `required` 会让老客户端的
+     * 响应校验失败 —— 那是破坏性变更。可选但恒有值是 API 兼容演进的标准做法。
+     */
+    workspaceId: z.string().optional().meta({ description: '会话所属工作区' }),
     status: SessionStatus,
     model: z.string().nullable(),
     provider: z.string().nullable(),

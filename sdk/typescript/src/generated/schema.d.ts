@@ -296,6 +296,8 @@ export interface components {
             id: string;
             /** @description 主体标识。必须是 IdP 的不可变主键(OIDC sub / SCIM id / 目录 object id),不得使用邮箱 */
             subjectId: string;
+            /** @description 会话所属工作区 */
+            workspaceId?: string;
             /** @enum {string} */
             status: "idle" | "running";
             model: string | null;
@@ -313,6 +315,8 @@ export interface components {
             model?: string;
             /** @description 模型提供方路由。省略则用默认 */
             provider?: string;
+            /** @description 工作区 id。省略则落到 default */
+            workspaceId?: string;
             /**
              * @description 是否在流中包含推理增量(思维链)。默认关闭
              * @default false
