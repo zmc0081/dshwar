@@ -22,7 +22,7 @@ import { forkLauncher, Supervisor, AtCapacityError } from '@dshwar/supervisor'
 const supervisor = new Supervisor({
   launcher: forkLauncher('./worker.mjs'),
   profile: 'enterprise',
-  maxProcesses: 64, // 58 MB/进程 —— 这是必需项,不是调优项
+  maxProcesses: 64, // 63 MB/进程 —— 这是必需项,不是调优项
   idleTimeoutMs: 300_000,
   onEvent: (e) => audit.record(e),
 })
@@ -42,7 +42,7 @@ lease.release() // 引用归零后开始计空闲
 ### 一 principal 一进程,不是一会话一进程
 
 同一 principal 的多个并发会话**共用一个进程**,各持一个 `Lease`。这是数量级的差别:
-冷启动 ~115 ms、常驻 ~58 MB(`docs/FEASIBILITY-REPORT-V45.md` §6),而冷启动里
+冷启动 ~115 ms、常驻 ~63 MB(`docs/FEASIBILITY-REPORT-V45.md` §6),而冷启动里
 九成花在进程创建与模块加载上 —— 优化装配代码没用,只能压进程复用率。
 
 共用一条 IPC 通道意味着消息必须打 `leaseId` 标签,否则父进程收到一个事件无从知道
@@ -66,7 +66,7 @@ lease.release() // 引用归零后开始计空闲
 - `ping(principalId, timeoutMs)` —— 还能响应吗(事件循环没被卡死)
 
 一个陷入死循环或被同步 IO 阻塞的进程完全「活着」,但送进去的消息永远没有回音。
-只检查存活会把这种进程一直留在池子里,占着 58 MB 谁也用不上。
+只检查存活会把这种进程一直留在池子里,占着 63 MB 谁也用不上。
 
 ### 身份走启动参数,不走环境变量
 

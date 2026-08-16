@@ -62,9 +62,13 @@ const CHILD = join(REPO, 'adapters', 'dsh-0.1.0', 'test', 'fixtures', 'child-age
 // 改这里的数字之前请先读那份文档 —— 放宽阈值是这道门禁唯一的失效方式。
 // ---------------------------------------------------------------------------
 const THRESHOLDS = {
-  linux: { coldStartMs: 420, rssMb: 105 },
-  win32: { coldStartMs: 260, rssMb: 105 },
-  darwin: { coldStartMs: 420, rssMb: 105 },
+  // 实测中位数 × 系数(冷启动 2.5 吸收 runner 噪声,RSS 1.5 —— 内存是稳的)。
+  // linux:  86 ms / 63 MB —— GitHub ubuntu-latest, Node 22, 2026-08-16
+  // win32: 127 ms / 55 MB —— Windows 11 Pro 26200, Node 24, 同日
+  linux: { coldStartMs: 215, rssMb: 95 },
+  win32: { coldStartMs: 318, rssMb: 83 },
+  // darwin 刻意没有条目 —— 没有实测基线,拿别的平台的数去卡红了也说明不了问题。
+  // 脚本在缺条目时跳过判定,而不是回退到某个默认值。
 }
 
 const argv = process.argv.slice(2)

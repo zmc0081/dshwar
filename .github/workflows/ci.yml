@@ -165,12 +165,11 @@ jobs:
       - name: 构建
         run: pnpm build
 
-      # ⚠️ **本次刻意不带 `--assert`。** Linux 的阈值必须由 Linux 上的实测推出,
-      # 而不是照 Windows 的数猜一个 —— 猜一个宽松阈值即使绿了也没验证任何东西,
-      # 它只证明猜得够松。实测落地后这一行换成带 `--assert` 的版本。
-      # 过程与定法记在 docs/DECISIONS/process-cost-thresholds.md。
+      # 阈值由 2026-08-16 的 Linux 实测(86 ms / 63 MB)× 系数推出,不是猜的 ——
+      # 首次接入时刻意先跑了一版不带 `--assert` 的,拿到数之后才打开判定。
+      # 定法见 docs/DECISIONS/process-cost-thresholds.md。
       - name: 五次采样,与 V0.4.5 的 Windows 口径对齐
-        run: node scripts/measure-process-cost.mjs
+        run: node scripts/measure-process-cost.mjs --assert
 
   # PTY 相关契约测试只能在 Linux 跑:上游 dsh-subprocess-local 的 ProcessInspector
   # 只实现了 linux 与 darwin,win32 直接抛错。
