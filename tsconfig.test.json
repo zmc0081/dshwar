@@ -13,6 +13,7 @@
   "include": [],
   "references": [
     { "path": "./packages/api-contract/tsconfig.test.json" },
+    { "path": "./packages/attachment-tenant/tsconfig.test.json" },
     { "path": "./packages/audit/tsconfig.test.json" },
     { "path": "./packages/auth-jwt/tsconfig.test.json" },
     { "path": "./packages/auth-oidc/tsconfig.test.json" },

@@ -67,6 +67,8 @@ describe('错误码是闭集', () => {
 
   it('错误码集合与契约文档中出现的完全一致', () => {
     const inDocument = JSON.stringify(doc.components.schemas['ErrorResponse'])
+    // 集合非空前置:枚举若被清空,下面的循环一次都不跑而测试仍「通过」。
+    expect(ErrorCode.options.length, '错误码集合是空的,本条会空跑').toBeGreaterThan(0)
     for (const code of ErrorCode.options) {
       expect(inDocument, `文档缺少错误码 ${code}`).toContain(`"${code}"`)
     }
@@ -121,6 +123,7 @@ describe('SSE 事件词表是闭集,且由 DSHWAR 定义', () => {
   // ARCHITECTURE.md §2.5：v1 的稳定性承诺不依赖 dsh 版本。
   // 事件名若沿用上游词表，上游改一个名字就逼我们升 v2。
   it('事件名不沿用上游词表(上游是 turn/start 斜杠式,我们是 turn.started 点式)', () => {
+    expect(StreamEventType.options.length, '事件词表是空的,本条会空跑').toBeGreaterThan(0)
     for (const type of StreamEventType.options) {
       expect(type, `${type} 用了上游的斜杠式命名`).not.toContain('/')
     }
@@ -155,9 +158,13 @@ describe('横切约定 —— 决定第三方后台能不能自动生成', () =>
   })
 
   it('所有 2xx 响应体都带 requestId', () => {
+    // ★ 嵌套 continue 的循环最容易空跑:外层非空**不代表**内层跑过。
+    //   数真正断言过的次数,而不是数集合长度。
+    let asserted = 0
     for (const route of ROUTES) {
       for (const [status, response] of Object.entries(route.responses)) {
         if (Number(status) >= 300 || response.schema === undefined) continue
+        asserted += 1
         const json = z.toJSONSchema(response.schema, { target: 'draft-2020-12', io: 'output' }) as {
           properties?: Record<string, unknown>
         }
@@ -167,15 +174,19 @@ describe('横切约定 —— 决定第三方后台能不能自动生成', () =>
         ).toContain('requestId')
       }
     }
+    expect(asserted, '一条 2xx 响应都没断言到 —— 本条空跑了').toBeGreaterThan(0)
   })
 
   it('所有错误响应用同一个 ErrorResponse', () => {
+    let asserted = 0
     for (const route of ROUTES) {
       for (const [status, response] of Object.entries(route.responses)) {
         if (Number(status) < 400) continue
+        asserted += 1
         expect(response.schema, `${route.operationId} 的 ${status} 没有错误 schema`).toBeDefined()
       }
     }
+    expect(asserted, '一条错误响应都没断言到 —— 本条空跑了').toBeGreaterThan(0)
   })
 })
 

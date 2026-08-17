@@ -277,6 +277,15 @@ importers:
         specifier: ^2.46.1
         version: 2.46.1
 
+  packages/attachment-tenant:
+    dependencies:
+      '@dshwar/fs-tenant':
+        specifier: workspace:*
+        version: link:../fs-tenant
+      '@dshwar/principal':
+        specifier: workspace:*
+        version: link:../principal
+
   packages/audit: {}
 
   packages/auth:

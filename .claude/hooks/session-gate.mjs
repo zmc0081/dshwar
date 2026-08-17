@@ -18,7 +18,6 @@
 import { readFileSync } from 'node:fs'
 
 const DONE = new Set(['✅', '🟠'])
-const PENDING_MARKS = ['⬜', '🔄', '🟡', '🟣']
 
 const raw = readFileSync(0, 'utf8')
 let input = {}
