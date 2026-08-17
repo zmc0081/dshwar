@@ -18,6 +18,7 @@
     { "path": "./packages/auth-jwt/tsconfig.test.json" },
     { "path": "./packages/auth-oidc/tsconfig.test.json" },
     { "path": "./packages/auth-static/tsconfig.test.json" },
+    { "path": "./packages/billing-local/tsconfig.test.json" },
     { "path": "./console-web/tsconfig.test.json" },
     { "path": "./packages/console-contract/tsconfig.test.json" },
     { "path": "./packages/credentials-multiuser/tsconfig.test.json" },

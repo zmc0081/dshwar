@@ -358,6 +358,24 @@ importers:
         specifier: 4.0.1
         version: 4.0.1
 
+  packages/billing:
+    dependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.0.1
+        version: 4.0.1
+
+  packages/billing-local:
+    dependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.0.1
+        version: 4.0.1
+      '@dshwar/billing':
+        specifier: workspace:*
+        version: link:../billing
+      '@dshwar/metering':
+        specifier: workspace:*
+        version: link:../metering
+
   packages/console-contract:
     devDependencies:
       '@dshwar/audit':

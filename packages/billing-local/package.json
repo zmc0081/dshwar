@@ -1,0 +1,35 @@
+{
+  "name": "@dshwar/billing-local",
+  "version": "0.6.0",
+  "description": "计费契约的本地实现:只记账不收款。从 @dshwar/metering 的用量出账,金额全程整数。",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@dshwar/billing": "workspace:*",
+    "@dshwar/metering": "workspace:*"
+  }
+}

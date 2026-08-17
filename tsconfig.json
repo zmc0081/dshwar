@@ -25,6 +25,8 @@
     { "path": "./packages/attachment-tenant" },
     { "path": "./packages/audit" },
     { "path": "./packages/metering" },
+    { "path": "./packages/billing" },
+    { "path": "./packages/billing-local" },
     { "path": "./packages/policy" },
     { "path": "./packages/model-router" },
     { "path": "./packages/supervisor" },
