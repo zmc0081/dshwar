@@ -354,7 +354,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 
 ---
 
-## <span style="color:#d00000">●</span> M0.6.0 · 支付(Session 0-4) <span style="color:#d00000">[开发中]</span>
+## <span style="color:#d00000">●</span> M0.6.0 · 支付(Session 0-4) <span style="color:#d00000">[开发完成]</span>
 
 > **开源与闭源的分界线在这一版被改动了(D4)。** 原定 Stripe 适配器闭源,
 > 现改为**开源** —— 闭源只剩托管服务本体。理由:支付适配器没有护城河价值,
@@ -374,81 +374,36 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 | 3       | Webhook:验签 + 防重放 + 幂等,三条负向验证      | ✅   |
 | 4       | 开源边界文档同步 + live smoke                  | ✅   |
 
----
+**交付内容(改了什么)**
 
-### Session 0 · principal 绑定改造(A4 改期插入)
+| 交付                                  | 说明                                                                                            |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| principal 绑定改造(A4)                | 装配点无条件 provide;`current()` 对未绑定抛 `PrincipalUnboundError`;否定性事实写成测试          |
+| `@dshwar/billing`(契约)               | 发票状态机(draft→issued→paid,paid 终态)、`assertMinorUnits` 抛而不 round、`PaymentGateway` 接缝 |
+| `@dshwar/billing-local`               | 只记账不收款;出账幂等;每行只 round 一次;计费口径走 `billedInputTokens`                          |
+| `@dshwar/billing-stripe`(**开源**,D4) | 裸 fetch 零第三方依赖;幂等键 = 发票 id;webhook 验签/防重放/幂等三防线                           |
+| 契约 + 网关                           | `POST /v1/billing/webhooks/stripe`(path.added 相容);AuthScheme 加 `signature`;未配置也 401      |
+| 开源边界文档                          | CLAUDE.md §8 / README 同步 D4 口径;Stripe live smoke 进发布清单                                 |
 
-> **这一条不属于支付。** 它是 V0.5.5 评估出来、由所有者改期提前的地基改动 ——
-> 排在支付之前,因为越晚做爆炸半径越大(而非相反,见 A4 的实测数据)。
+**核心改进要点**
 
-**改动**:装配时**无条件** provide;`current()` 对 `undefined` 抛。
+- **钱一律最小货币单位整数**,契约无浮点;校验器抛而不 round(round 会把
+  单位错误变成查不出来源的尾差)
+- **舍入纪律**:每行整期 token 累加后只 round 一次 —— 实测 100×1249 token
+  下「逐条舍入再相加」与正确算法差出 25 分
+- **stripe-mock 是响应生成器不是验证器**(amount=-5 照样 200,实测)——
+  业务防线必须在适配器本地,且断言「拒绝发生在网络之前」
+- **webhook 幂等两层**:事件 id dedup(快路径)+ 账本层 paid→paid 翻译成
+  幂等成功(最终保证);顺序「先记账后记 id」—— 崩在中间只多打一次账本,
+  反过来会永久丢一笔账
+- **fail closed 的形状**:未配置支付的部署,webhook 路径一律 401 而非 404 ——
+  配没配从外面看不出来
+- D5 三层测试:fetch spy(永远跑)/ stripe-mock(CI service container 保证
+  真跑,本机探测式 skip)/ live smoke(`STRIPE_TEST_KEY`,只认 `sk_test_`)
+- 全部关键防线做了变异负向验证:拆验签红 3 条、拆容差红 1 条、拆 dedup
+  红 1 条、拆 assertPayable 红 4 条、口径改裸 inputTokens 红 1 条
 
-| `ctx.get(PRINCIPAL_BINDING)` | 含义                    | 行为             |
-| ---------------------------- | ----------------------- | ---------------- |
-| 真实 principal               | 请求经过认证 / 进程档   | 返回它           |
-| `ANONYMOUS`(**显式**)        | 单用户部署,装配时表过态 | 返回 `ANONYMOUS` |
-| `undefined`                  | **装配没跑或被绕过**    | 🚨 抛            |
-
-⚠️ **它不防漏挂中间件** —— 那种情形会回落到根绑定,不抛。
-防线仍是 `auth-coverage.test.ts` 与探针 10。两者各防一件事,一个都不能少。
-详见 [`undefined-vs-anonymous.md`](docs/DECISIONS/undefined-vs-anonymous.md)。
-
-**实测影响面**:红 15 条 / 4 个文件,全部是裸建 Context 没有根 provide 的测试,
-集中在 setup 辅助函数里。
-
-**验收**:单用户档照常可用;裸建 Context 不 provide 时 `current()` 抛且信息可读。
-
----
-
-### Session 1 · `@dshwar/billing` 契约 + `billing-local`
-
-**交付**:计量 → 计费 → 出账的契约,与 `billing-local`(只记账不收款)。
-
-⚠️ **钱一律用最小货币单位的整数**(分)。契约里不出现浮点 ——
-`0.1 + 0.2 !== 0.3` 在账单上就是对不上账,而对不上账的账单会被客户
-拿去质疑整个系统。
-
-**验收**:`billing-local` 能从 `@dshwar/metering` 的用量算出一张账单,
-且金额计算全程整数。
-
----
-
-### Session 2 · `@dshwar/billing-stripe`(D4:**开源**)
-
-**交付**:Stripe 适配器 + stripe-mock 测试。
-
-**D5 的测试策略**:
-
-| 层         | 打谁                                       | 进 `check:all`?     |
-| ---------- | ------------------------------------------ | ------------------- |
-| 自动化测试 | **stripe-mock**(官方模拟器,不需账号或 key) | ✅                  |
-| live smoke | 真实 test key,走 `.env`                    | ❌ 无 key 自动 skip |
-
-⚠️ **开源纯净度检查要改** —— `check-oss-purity.mjs` 原本会把
-`billing-stripe` 当闭源组件拦下。
-
----
-
-### Session 3 · Webhook 三条防线
-
-**D5 强制**:验签 + 时间戳防重放 + 幂等键,**三条都要负向验证**:
-
-1. 伪造签名 → 拒
-2. 重放旧事件(时间戳过期)→ 拒
-3. 重复投递同一事件 → 只生效一次
-
-> **支付是唯一一处「测试没覆盖 = 真金白银出错」的地方**,
-> 测试要求高于其它版本。
-
----
-
-### Session 4 · 开源边界文档同步 + live smoke
-
-**交付**:`CLAUDE.md` 第八节与 `README.md` 的开源/闭源边界改成 D4 的新口径;
-live smoke 写进发布清单(需人工跑一次)。
-
-**验收**:`check:oss` 绿,且**负向验证**证明它仍会拦真正的闭源组件 ——
-放宽一处判据之后,必须证明其余部分没跟着松。
+> 实现细节见 SESSION_TASKS_HISTORY.md
 
 ---
 

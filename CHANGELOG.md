@@ -13,6 +13,42 @@
 
 ---
 
+## 0.6.0 —— 支付(开发完成,未发布)
+
+> 🔴 **开源边界在本版本改动(D4)**:Stripe 适配器**开源**,闭源收窄到
+> 托管服务本体。开源许可不可撤回 —— 回滚窗口只到首次发布前。
+
+### 新增
+
+- **principal 绑定改造**(A4,非支付)—— 装配点无条件 provide,
+  `current()` 对未绑定抛 `PrincipalUnboundError`:「装配没跑」从静默配置
+  错误变成启动即知。⚠️ 它**不防**漏挂中间件(那种情形回落根绑定,不抛),
+  那条防线仍是 auth-coverage + 探针 10 —— 这条否定性事实写成了测试
+  (`middleware-absence.test.ts`),防重构时被无声改掉。
+- **`@dshwar/billing`(契约)** —— 计量 → 计费 → 出账。发票状态机
+  draft→issued→paid(paid 终态,退钱走退款流程不抹账);钱一律最小货币
+  单位整数,`assertMinorUnits` 抛而不 round;`PaymentGateway` 接缝与
+  `assertPayable` 唯一判据(draft/paid/void/0 元一律拒)。
+- **`@dshwar/billing-local`** —— 只记账不收款。出账幂等(同周期非 void
+  直接返回);每行整期累加后只 round 一次(实测与逐条舍入差 25 分/百条);
+  计费口径 `billedInputTokens` 含缓存读写(裸 inputTokens 少计 10 倍)。
+- **`@dshwar/billing-stripe`(开源,D4)** —— 裸 fetch 零第三方依赖,
+  幂等键 = 发票 id;webhook 三防线:HMAC 验签(v1 多值支持轮换)、
+  时间戳容差 300s、事件 id + 账本双层幂等,顺序「先记账后记 id」。
+  D5 三层测试:fetch spy / stripe-mock(CI service container)/ live smoke。
+- **契约与网关** —— `POST /v1/billing/webhooks/stripe`(path.added 相容);
+  `AuthScheme` 加 `signature`;验签失败统一 401 无原因;**未配置支付的
+  部署同一路径也是 401 而非 404**(配没配从外面看不出来)。
+
+### 变更
+
+- 开源/闭源边界文档(CLAUDE.md §8 / README)同步 D4 口径;
+  Stripe live smoke(`STRIPE_TEST_KEY`,只认 `sk_test_`)进发布清单。
+- 探针 8 变异方式随 A4 改造调整:从「拿掉 provide」(现在会因抛错变红,
+  红的是新机制)改为「provide 错值」—— 照的仍是 principal 静默没抵达执行层。
+
+---
+
 ## 0.5.5 —— 工作台后端(开发完成,未发布)
 
 > 工作台不是「画个界面」。本版本补齐后端地基,让 V0.7.0 只剩画界面与套壳。
