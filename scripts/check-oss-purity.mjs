@@ -36,9 +36,14 @@ const p = (...seg) => join(REPO, ...seg)
 /**
  * 闭源组件的包名。
  *
- * CLAUDE.md 第八节:**闭源仅两块** —— `billing-hosted` 与 DSHWAR Cloud 托管服务。
- * 这份清单要与那一节保持一致;新增闭源组件时**两处都要改**,
- * 而本脚本的存在正是为了让"忘了改"变成 CI 红灯而不是发布事故。
+ * CLAUDE.md 第八节:**闭源仅托管服务本体** —— `billing-hosted`(托管收款)
+ * 与 DSHWAR Cloud(`cloud` / `console-hosted`)。这份清单要与那一节保持一致;
+ * 新增闭源组件时**两处都要改**,而本脚本的存在正是为了让"忘了改"变成
+ * CI 红灯而不是发布事故。
+ *
+ * ⚠️ `billing-stripe` **不在**此清单 —— D4(V0.6.0)裁决它开源。
+ * 判据是显式清单而非 `billing-*` 模式匹配,正因如此这次收窄边界
+ * 一行都不用改;若哪天有人把它改成模式匹配,先想想这一段。
  */
 const CLOSED_SOURCE = ['@dshwar/billing-hosted', '@dshwar/cloud', '@dshwar/console-hosted']
 

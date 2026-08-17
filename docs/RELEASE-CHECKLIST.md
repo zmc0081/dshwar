@@ -128,6 +128,12 @@ package.json → 0.4.1  (没被提升)
       从未在 CI 中运行过(需真实 API key)。跑法见该文件头部;
       key 走 `.env`,**绝不写进受版本控制的文件**。
       记录结果(模型回复的前 80 字)到本清单
+- [ ] 🟠 **人工跑一次 Stripe live smoke**(V0.6.0,D5 第三层)——
+      `gateway/test/stripe-live-smoke.test.ts`。需 `STRIPE_TEST_KEY`
+      (**只认 `sk_test_` 前缀**,文件内有断言拦 live key),走 `.env`。
+      自动化已覆盖前两层(fetch spy + stripe-mock,均在 `check:all`);
+      这一层验的是真实 Stripe test 环境接受我们的请求形状。
+      记录 PaymentIntent id(`pi_…`)到本清单
 - [ ] ⚠️ **补测 node-pty 在两层嵌套下是否可用**(需先装
       `dsh-subprocess-local`)。当前只验证了「子进程能再拉起孙进程」,
       pty 的原生绑定在深度 2 未验

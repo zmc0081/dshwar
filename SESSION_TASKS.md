@@ -372,7 +372,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 | 1       | `@dshwar/billing` 契约 + `billing-local`       | ✅   |
 | 2       | `@dshwar/billing-stripe`(D4:开源)+ stripe-mock | ✅   |
 | 3       | Webhook:验签 + 防重放 + 幂等,三条负向验证      | ✅   |
-| 4       | 开源边界文档同步 + live smoke                  | ⬜   |
+| 4       | 开源边界文档同步 + live smoke                  | ✅   |
 
 ---
 

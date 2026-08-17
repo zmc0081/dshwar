@@ -357,9 +357,13 @@ expect(asserted, '一条都没断言到 —— 本条空跑了').toBeGreaterThan
 
 ## 八、开源与商业边界
 
-**MIT 开源**:全部运行时插件、API 平面、控制平面核心、`billing-local`(只记账不收款)。
+**MIT 开源**:全部运行时插件、API 平面、控制平面核心、`billing-local`(只记账不收款)、`billing-stripe`(Stripe 适配器,**D4 改开源**,V0.6.0)。
 
-**闭源**:仅两块 —— `billing-hosted`(Stripe / 微信 / 支付宝接入)与 DSHWAR Cloud 托管服务。
+**闭源**:仅托管服务本体 —— `billing-hosted`(托管收款,含微信 / 支付宝等国内通道)与 DSHWAR Cloud。
+
+> D4(2026-08):支付适配器没有护城河价值,闭源它等于让自建者收不了钱,
+> 直接违背「开源用户拿到可用的完整基座」。开源许可不可撤回 ——
+> 回滚窗口只到 `@dshwar/billing-stripe` 首次发布前,见 AUTOPILOT-LOG 的 D4 专节。
 
 开源用户拿到的是**可用的完整基座**;商业客户买的是省掉自建的时间。这条线公开写明,藏着会失去信任。
 
