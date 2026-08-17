@@ -493,6 +493,54 @@ function checkFrontendConstraints() {
  *
  * @returns {{file: string, line: number, text: string}[]}
  */
+/**
+ * ★ **变异后跑测试必须先同步 dist** —— 只允许 `scripts/lib/mutate.mjs` 拉起 vitest。
+ *
+ * ## 它防的是一类「结论不可信」,而不是一个 bug
+ *
+ * 各包 `main` 指向 `dist/`,Vitest 没有把 `@dshwar/*` 指回 `src` 的 alias。
+ * 于是跨包的测试消费的是 **dist**,而 `check:all` 的 `typecheck` 跑在探针
+ * **之前** —— dist 是用未变异的源码构建的。改坏 A 包的 src、跑 B 包的测试,
+ * 「没变红」于是有两种含义,而它们在输出里长得一模一样:
+ *
+ * 1. 断言弱(真问题)
+ * 2. **根本没测到改动**(工具问题)
+ *
+ * 2026-08-17 实测撞到过:离线降级的 e2e 拆掉可达性判定后仍绿,重建后才红。
+ * 按含义 1 处理的话,会基于误判去「加强」一条本来正确的断言。
+ *
+ * ## 判据:结构性,不靠人记得
+ *
+ * 拉起 vitest 的路径**收敛到一处**(`lib/mutate.mjs` 的 `runTestsUnderMutation`
+ * 与 `runVitest`),那一处必定同步 dist。于是「忘了构建」在结构上不可能发生,
+ * 而本守卫只需检查一件容易检查的事:**别处不得出现 vitest 的路径字面量**。
+ */
+function checkVitestSpawnIsCentralized() {
+  /** @type {{file: string, line: number, text: string}[]} */
+  const out = []
+  const scriptFiles = collectFiles(p('scripts'), (/** @type {string} */ f) => f.endsWith('.mjs'))
+
+  for (const file of scriptFiles) {
+    const rel = repoPath(REPO, file)
+    // 受控通路自己当然要拉起 vitest —— 它就是那条通路。
+    if (rel === 'scripts/lib/mutate.mjs') continue
+
+    const lines = readFileSync(file, 'utf8').split(/\r?\n/)
+    for (const [i, line] of lines.entries()) {
+      if (/^\s*(\/\/|\*|\/\*)/.test(line)) continue
+      if (
+        /dshwar-guard-allow:\s*\S/.test(line) ||
+        /dshwar-guard-allow:\s*\S/.test(lines[i - 1] ?? '')
+      )
+        continue
+      if (/['"]vitest\.mjs['"]|vitest\/vitest\.mjs/.test(line)) {
+        out.push({ file: rel, line: i + 1, text: `${rel}:${i + 1}  ${line.trim()}` })
+      }
+    }
+  }
+  return out
+}
+
 function checkGuardScriptsDoNotWrite() {
   /** @type {{file: string, line: number, text: string}[]} */
   const out = []
@@ -865,6 +913,18 @@ if (frontend.length === 0) {
   console.log('        三个宿主要跑同一份代码。违反任一条在 Tauri 里都不是「表现不好」,')
   console.log('        是**根本跑不起来** —— 而那时前端已经写了几十个组件,改起来是重构。')
   for (const h of frontend.slice(0, 10)) console.log(`        ${h.file}:${h.line}  ${h.text}`)
+}
+
+const vitestSpawns = checkVitestSpawnIsCentralized()
+if (vitestSpawns.length === 0) {
+  console.log('  通过  变异后跑测试走受控通路(拉起 vitest 的地方只有 lib/mutate.mjs)')
+} else {
+  failed += 1
+  console.log(`  违规  有脚本自己拉起 vitest,绕开了 dist 同步  (${vitestSpawns.length} 处)`)
+  console.log('        跨包测试消费的是 dist,而 dist 是用**未变异**的源码构建的 ——')
+  console.log('        绕开受控通路,「没变红」就分不清「断言弱」与「根本没测到改动」。')
+  console.log('        改用 lib/mutate.mjs 的 runTestsUnderMutation / runVitest。')
+  for (const h of vitestSpawns) console.log(`        ${h.text}`)
 }
 
 const guardWrites = checkGuardScriptsDoNotWrite()

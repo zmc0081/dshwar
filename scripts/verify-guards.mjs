@@ -35,7 +35,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
-import { withRestoredFiles } from './lib/mutate.mjs'
+import { runTestsUnderMutation, withRestoredFiles } from './lib/mutate.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 /** @param {...string} seg */
@@ -281,29 +281,30 @@ try {
     if (!existsSync(target)) {
       expect('6 篡改 adapters 假设后契约测试变红', false, 'adapters/dsh-0.1.0 尚未落地')
     } else {
-      withRestoredFiles([target], () => {
-        const original = readFileSync(target, 'utf8')
-        const tampered = original.replace(
+      const original = readFileSync(target, 'utf8')
+      /** @param {string} s */
+      const tamper = (s) =>
+        s.replace(
           /export const EXPECTED_UPSTREAM_VERSION = '[^']+'/,
           "export const EXPECTED_UPSTREAM_VERSION = '9.9.9-tampered'",
         )
-        if (tampered === original) {
-          expect('6 篡改 adapters 假设后契约测试变红', false, '未能改动 EXPECTED_UPSTREAM_VERSION')
-        } else {
-          writeFileSync(target, tampered, 'utf8')
-          const contract = run([
-            p('node_modules', 'vitest', 'vitest.mjs'),
-            'run',
-            '--dir',
-            'adapters',
-          ])
-          expect(
-            '6 篡改 adapters 内的上游版本假设,契约测试立刻变红',
-            !contract.ok,
-            contract.ok ? '契约测试放行了错误的上游版本假设 —— 它没在测上游' : undefined,
-          )
-        }
-      })
+      if (tamper(original) === original) {
+        expect('6 篡改 adapters 假设后契约测试变红', false, '未能改动 EXPECTED_UPSTREAM_VERSION')
+      } else {
+        // ★ 走 runTestsUnderMutation:它在变异生效后同步 dist。
+        // 本条现在是同包(adapters/src → adapters/test,相对 import),
+        // 不同步也照得到;但通路统一是**结构性**的保证 ——
+        // 哪天这条测试改成跨包 import,不需要有人记得回来加一次构建。
+        const contract = runTestsUnderMutation(
+          [{ path: target, mutate: tamper }],
+          ['--dir', 'adapters'],
+        )
+        expect(
+          '6 篡改 adapters 内的上游版本假设,契约测试立刻变红',
+          contract.red,
+          contract.red ? undefined : '契约测试放行了错误的上游版本假设 —— 它没在测上游',
+        )
+      }
     }
   }
 
@@ -953,6 +954,63 @@ ${added.output.slice(0, 400)}`,
         !r.ok ? undefined : '删掉门禁入口竟然还是绿的 —— 只查枚举、不查入口等于没查',
       )
       writeFileSync(ciPath, ciSrc, 'utf8')
+    }
+  })
+}
+
+// ---------------------------------------------------------------------
+// 25. 变异后跑测试必须走受控通路(V0.6.5 收官审计)
+//
+//     起因是一次真实误判:离线降级的网关 e2e 在拆掉可达性判定后仍然绿,
+//     重建 dist 之后才红。跨包测试消费的是 dist,而 dist 是用**未变异**的
+//     源码构建的 —— 于是「没变红」有两种含义(断言弱 / 根本没测到),
+//     两者在输出里一模一样。按前者去「加强断言」就是基于误判改代码。
+//
+//     结构性修法:拉起 vitest 的路径收敛到 lib/mutate.mjs 一处,那一处
+//     必定同步 dist。本组负向验证盯着「收敛」这件事本身。
+// ---------------------------------------------------------------------
+{
+  const probePath = p('scripts/verify-assertions.mjs')
+  const probeSrc = readFileSync(probePath, 'utf8')
+
+  withRestoredFiles([probePath], () => {
+    // 25a 负向 —— 有脚本自己拼 vitest 路径(绕开 dist 同步)
+    {
+      writeFileSync(
+        probePath,
+        probeSrc.replace(
+          'const p = (...seg) => join(REPO, ...seg)',
+          // dshwar-guard-allow: 负向测试必须写出这串字面量才能植入违规
+          "const p = (...seg) => join(REPO, ...seg)\nconst SNEAKY = p('node_modules', 'vitest', 'vitest.mjs')\nvoid SNEAKY",
+        ),
+        'utf8',
+      )
+      const r = runGuards()
+      expect(
+        '25a 脚本自己拉起 vitest → 守卫变红(绕开 dist 同步)',
+        !r.ok,
+        !r.ok ? undefined : '★ 守卫放行了绕开受控通路的 vitest 调用 —— 变异验证的结论会不可信',
+      )
+    }
+
+    // 25b 正向对照 —— 走受控通路的写法必须被放行
+    //     少了这一条,一个「见到 vitest 就红」的实现也能通过 25a,
+    //     而那样受控通路自己也用不了。
+    {
+      writeFileSync(
+        probePath,
+        probeSrc.replace(
+          'const p = (...seg) => join(REPO, ...seg)',
+          'const p = (...seg) => join(REPO, ...seg)\nvoid runVitest',
+        ),
+        'utf8',
+      )
+      const r = runGuards()
+      expect(
+        '25b 正向对照:经 lib/mutate.mjs 的调用被放行(规则不是「见到 vitest 就红」)',
+        r.ok,
+        r.ok ? undefined : '守卫把受控通路自己也拦了 —— 那样没人能跑变异验证',
+      )
     }
   })
 }

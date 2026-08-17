@@ -40,12 +40,11 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { withMutatedFiles } from './lib/mutate.mjs'
+import { runTestsUnderMutation, runVitest, withMutatedFiles } from './lib/mutate.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 /** @param {...string} seg */
 const p = (...seg) => join(REPO, ...seg)
-const VITEST = p('node_modules', 'vitest', 'vitest.mjs')
 
 /**
  * 一次探针的结果。
@@ -61,23 +60,17 @@ const VITEST = p('node_modules', 'vitest', 'vitest.mjs')
  */
 
 /**
- * 跑一组测试,只关心红还是绿。
+ * 跑一组测试,只关心红还是绿。**仅用于基线**(未变异时)。
+ *
+ * 变异期间不要用它 —— 走 {@link withMutation},那条路会同步 dist。
+ * 拉起 vitest 的实现收在 `lib/mutate.mjs`,本文件不自己拼路径:
+ * 那条不变式由 `check-guards.mjs` 守着,见该守卫的说明。
  *
  * @param {...string} targets
  * @returns {ProbeResult}
  */
 function runTests(...targets) {
-  try {
-    execFileSync(process.execPath, [VITEST, 'run', ...targets], {
-      cwd: REPO,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-    return { red: false, unchanged: false }
-  } catch (error) {
-    const e = /** @type {{stdout?: unknown, stderr?: unknown}} */ (error)
-    return { red: true, unchanged: false, output: `${e.stdout ?? ''}${e.stderr ?? ''}` }
-  }
+  return runVitest(targets)
 }
 
 /** @type {{name: string, passed: boolean}[]} */
@@ -124,7 +117,18 @@ function withMutation(rel, mutate, targets) {
   // ⚠️ 还原走 scripts/lib/mutate.mjs,不用 copyFileSync + .probebak。
   // 2026-08-16 实测:Windows 上还原那一步的 copyFileSync 会抛 UNKNOWN(-4094),
   // 把 openapi.json 留在篡改状态且不报告 —— 详见该模块的说明。
-  return withMutatedFiles([{ path: target, mutate }], () => runTests(...targets))
+  //
+  // ★ 2026-08-17:改走 runTestsUnderMutation —— 它在变异生效后**同步 dist**。
+  // 不同步的话,跨包消费方读到的是未变异的 dist,「没变红」于是有两种含义
+  // (断言弱 / 根本没测到),而两者在输出里一模一样。见该函数的说明。
+  const r = runTestsUnderMutation([{ path: target, mutate }], targets)
+  if (!r.built && !r.red) {
+    // 构建没成功 **且** 测试还绿 —— 这个组合无法区分「断言弱」与「dist 是旧的」,
+    // 所以不许它冒充通过。类型层探针(故意制造编译错误)不会走到这里:
+    // 它们跑的是 tsc 而不是 vitest。
+    return { red: false, unchanged: false, output: 'dist 同步失败,本次结论不可信' }
+  }
+  return r
 }
 
 console.log('DSHWAR · 断言有效性探针\n')
@@ -199,7 +203,16 @@ console.log('DSHWAR · 断言有效性探针\n')
         "    if (snapshot !== undefined && snapshot.exhausted && now - snapshot.at < ttl) {\n      return { kind: 'deny', reason: 'quota_exhausted' }\n    }",
         '    // probe',
       ),
-    ['packages/policy', 'gateway/test/isolation.test.ts'],
+    // ⚠️ **只跑 packages/policy。** 这里原本还挂着 `gateway/test/isolation.test.ts`,
+    // 而那是一条**空跑** —— V0.6.5 收官审计逐目标实测:它在「不构建」与
+    // 「先构建」两种条件下**都绿**。两个原因叠在一起:
+    //   1. isolation.test.ts 注入的是 policy 的 **stub**(`admit: () => allow`),
+    //      根本不经过真实的 PolicyService —— 改 policy 的实现它当然照不到
+    //   2. 即便它用真实实现,跨包 import 读的也是 dist(见 lib/mutate.mjs)
+    // 而整条探针一直报「通过」,因为 packages/policy 那一半真的红了 ——
+    // **一个目标的红把另一个目标的空跑盖住了**。
+    // 教训:一条探针挂多个目标时,红是「或」,而空跑的那个不会显形。
+    ['packages/policy'],
   )
   expect(
     '4 准入永远放行 → 准入测试变红',
@@ -289,6 +302,40 @@ console.log('DSHWAR · 断言有效性探针\n')
     '8 根上 provide 错值(ANONYMOUS 顶替真实 principal)→ 真实路径冒烟变红',
     r.red,
     r.unchanged ? '锚点没匹配上' : '★ 进程档下 principal 不再抵达执行层,而端到端冒烟竟然还是绿的',
+  )
+}
+
+// 14. ★ **跨包探针 —— 同时验证「变异通路自己在同步 dist」**(V0.6.5 收官审计)
+//
+//     这一条守的东西比它表面上多一层:
+//
+//     - 表层:拆掉离线可达性判定,网关的降级 e2e 必须变红
+//     - **里层:它是 `runTestsUnderMutation` 里 `syncDist()` 的唯一验证者**
+//
+//     gateway 的测试经 `@dshwar/llm-local` 消费 dist。若哪天有人把
+//     `syncDist()` 从变异通路里拿掉,这条探针会**立刻变绿而报失败** ——
+//     那正是 2026-08-17 实测过的形态:同一个变异,不构建时 e2e 绿,
+//     构建后才红。
+//
+//     ⚠️ 所以本条**不能**换成同包目标(packages/llm-local 自己的测试)。
+//     换了之后表层断言照样过,而里层的验证会静默消失 ——
+//     那恰恰是本次收官审计要根除的那种「看起来在验证」。
+{
+  const r = withMutation(
+    'packages/llm-local/src/offline.ts',
+    (s) =>
+      s.replace(
+        '    const doFetch = this.options.fetchImpl ?? fetch',
+        '    return true\n    const doFetch = this.options.fetchImpl ?? fetch',
+      ),
+    ['gateway/test/offline-fallback.test.ts'],
+  )
+  expect(
+    '14 拆掉离线可达性判定 → 网关降级 e2e 变红(★ 同时验证变异通路在同步 dist)',
+    r.red,
+    r.unchanged
+      ? '锚点没匹配上'
+      : '★ 跨包变异没能让 e2e 变红 —— 要么降级断言失效,要么 syncDist 没在同步 dist(后者会让全部跨包探针的结论不可信)',
   )
 }
 

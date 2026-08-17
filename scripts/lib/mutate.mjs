@@ -26,7 +26,14 @@
  * ⚠️ 用 Buffer 而不是字符串:这里读写的可能是任意文件,按 utf8 往返会破坏
  * 非文本内容,也会悄悄改掉行尾。
  */
+import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
+const VITEST = join(REPO, 'node_modules', 'vitest', 'vitest.mjs')
+const TSC = join(REPO, 'node_modules', 'typescript', 'bin', 'tsc')
 
 /**
  * 同步退避 —— 这些脚本整体是同步的,不值得为几毫秒改成异步。
@@ -107,6 +114,98 @@ export function withMutatedFiles(edits, body) {
     return body()
   } finally {
     finalRestore(saved)
+  }
+}
+
+/**
+ * 跑一组 Vitest 目标,只关心红还是绿。
+ *
+ * ⚠️ **拉起 vitest 的路径只有这一条。** `verify-*.mjs` 不得自己拼
+ * `vitest.mjs` 的路径 —— 由 `check-guards.mjs` 的「变异后跑测试必须同步 dist」
+ * 守卫拦住。理由见 {@link runTestsUnderMutation}。
+ *
+ * @param {readonly string[]} targets 空数组 = 跑全量
+ * @returns {{ red: boolean, unchanged: boolean, output?: string }}
+ */
+export function runVitest(targets = []) {
+  try {
+    execFileSync(process.execPath, [VITEST, 'run', ...targets], {
+      cwd: REPO,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    return { red: false, unchanged: false }
+  } catch (error) {
+    const e = /** @type {{stdout?: unknown, stderr?: unknown}} */ (error)
+    return { red: true, unchanged: false, output: `${e.stdout ?? ''}${e.stderr ?? ''}` }
+  }
+}
+
+/**
+ * 把工作区的当前源码同步进各包的 `dist/`。
+ *
+ * 变异生效后必须调它,**否则跨包的消费方读到的还是旧 dist**(见
+ * {@link runTestsUnderMutation} 的说明)。构建失败**不抛** —— 类型层探针
+ * 故意制造编译错误,那种失败是信号不是故障;但要把结果返回给调用方,
+ * 免得「没构建成功」被当成「构建过了」。
+ *
+ * @returns {boolean} 构建是否成功
+ */
+export function syncDist() {
+  try {
+    execFileSync(process.execPath, [TSC, '-b'], {
+      cwd: REPO,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * ★ **在变异生效期间跑测试** —— 变异验证的唯一正确通路。
+ *
+ * ## 为什么这件事必须由工具做,而不是由人记得
+ *
+ * 各包的 `package.json` 把 `main` 指向 `./dist/index.js`,而 Vitest 没有
+ * 把 `@dshwar/*` 指回 `src` 的 alias。于是:
+ *
+ * | 测试怎么 import | 变异改 src 后 |
+ * | --- | --- |
+ * | `../src/index.ts`(同包) | ✅ 立刻看得到 |
+ * | `@dshwar/<pkg>`(跨包) | ❌ **读的是 dist,看不到** |
+ *
+ * 而 `check:all` 里 `typecheck`(`tsc -b`)跑在探针**之前** —— dist 是用
+ * **未变异**的源码构建的。所以「改坏了跨包的东西,测试还是绿」有两种含义,
+ * 而它们在输出里长得一模一样:
+ *
+ * 1. 断言弱(真问题)
+ * 2. **根本没测到改动**(工具问题)
+ *
+ * 2026-08-17 实测撞到过一次:离线降级的网关 e2e 在拆掉可达性判定后仍然绿,
+ * 重新构建 llm-local 之后才红。若当时按第 1 种含义去「加强断言」,
+ * 就会基于误判改掉一条本来是对的断言。
+ *
+ * ## 还原之后也要重建
+ *
+ * 否则变异过的 dist 会留给下一条探针和开发者的下一次 `pnpm test` ——
+ * 一个用来保证纪律的脚本把仓库改坏了还不说,正是本模块存在的理由。
+ *
+ * @param {{path: string, mutate: (original: string) => string}[]} edits
+ * @param {readonly string[]} targets Vitest 目标
+ * @returns {{ red: boolean, unchanged: boolean, output?: string, built: boolean }}
+ */
+export function runTestsUnderMutation(edits, targets) {
+  try {
+    return withMutatedFiles(edits, () => {
+      const built = syncDist()
+      return { ...runVitest(targets), built }
+    })
+  } finally {
+    // 还原之后重建:不把变异的 dist 留给任何人
+    syncDist()
   }
 }
 
