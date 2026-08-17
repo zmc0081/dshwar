@@ -1,6 +1,6 @@
 {
   "name": "@dshwar/adapter-dsh-0-1-0",
-  "version": "0.6.0",
+  "version": "0.6.5",
   "description": "★ 唯一允许感知上游内部的目录。上游破坏性变更全部撞在这一层。",
   "license": "MIT",
   "type": "module",

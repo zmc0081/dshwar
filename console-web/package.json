@@ -1,6 +1,6 @@
 {
   "name": "@dshwar/console-web",
-  "version": "0.6.0",
+  "version": "0.6.5",
   "description": "控制台前端。最小但真实 —— D7 的三条约束需要一个真实的被检查对象。",
   "license": "MIT",
   "private": true,

@@ -11,4 +11,4 @@
  * 这个常量存在的意义是**让控制台能在启动时校验自己配的服务端版本对不对**,
  * 而不是等到某个字段读出 undefined 才发现。
  */
-export const CONSOLE_CONTRACT_VERSION = '0.6.0'
+export const CONSOLE_CONTRACT_VERSION = '0.6.5'

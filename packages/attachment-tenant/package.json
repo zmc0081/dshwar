@@ -1,6 +1,6 @@
 {
   "name": "@dshwar/attachment-tenant",
-  "version": "0.6.0",
+  "version": "0.6.5",
   "description": "附件的租户隔离存储。路径与工作区同款钉死,复用 fs-tenant 的编码规则。",
   "license": "MIT",
   "type": "module",
