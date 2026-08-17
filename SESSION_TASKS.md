@@ -354,7 +354,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 
 ---
 
-## <span style="color:#d00000">●</span> M0.6.5 · 本地模型 + 离线能力(Session 0-3) <span style="color:#d00000">[开发中]</span>
+## <span style="color:#d00000">●</span> M0.6.5 · 本地模型 + 离线能力(Session 0-3) <span style="color:#d00000">[开发完成]</span>
 
 > **这是开源版最有说服力的差异化**,不是降级方案:「完全本地运行、数据不出
 > 内网、可自建用户体系的 AI 工作台」—— 涉密、内网、金融、医疗客户只有这一个选择。
@@ -380,59 +380,32 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 
 ---
 
-### Session 0 · 调研落档
+**交付内容(改了什么)**
 
-**已实测**(2026-08-17,写进决策文档即验收):
+| 交付                | 说明                                                                                       |
+| ------------------- | ------------------------------------------------------------------------------------------ |
+| 决策文档            | llm-local-reuses-upstream-adapter.md:证据链四条全实测,复用上游适配器 = 治理层              |
+| `@dshwar/llm-local` | keyless 本地 provider(默认 Ollama);baseUrl 只收 loopback/私网;清单声明不探测               |
+| 离线判定与自动降级  | OfflineFallback 三态(online/downgraded/offline-unavailable);网关裁决链「准入→预算→可达性」 |
+| 本地用量统计        | summarizeLocalUsage:统计非计费,同管道同口径;账单本地行金额恒 0 但 token 可见               |
+| 文档                | README〈本地模型与离线能力〉+ 硬边界四行表;GOVERNANCE「本地不配价」例外                    |
 
-- `LlmAdapter` 契约:`providerInfo / providerRetryPolicy / listModels / resolveModel`,
-  实现另有 `stream / request`;注册走 `ctx.llm.registerAdapter([provider], adapter)`(公开 API)
-- `DeepSeekAdapter` 构造注入 `{ options, resolveApiKey, resolveUserId }`,
-  `resolveAdapterOptions` 支持 `baseURL` 与 `models` 清单 —— 指向本地端点即可
-- 本机 Ollama 服务在 11434 响应 `/api/tags`(即使 CLI 报未运行 ——
-  服务与 CLI 是两回事,探测要打 HTTP 不要调 CLI)
+**核心改进要点**
 
-**交付**:`docs/DECISIONS/llm-local-reuses-upstream-adapter.md`,
-含证据链、边界裁决(为什么这不违反「能力归上游」)、keyless 的
-硬规则 6 论证(本地端点没有要保护的凭据,fail closed 无对象)。
+- **治理层不造引擎**:一行模型调用代码都没写 —— 流式/重试/工具全是上游的,
+  本包只做注册、keyless 裁决、清单声明三件事
+- **keyless 的边界防守**:公网 baseUrl 拒绝启动 —— keyless 成立的前提是
+  「端点没有要保护的凭据」,指向公网就成了共享匿名访问
+- **降级三态不塌缩**:两边都不可达是「503 + 可行动的信息」,不是卡死;
+  可达性判据在连接层(云端 500 也算可达,降级会掩盖真实故障)
+- **降级可见**(红线):响应头 + 审计 model.offline-downgraded;
+  降级目标再过一次准入,策略赢过可达性
+- **统计不是计费**:推理链(本地算力 → 没有计量对象 → 不需要额度机制)
+  写进代码注释与 GOVERNANCE;不计费 ≠ 隐身,token 完整可见
+- 流程发现:网关测试消费 workspace 包的 **dist**,src 变异须先重构建 ——
+  负向验证流程已补 build 步骤
 
----
-
-### Session 1 · `@dshwar/llm-local`
-
-**交付**:cordis 插件,把上游适配器实例注册为 `local` provider,
-指向 OpenAI 兼容本地端点(默认 Ollama `http://127.0.0.1:11434/v1`;
-llama.cpp 换 `baseUrl` 即可)。
-
-- **keyless**:`resolveApiKey` 返回占位符 —— 本地端点不鉴权,没有凭据可保护;
-  注释里写明这为什么不违反硬规则 6
-- 模型清单来自配置(部署方声明装了哪些模型),不静默探测 ——
-  探测到什么用什么会让「模型没装」在首个请求才炸
-- **测试**:假 OpenAI 兼容端点(进程内 http server)恒跑;
-  真 Ollama 探测式(D6:探测不到显式 skip)
-
----
-
-### Session 2 · 离线判定与自动降级
-
-**交付**:云端不可达 → 自动切到本地模型。裁决点与 model-router 同位
-(createAgent 入口),但信号轴不同(可达性,不是预算)。
-
-- **降级必须可见**(红线 3 同款):结果带 `downgraded` 语义,
-  网关设响应头并落审计 —— 用户有权知道自己被换了模型
-- 未配置本地模型时,离线 = 明确报错(Agent 推理离线不可用),不静默排队
-- **负向验证**:拆掉可达性判定 → 降级测试红;拆掉可见性 → 审计断言红
-
----
-
-### Session 3 · 本地用量统计 + 离线边界表 + 收口
-
-**交付**:
-
-- 本地 provider 的用量走既有 metering(provider=`local`),
-  **统计口径与云端一致但不进账单** —— billing 出账时本地行金额恒 0,
-  且文档写明这是「本地算力不计费」而非「没配价」
-- README 落离线边界表(会话/文件 ✅ · 本地工具 ✅ · Agent 推理 ❌ 除非本地模型 · 云端 token ❌)
-- 版本收口:压缩归档 + CHANGELOG + 版本号校验
+> 实现细节见 SESSION_TASKS_HISTORY.md
 
 ---
 

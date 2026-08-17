@@ -1,3 +1,63 @@
+# M0.6.5 · 本地模型 + 离线能力 —— 实现细节归档
+
+---
+
+### Session 0 · 调研落档
+
+**已实测**(2026-08-17,写进决策文档即验收):
+
+- `LlmAdapter` 契约:`providerInfo / providerRetryPolicy / listModels / resolveModel`,
+  实现另有 `stream / request`;注册走 `ctx.llm.registerAdapter([provider], adapter)`(公开 API)
+- `DeepSeekAdapter` 构造注入 `{ options, resolveApiKey, resolveUserId }`,
+  `resolveAdapterOptions` 支持 `baseURL` 与 `models` 清单 —— 指向本地端点即可
+- 本机 Ollama 服务在 11434 响应 `/api/tags`(即使 CLI 报未运行 ——
+  服务与 CLI 是两回事,探测要打 HTTP 不要调 CLI)
+
+**交付**:`docs/DECISIONS/llm-local-reuses-upstream-adapter.md`,
+含证据链、边界裁决(为什么这不违反「能力归上游」)、keyless 的
+硬规则 6 论证(本地端点没有要保护的凭据,fail closed 无对象)。
+
+---
+
+### Session 1 · `@dshwar/llm-local`
+
+**交付**:cordis 插件,把上游适配器实例注册为 `local` provider,
+指向 OpenAI 兼容本地端点(默认 Ollama `http://127.0.0.1:11434/v1`;
+llama.cpp 换 `baseUrl` 即可)。
+
+- **keyless**:`resolveApiKey` 返回占位符 —— 本地端点不鉴权,没有凭据可保护;
+  注释里写明这为什么不违反硬规则 6
+- 模型清单来自配置(部署方声明装了哪些模型),不静默探测 ——
+  探测到什么用什么会让「模型没装」在首个请求才炸
+- **测试**:假 OpenAI 兼容端点(进程内 http server)恒跑;
+  真 Ollama 探测式(D6:探测不到显式 skip)
+
+---
+
+### Session 2 · 离线判定与自动降级
+
+**交付**:云端不可达 → 自动切到本地模型。裁决点与 model-router 同位
+(createAgent 入口),但信号轴不同(可达性,不是预算)。
+
+- **降级必须可见**(红线 3 同款):结果带 `downgraded` 语义,
+  网关设响应头并落审计 —— 用户有权知道自己被换了模型
+- 未配置本地模型时,离线 = 明确报错(Agent 推理离线不可用),不静默排队
+- **负向验证**:拆掉可达性判定 → 降级测试红;拆掉可见性 → 审计断言红
+
+---
+
+### Session 3 · 本地用量统计 + 离线边界表 + 收口
+
+**交付**:
+
+- 本地 provider 的用量走既有 metering(provider=`local`),
+  **统计口径与云端一致但不进账单** —— billing 出账时本地行金额恒 0,
+  且文档写明这是「本地算力不计费」而非「没配价」
+- README 落离线边界表(会话/文件 ✅ · 本地工具 ✅ · Agent 推理 ❌ 除非本地模型 · 云端 token ❌)
+- 版本收口:压缩归档 + CHANGELOG + 版本号校验
+
+---
+
 # M0.6.0 · 支付 —— 实现细节归档
 
 ---
