@@ -744,6 +744,125 @@ function checkRootScriptsCoverage() {
  * 守卫只看 `pnpm <script>` 形式的调用,那两个 job 跑的是
  * `node scripts/...` 与 `pnpm build`,不会误伤。
  */
+/**
+ * 每个 CI job 的**实质检查**登记在哪 —— 新增 job 必须同时在此登记。
+ *
+ * 「登记」不是形式主义:填的是**「这个 job 的检查坏掉时,谁会红」**。
+ * 答不上来的 job 就是一个没人看着的绿勾,而那正是本守卫要消灭的东西。
+ *
+ * ⚠️ 双向校验:ci.yml 里有而这里没有 = 漏登记;这里有而 ci.yml 里没有 =
+ * 登记表腐烂。只查一个方向的登记表迟早会变成一份историческая 摆设。
+ */
+const CI_JOB_VERIFICATION = {
+  gate: 'check:all 本体 —— 其下每一项各自有守卫(check-guards)或探针(verify-assertions)',
+  'process-cost':
+    'verify-guards 27a/27b —— 把阈值调到 0 必须红;删掉平台条目 + --require-threshold 必须红',
+}
+
+/**
+ * ★ **CI job 必须做实质检查,且在 {@link CI_JOB_VERIFICATION} 里登记。**
+ *
+ * ## 它防的是一个真发生过的形状
+ *
+ * `terminal-contract` 这个 job 只 `echo` 一行就退出 —— 在 GitHub 面板上
+ * **永远是绿勾**,而它一次检查都没做过。它还指向一个不存在的任务
+ * (注释里的「Session 7」在当前规划里查无此项)。
+ *
+ * **一个不检查的 job 比没有 job 更糟:它占一个绿勾。**
+ *
+ * ## 两条判据
+ *
+ * 1. **实质性**:去掉准备步骤(checkout / setup / install / build)之后,
+ *    至少还要剩一条不是 `echo` / `true` / `:` 的 `run`
+ * 2. **已登记**:job 名必须在登记表里,且登记表里不得有 ci.yml 没有的项
+ *
+ * 判据 2 比判据 1 强得多 —— 一个 job 可以跑一条真命令却没人验证那条命令
+ * 是否真的会红(`measure-process-cost --assert` 在 2026-08-17 之前正是如此)。
+ */
+function checkCiJobsAreSubstantive() {
+  const ciPath = p('.github/workflows/ci.yml')
+  /** @type {{file: string, line: number, text: string}[]} */
+  const out = []
+  if (!existsSync(ciPath)) {
+    return [{ file: '.github/workflows/ci.yml', line: 0, text: 'CI workflow 不存在' }]
+  }
+  const lines = readFileSync(ciPath, 'utf8').split(/\r?\n/)
+
+  // 极简 YAML 扫描:`jobs:` 之后,缩进 2 空格的键即 job id。
+  // 不引 YAML 解析器 —— 门禁脚本刻意零依赖,而这里只需要认两种行。
+  let inJobs = false
+  /** @type {string | undefined} */
+  let current
+  /** @type {Map<string, {line: number, runs: string[]}>} */
+  const jobs = new Map()
+
+  for (const [i, line] of lines.entries()) {
+    if (/^jobs:\s*$/.test(line)) {
+      inJobs = true
+      continue
+    }
+    if (!inJobs) continue
+    // ⚠️ 空行与**顶格注释**不结束 jobs 段 —— YAML 里注释不结束任何块。
+    // 第一版把 `^\S` 一律当成段落结束,于是本文件末尾那段顶格的说明注释
+    // 之后再加 job 就扫不到了。26a/26b 两条负向验证当场把它照了出来:
+    // **守卫自己也需要负向验证,而不只是「跑过一次看着对」。**
+    if (line.trim() === '' || /^\s*#/.test(line)) continue
+    if (/^\S/.test(line)) {
+      inJobs = false // 顶层又出现别的键,jobs 段结束
+      continue
+    }
+
+    const jobKey = /^ {2}([A-Za-z0-9_-]+):\s*$/.exec(line)
+    if (jobKey?.[1] !== undefined) {
+      current = jobKey[1]
+      jobs.set(current, { line: i + 1, runs: [] })
+      continue
+    }
+    if (current === undefined) continue
+
+    const run = /^\s*(?:-\s*)?run:\s*(.+)$/.exec(line)
+    if (run?.[1] !== undefined) jobs.get(current)?.runs.push(run[1].trim())
+  }
+
+  /** 准备步骤 —— 它们不构成「检查」。 */
+  const isSetup = (/** @type {string} */ cmd) =>
+    /^pnpm\s+(install|build)\b/.test(cmd) || /^(npm|corepack|node --version)\b/.test(cmd)
+  /** 空操作 —— 它们更不构成检查。 */
+  const isNoop = (/** @type {string} */ cmd) => /^(echo\b|true$|:$|#)/.test(cmd)
+
+  for (const [name, job] of jobs) {
+    const substantive = job.runs.filter((r) => !isSetup(r) && !isNoop(r))
+    if (substantive.length === 0) {
+      out.push({
+        file: '.github/workflows/ci.yml',
+        line: job.line,
+        text: `job "${name}" 没有任何实质检查(只有准备步骤或 echo)—— 它在面板上是个恒绿的绿勾`,
+      })
+      continue
+    }
+    if (!(name in CI_JOB_VERIFICATION)) {
+      out.push({
+        file: '.github/workflows/ci.yml',
+        line: job.line,
+        text: `job "${name}" 没在 CI_JOB_VERIFICATION 里登记 —— 请写明「它的检查坏掉时谁会红」`,
+      })
+    }
+  }
+
+  // 反方向:登记表不得有 ci.yml 里没有的 job(否则登记表会烂成摆设)
+  for (const name of Object.keys(CI_JOB_VERIFICATION)) {
+    if (!jobs.has(name)) {
+      out.push({
+        file: 'scripts/check-guards.mjs',
+        line: 0,
+        text: `CI_JOB_VERIFICATION 里的 "${name}" 在 ci.yml 里不存在 —— 登记表腐烂了`,
+      })
+    }
+  }
+
+  return out
+}
+
 function checkCiEnumeratesGates() {
   const ciPath = p('.github/workflows/ci.yml')
   if (!existsSync(ciPath)) {
@@ -960,6 +1079,17 @@ if (rootScripts.length === 0) {
   console.log('        这是同一个模式的第三次:测试文件不被检查 → CI 不跑断言探针 →')
   console.log('        守卫脚本自己不被检查。每次都是「检查机制自己的那一层没人管」。')
   for (const h of rootScripts) console.log(`        ${h.text}`)
+}
+
+const ciHollow = checkCiJobsAreSubstantive()
+if (ciHollow.length === 0) {
+  console.log('  通过  CI job 都做实质检查且已登记(没有恒绿的绿勾)')
+} else {
+  failed += 1
+  console.log(`  违规  CI 里有 job 恒绿或未登记  (${ciHollow.length} 处)`)
+  console.log('        一个不检查的 job 比没有 job 更糟 —— 它在面板上占一个绿勾。')
+  console.log('        登记表要回答的是「这个 job 的检查坏掉时,谁会红」。')
+  for (const h of ciHollow) console.log(`        ${h.file}:${h.line}  ${h.text}`)
 }
 
 const ciDrift = checkCiEnumeratesGates()

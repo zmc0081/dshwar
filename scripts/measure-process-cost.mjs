@@ -41,7 +41,11 @@
  * node scripts/measure-process-cost.mjs                    # 只测量,不判定
  * node scripts/measure-process-cost.mjs --assert           # 用内置阈值判定
  * node scripts/measure-process-cost.mjs --samples 9        # 改采样次数
+ * node scripts/measure-process-cost.mjs --assert --require-threshold   # CI 用
  * ```
+ *
+ * ⚠️ **CI 必须带 `--require-threshold`**:没有它,平台阈值一旦缺失
+ * 这道门禁会安静地退化成「测量一下然后退出 0」,而 CI 面板照样绿。
  *
  * 阈值的定法见 `docs/DECISIONS/process-cost-thresholds.md`。
  */
@@ -88,6 +92,8 @@ const THRESHOLDS = {
 
 const argv = process.argv.slice(2)
 const shouldAssert = argv.includes('--assert')
+/** 缺平台阈值时报错而非跳过。CI 传它 —— 见下方 `limit === undefined` 分支的说明。 */
+const requireThreshold = argv.includes('--require-threshold')
 const samples = Number(argv[argv.indexOf('--samples') + 1]) || 5
 
 /** 拉起一次子进程,量到它报 `ready` 为止,然后杀掉。 */
@@ -267,6 +273,20 @@ if (!shouldAssert) {
 const limit = THRESHOLDS[platform]
 if (limit === undefined) {
   // 没有基线的平台上不判定 —— 拿别的平台的阈值去卡,红了也说明不了问题。
+  //
+  // ⚠️ **但这条「跳过」在 CI 上就是一个恒绿的洞。** 开发机上跳过是对的
+  // (darwin 没有基线);而 CI 明确跑在 ubuntu-latest 上,那里**必须**有
+  // 阈值 —— 若 `linux` 这个键哪天被改名或删掉,这道门禁会安静地退化成
+  // 「测量一下然后退出 0」,而 CI 面板照样是绿勾。
+  //
+  // 所以 CI 传 `--require-threshold`:缺条目时报错而不是跳过。
+  // 判据放在调用方,是因为「该不该有阈值」取决于跑在哪,脚本自己不知道。
+  if (requireThreshold) {
+    console.log(`\n❌ 平台 ${platform} 没有基线阈值,而调用方要求必须判定。`)
+    console.log('   THRESHOLDS 里缺这个平台的条目 —— 补上实测基线,或去掉 --require-threshold。')
+    console.log('   (CI 传这个参数正是为了不让「跳过判定」变成一个恒绿的绿勾。)')
+    process.exit(1)
+  }
   console.log(`\n平台 ${platform} 没有基线阈值,跳过判定。`)
   process.exit(0)
 }

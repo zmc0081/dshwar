@@ -1016,6 +1016,174 @@ ${added.output.slice(0, 400)}`,
 }
 
 // ---------------------------------------------------------------------
+// 26. CI job 必须做实质检查且已登记(2026-08-17)
+//
+//     起因:`terminal-contract` 这个 job 只 echo 一行就退出,在面板上
+//     **永远是绿勾**,而它一次检查都没做过 —— 还指向一个不存在的任务。
+//     「一个不检查的 job 比没有 job 更糟:它占一个绿勾。」
+// ---------------------------------------------------------------------
+{
+  const ciPath = p('.github/workflows/ci.yml')
+  const ciSrc = readFileSync(ciPath, 'utf8')
+
+  withRestoredFiles([ciPath], () => {
+    // 26a 负向 —— 加一个只 echo 的假 job
+    {
+      writeFileSync(
+        ciPath,
+        `${ciSrc}\n  fake-hollow:\n    name: 假的恒绿 job\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo "nothing to see here"\n`,
+        'utf8',
+      )
+      const r = runGuards()
+      expect(
+        '26a 加一个只 echo 的 job → 守卫变红(恒绿的绿勾)',
+        !r.ok && /恒绿|实质检查/.test(r.output),
+        !r.ok ? undefined : '★ 守卫放行了一个只 echo 的 job —— 面板上会多一个永远绿的勾',
+      )
+    }
+
+    // 26b 负向 —— job 做了实质检查,但没在登记表里
+    //     这一条比 26a 强:一个 job 可以跑真命令,却没人验证那条命令会不会红。
+    {
+      writeFileSync(
+        ciPath,
+        `${ciSrc}\n  fake-unregistered:\n    name: 未登记的 job\n    runs-on: ubuntu-latest\n    steps:\n      - run: node scripts/check-version.mjs\n`,
+        'utf8',
+      )
+      const r = runGuards()
+      expect(
+        '26b 加一个未登记但有实质检查的 job → 守卫变红(没人验证它会不会红)',
+        !r.ok && /登记/.test(r.output),
+        !r.ok ? undefined : '守卫只查了「有没有跑命令」,没查「那条命令有没有人验证」',
+      )
+    }
+
+    // 26c 正向对照 —— 现有的两个 job 必须被放行。
+    //     少了它,一个「见到 job 就红」的实现也能通过 26a/26b。
+    {
+      writeFileSync(ciPath, ciSrc, 'utf8')
+      const r = runGuards()
+      expect(
+        '26c 正向对照:合规的 job 被放行(规则不是「见到 job 就红」)',
+        r.ok,
+        r.ok ? undefined : '守卫把现有的合规 job 也拦了',
+      )
+    }
+  })
+}
+
+// ---------------------------------------------------------------------
+// 27. process-cost 的判定真的会红(2026-08-17)
+//
+//     它是扫「还有没有第二个恒绿的检查」时找出来的:`--assert` 跑的是真
+//     命令,**但没有任何守卫或探针验证过它会红** —— 而它还有一条
+//     `limit === undefined` 就退出 0 的路径,在 CI 上等于恒绿。
+//
+//     用 `--samples 1` 跑(实测约 0.7 s),够验判定逻辑,不拖慢门禁。
+// ---------------------------------------------------------------------
+{
+  const costPath = p('scripts/measure-process-cost.mjs')
+  const costSrc = readFileSync(costPath, 'utf8')
+  const runCost = (/** @type {string[]} */ extra) =>
+    run([costPath, '--assert', '--samples', '1', ...extra])
+
+  withRestoredFiles([costPath], () => {
+    // 27a 负向 —— 把阈值压到 0,判定必须红
+    {
+      writeFileSync(
+        costPath,
+        costSrc
+          .replace(
+            /linux: \{ coldStartMs: \d+, rssMb: \d+ \}/,
+            'linux: { coldStartMs: 0, rssMb: 0 }',
+          )
+          .replace(
+            /win32: \{ coldStartMs: \d+, rssMb: \d+ \}/,
+            'win32: { coldStartMs: 0, rssMb: 0 }',
+          ),
+        'utf8',
+      )
+      const r = runCost([])
+      expect(
+        '27a 阈值压到 0 → 进程代价门禁变红(它真的在判定)',
+        !r.ok && /超出阈值/.test(r.output),
+        !r.ok ? undefined : '★ 阈值为 0 竟然还通过 —— --assert 没在判定任何东西',
+      )
+    }
+
+    // 27b 负向 —— 删掉当前平台的阈值条目,带 --require-threshold 必须红
+    //     不带它则跳过判定并退出 0(那是开发机上正确的行为),
+    //     所以这一条验的是「CI 用的那个参数真的堵住了这个洞」。
+    {
+      writeFileSync(costPath, costSrc.replace(/^\s*(linux|win32): \{ coldStartMs.*$/gm, ''), 'utf8')
+      const withFlag = runCost(['--require-threshold'])
+      const without = runCost([])
+      expect(
+        '27b 删掉平台阈值条目 → 带 --require-threshold 红,不带则跳过(CI 用带的那个)',
+        !withFlag.ok && without.ok,
+        !withFlag.ok && without.ok
+          ? undefined
+          : '★ 缺阈值时 CI 会安静退出 0 —— 门禁退化成恒绿而面板照样是绿勾',
+      )
+    }
+  })
+}
+
+// ---------------------------------------------------------------------
+// 28. check:docs 自己会红(2026-08-17)
+//
+//     它是同一轮扫描的第三个发现:`check:docs` 上一轮才进 check:all,
+//     而 `md-table.test.mts` 验的是**库**(表格解析),不是
+//     「`session-tasks.mjs check` 该红的时候会不会红」。
+//
+//     **一个刚加进门禁的检查,最容易被默认为「当然有用」。**
+// ---------------------------------------------------------------------
+{
+  const tasksPath = p('SESSION_TASKS.md')
+  const tasksSrc = readFileSync(tasksPath, 'utf8')
+  const runDocs = () => run([p('scripts', 'session-tasks.mjs'), 'check'])
+
+  withRestoredFiles([tasksPath], () => {
+    // 28a 负向 —— 残留一段 Session prompt(校验 3)
+    {
+      writeFileSync(tasksPath, `读取 CLAUDE.md 与 SESSION_TASKS.md,然后…\n\n${tasksSrc}`, 'utf8')
+      const r = runDocs()
+      expect(
+        '28a 主文件残留 Session prompt → check:docs 变红',
+        !r.ok && /残留 Session prompt/.test(r.output),
+        !r.ok ? undefined : '★ check:docs 放行了残留的 prompt —— 它没在查它声称查的东西',
+      )
+    }
+
+    // 28b 负向 —— 已压缩的版本块丢了归档指针(校验 2)
+    {
+      writeFileSync(
+        tasksPath,
+        tasksSrc.replace('> 实现细节见 SESSION_TASKS_HISTORY.md', ''),
+        'utf8',
+      )
+      const r = runDocs()
+      expect(
+        '28b 已压缩的版本块丢了归档指针 → check:docs 变红',
+        !r.ok && /指向归档/.test(r.output),
+        !r.ok ? undefined : '压缩后没人能找到实现细节,而门禁竟然是绿的',
+      )
+    }
+
+    // 28c 正向对照 —— 原样的文件必须通过
+    {
+      writeFileSync(tasksPath, tasksSrc, 'utf8')
+      const r = runDocs()
+      expect(
+        '28c 正向对照:合规的文件被放行(规则不是「见到文件就红」)',
+        r.ok,
+        r.ok ? undefined : 'check:docs 把合规的文件也拦了',
+      )
+    }
+  })
+}
+
+// ---------------------------------------------------------------------
 // 收尾:确认清理干净,守卫回到基线
 // ---------------------------------------------------------------------
 {

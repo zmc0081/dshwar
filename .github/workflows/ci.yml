@@ -112,24 +112,30 @@ jobs:
 
       # 阈值由 2026-08-16 的 Linux 实测(86 ms / 63 MB)× 系数推出,不是猜的 ——
       # 首次接入时刻意先跑了一版不带 `--assert` 的,拿到数之后才打开判定。
+      #
+      # ★ `--require-threshold`:CI 明确跑在 ubuntu-latest 上,那里**必须**有
+      #   阈值条目。没有这个参数,`linux` 键一旦被改名或删掉,脚本会走
+      #   「跳过判定」分支安静退出 0 —— 门禁退化成恒绿而面板照样是绿勾。
+      #   这个洞是 2026-08-17 扫「还有没有第二个恒绿的检查」时找出来的。
       - name: 五次采样,与 V0.4.5 的 Windows 口径对齐
-        run: node scripts/measure-process-cost.mjs --assert
-
-  # PTY 相关契约测试只能在 Linux 跑:上游 dsh-subprocess-local 的 ProcessInspector
-  # 只实现了 linux 与 darwin,win32 直接抛错。
-  # 见 docs/FEASIBILITY-REPORT.md 验证 D。
-  #
-  # 本 job 现在是空跑占位,Session 7 落地契约测试后启用真实断言。
-  terminal-contract:
-    name: 终端能力契约(仅 Linux)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: 占位 —— Session 7 在此接入 PTY 契约测试
-        run: echo "PTY contract tests land in Session 7 (R8)."
+        run: node scripts/measure-process-cost.mjs --assert --require-threshold
+# ════════════════════════════════════════════════════════════════════════
+# ⚠️ 本文件里的每个 job 都必须做**实质检查**,且在守卫里登记。
+#
+# 2026-08-17 删掉了 `terminal-contract`(终端能力契约,仅 Linux)——
+# 它只 `echo` 一行就退出,在面板上**永远是绿勾**。三条理由:
+#
+# 1. 它指向一个**不存在的任务**:注释写「Session 7 (R8)」,而当前规划里
+#    没有任何 PTY 契约测试的 Session 7 —— 那个编号来自 V0.1.0 时代的归档块。
+# 2. 真去实现要装 `@deepseek-ai/dsh-subprocess-local`,而它在
+#    `gateway/src/runtime.ts` 的 `DELIBERATELY_OMITTED` 里有明确理由
+#    (node-pty 原生构建;上游 ProcessInspector 的 win32 直接抛错)。
+# 3. 待办本来就记在别处:`docs/RELEASE-CHECKLIST.md` 的「补测 node-pty 在
+#    两层嵌套下是否可用」。**CI 面板不是待办清单** —— 一个常驻的占位 job
+#    与常驻的 skip 一样,都依赖「有人注意到它」,而那正是会失效的那一环。
+#
+# 「一个不检查的 job 比没有 job 更糟:它在面板上占一个绿勾。」
+#
+# 这条不变式现在由 `check-guards.mjs` 的「CI job 必须做实质检查且已登记」
+# 守住,负向验证在 `verify-guards.mjs` 的 26a/26b/26c。
+# ════════════════════════════════════════════════════════════════════════
