@@ -1,7 +1,7 @@
 # DSHWAR 开发 Session 任务清单
 
 > 项目对外名称:DSHWAR;npm 作用域 `@dshwar/*`;开源主仓 `dshwar`,控制平面仓 `dshwar-console`。
-> 当前版本(正在开发): **V0.5.5** —— 本行强制为"正在开发的版本号",随新版本规划立即更新(见第三部分强制约束)
+> 当前版本(正在开发): **V0.6.0** —— 本行强制为"正在开发的版本号",随新版本规划立即更新(见第三部分强制约束)
 
 ---
 
@@ -351,6 +351,104 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 
 > 从 V0.7.0 拆出。**只出 SDK(Kotlin / Swift)+ 一个可运行示例,不做 App、不进商店。**
 > 你是基座,移动端 App 是客户的产品。SDK 由 OpenAPI 生成,与 TS / Python SDK 同源。
+
+---
+
+## <span style="color:#d00000">●</span> M0.6.0 · 支付(Session 0-4) <span style="color:#d00000">[开发中]</span>
+
+> **开源与闭源的分界线在这一版被改动了(D4)。** 原定 Stripe 适配器闭源,
+> 现改为**开源** —— 闭源只剩托管服务本体。理由:支付适配器没有护城河价值,
+> 闭源它等于**让自建者收不了钱**,直接违背「开源用户拿到可用的完整基座」。
+>
+> 🔴 **这是全部四版里回滚代价最高的一条决策** ——
+> 开源许可不可撤回,回滚窗口只到首次发布 `@dshwar/billing-stripe` 之前。
+> 见 [`AUTOPILOT-LOG.md`](docs/DECISIONS/AUTOPILOT-LOG.md) 的 D4 专节。
+
+**Session 状态**
+
+| Session | 标题                                           | 状态 |
+| ------- | ---------------------------------------------- | ---- |
+| 0       | principal 绑定改造(A4 改期,非支付)             | ✅   |
+| 1       | `@dshwar/billing` 契约 + `billing-local`       | ⬜   |
+| 2       | `@dshwar/billing-stripe`(D4:开源)+ stripe-mock | ⬜   |
+| 3       | Webhook:验签 + 防重放 + 幂等,三条负向验证      | ⬜   |
+| 4       | 开源边界文档同步 + live smoke                  | ⬜   |
+
+---
+
+### Session 0 · principal 绑定改造(A4 改期插入)
+
+> **这一条不属于支付。** 它是 V0.5.5 评估出来、由所有者改期提前的地基改动 ——
+> 排在支付之前,因为越晚做爆炸半径越大(而非相反,见 A4 的实测数据)。
+
+**改动**:装配时**无条件** provide;`current()` 对 `undefined` 抛。
+
+| `ctx.get(PRINCIPAL_BINDING)` | 含义                    | 行为             |
+| ---------------------------- | ----------------------- | ---------------- |
+| 真实 principal               | 请求经过认证 / 进程档   | 返回它           |
+| `ANONYMOUS`(**显式**)        | 单用户部署,装配时表过态 | 返回 `ANONYMOUS` |
+| `undefined`                  | **装配没跑或被绕过**    | 🚨 抛            |
+
+⚠️ **它不防漏挂中间件** —— 那种情形会回落到根绑定,不抛。
+防线仍是 `auth-coverage.test.ts` 与探针 10。两者各防一件事,一个都不能少。
+详见 [`undefined-vs-anonymous.md`](docs/DECISIONS/undefined-vs-anonymous.md)。
+
+**实测影响面**:红 15 条 / 4 个文件,全部是裸建 Context 没有根 provide 的测试,
+集中在 setup 辅助函数里。
+
+**验收**:单用户档照常可用;裸建 Context 不 provide 时 `current()` 抛且信息可读。
+
+---
+
+### Session 1 · `@dshwar/billing` 契约 + `billing-local`
+
+**交付**:计量 → 计费 → 出账的契约,与 `billing-local`(只记账不收款)。
+
+⚠️ **钱一律用最小货币单位的整数**(分)。契约里不出现浮点 ——
+`0.1 + 0.2 !== 0.3` 在账单上就是对不上账,而对不上账的账单会被客户
+拿去质疑整个系统。
+
+**验收**:`billing-local` 能从 `@dshwar/metering` 的用量算出一张账单,
+且金额计算全程整数。
+
+---
+
+### Session 2 · `@dshwar/billing-stripe`(D4:**开源**)
+
+**交付**:Stripe 适配器 + stripe-mock 测试。
+
+**D5 的测试策略**:
+
+| 层         | 打谁                                       | 进 `check:all`?     |
+| ---------- | ------------------------------------------ | ------------------- |
+| 自动化测试 | **stripe-mock**(官方模拟器,不需账号或 key) | ✅                  |
+| live smoke | 真实 test key,走 `.env`                    | ❌ 无 key 自动 skip |
+
+⚠️ **开源纯净度检查要改** —— `check-oss-purity.mjs` 原本会把
+`billing-stripe` 当闭源组件拦下。
+
+---
+
+### Session 3 · Webhook 三条防线
+
+**D5 强制**:验签 + 时间戳防重放 + 幂等键,**三条都要负向验证**:
+
+1. 伪造签名 → 拒
+2. 重放旧事件(时间戳过期)→ 拒
+3. 重复投递同一事件 → 只生效一次
+
+> **支付是唯一一处「测试没覆盖 = 真金白银出错」的地方**,
+> 测试要求高于其它版本。
+
+---
+
+### Session 4 · 开源边界文档同步 + live smoke
+
+**交付**:`CLAUDE.md` 第八节与 `README.md` 的开源/闭源边界改成 D4 的新口径;
+live smoke 写进发布清单(需人工跑一次)。
+
+**验收**:`check:oss` 绿,且**负向验证**证明它仍会拦真正的闭源组件 ——
+放宽一处判据之后,必须证明其余部分没跟着松。
 
 ---
 

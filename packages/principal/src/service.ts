@@ -1,6 +1,6 @@
 import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
-import { ANONYMOUS, isAnonymousPrincipal, type Principal } from './principal.ts'
+import { isAnonymousPrincipal, type Principal } from './principal.ts'
 
 /**
  * principal 绑定所在的 cordis 服务槽位名。
@@ -23,10 +23,61 @@ import { ANONYMOUS, isAnonymousPrincipal, type Principal } from './principal.ts'
  * (`docs/FEASIBILITY-REPORT.md`)。
  *
  * 导出它是给 `adapters/` 与测试用的。**业务代码不要直接读这个槽位**,
- * 走 `ctx.principal.current()`——直接读会绕开 ANONYMOUS 兜底,
- * 把一个 `undefined` 泄漏进下游的判据里。
+ * 走 `ctx.principal.current()`——直接读会绕开「未绑定即抛」的检查
+ * (V0.6.0 起,见 {@link PrincipalUnboundError}),把一个 `undefined`
+ * 泄漏进下游的判据里,而下游没有义务替装配层判空。
  */
 export const PRINCIPAL_BINDING = 'principalBinding'
+
+/**
+ * 主体槽位从来没被 provide 过 —— **装配配置错误**,不是运行时状态。
+ *
+ * ⚠️ 它**不是**「这次请求没认证」的信号。认证与否由中间件负责,
+ * 而中间件没挂时会回落到根绑定(见 {@link PrincipalService.current} 的说明)。
+ *
+ * 见到这个错误意味着:`assembleRuntime()` 没跑,或有人绕过它自拼了一个
+ * Context 却没 provide 主体槽位 —— 两者都是**启动期**就该发现的问题;
+ * 或者拿了一个**已经退出作用域**的 ctx 在用(见下)。
+ *
+ * ---
+ *
+ * ## ★ 「什么时候抛」的唯一判据:**你从哪个 ctx 读**
+ *
+ * 文档里有两句话看起来矛盾,**两句都对** ——
+ * 区分点不是「发生了什么」,是**读的是哪一个 context**:
+ *
+ * | 你手上的 ctx | 它有没有进过 `isolate` | `current()` |
+ * | --- | --- | --- |
+ * | **根 ctx**(漏挂中间件时路由拿到的就是它) | 没有 | ✅ 读到**根绑定**,不抛 |
+ * | **已释放的 scoped ctx**(逃逸出 `runWithPrincipal`) | 进过,且已 dispose | 🚨 **抛** |
+ *
+ * 为什么第二行没有根绑定兜底:`ctx.isolate(slot)` **切断该槽位对父作用域的继承**。
+ * 这不是 bug,是隔离的定义 —— 隔离若还能看见父作用域的值,它就没在隔离。
+ *
+ * ⇒ 所以「漏挂中间件不抛」与「解除绑定后抛」不冲突:
+ * **前者从来没进过隔离作用域,后者进过又退出了。**
+ *
+ * ⚠️ 半年后读到这两句的人,请先看这张表再决定改行为 ——
+ * 它们不是同一个场景的两种说法。
+ */
+export class PrincipalUnboundError extends Error {
+  readonly code = 'principal_unbound'
+
+  constructor() {
+    super(
+      [
+        '主体槽位未绑定 —— 装配时没有人 provide 过 PRINCIPAL_BINDING。',
+        '',
+        '这不是「本次请求没认证」:认证由中间件负责,而中间件缺席时',
+        '会回落到根绑定,不会走到这里。',
+        '',
+        '出路:走 assembleRuntime() 装配;若手工搭 Context,',
+        '装配阶段显式 ctx.provide(PRINCIPAL_BINDING, ANONYMOUS)。',
+      ].join('\n'),
+    )
+    this.name = 'PrincipalUnboundError'
+  }
+}
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -60,11 +111,35 @@ export class PrincipalService extends Service {
   /**
    * 读取**当前作用域**的主体。
    *
-   * 永不返回 `undefined`——未绑定即 {@link ANONYMOUS}。这不是便利性设计,
+   * 永不返回 `undefined`——要么给出一个主体,要么抛。这不是便利性设计,
    * 是安全设计:如果这里可能返回 undefined,每个下游都要自己判空,
    * 而漏判一处的后果是「把没有主体的操作当成有主体」——凭据解析、路径钉死、
    * 存储前缀会各自以不同的方式失败,其中至少一种是静默越权。
-   * 让它永远有值,并且让那个值是「拒绝」,漏判就变成了 fail closed。
+   *
+   * ## V0.6.0 起:`undefined` 抛,而不是折成 `ANONYMOUS`
+   *
+   * 此前是 `bound ?? ANONYMOUS`,于是**两件完全不同的事被折成了同一个值**:
+   *
+   * | 情形 | 该怎样 |
+   * | --- | --- |
+   * | 单用户部署,装配时**显式** provide 了 `ANONYMOUS` | 返回 `ANONYMOUS` ✅ |
+   * | **装配根本没跑**,或有人绕过 `assembleRuntime` 自拼 Context | 🚨 抛 |
+   *
+   * 分开的办法是让「缺失」变**显式**:装配阶段一律 provide 一个值
+   * (单用户档也 provide `ANONYMOUS`)。于是 `undefined` 只剩一个含义 ——
+   * **没人表过态**。
+   *
+   * ⚠️ **这条改动不防「漏挂认证中间件」。** 那种情形下 `runWithPrincipal`
+   * 没跑,`ctx.get` 会**回落到根绑定**(进程档=该进程的真实 principal,
+   * 逻辑单用户=`ANONYMOUS`,逻辑多用户启动即拒)—— 三种形态下根绑定都是
+   * 正确或安全的值,所以**它不抛**。
+   *
+   * 🚨 防漏挂中间件的是 `gateway/test/auth-coverage.test.ts` 那条遍历契约的
+   * 认证断言(与探针 10)。**将来若有人想删它,不要以为「反正 principal 层
+   * 会抛」—— 它不会抛。** 两者防的是两件不同的事:
+   * 本条防「装配配置错误」(启动即知),那条防「新增路由漏挂」(测试期发现)。
+   *
+   * 全部推导与实测见 `docs/DECISIONS/undefined-vs-anonymous.md`。
    *
    * ⚠️ **每次操作现场调用,不要跨操作缓存返回值。** 上游 `dsh-credentials` 的
    * 契约明文要求凭据每次操作重新解析(`resolve` 的 TSDoc:"consumers re-resolve
@@ -78,7 +153,8 @@ export class PrincipalService extends Service {
    */
   current(): Principal {
     const bound = this.ctx.get(PRINCIPAL_BINDING) as Principal | undefined
-    return bound ?? ANONYMOUS
+    if (bound === undefined) throw new PrincipalUnboundError()
+    return bound
   }
 
   /**
@@ -144,9 +220,15 @@ export function withPrincipal(ctx: Context, principal: Principal): Context {
  * })
  * ```
  *
- * ⚠️ 不要让 `sessionCtx` 逃逸出回调 —— 回调返回后它的绑定已被解除,
- * 再用它读 principal 会得到 {@link ANONYMOUS},而那是个 fail closed 的值,
- * 症状是「莫名其妙解析不到凭据」而不是明确的报错。
+ * ⚠️ 不要让 `sessionCtx` 逃逸出回调 —— 回调返回后它的绑定已被解除。
+ *
+ * ★ **V0.6.0 起这条纪律由运行时执行,不再只是一句提醒。**
+ * 此前逃逸的作用域读到 {@link ANONYMOUS} —— 一个静默的 fail closed 值,
+ * 症状是「莫名其妙解析不到凭据」而不是明确的报错。现在它抛
+ * {@link PrincipalUnboundError},逃逸的代价从「查半天」变成「立刻知道」。
+ *
+ * 机制:`ctx.isolate(slot)` **切断该槽位对父作用域的继承**,
+ * 所以解除之后没有根绑定兜底 —— 这不是 bug,是隔离的定义。
  *
  * @param ctx 父上下文
  * @param principal 该次操作的主体

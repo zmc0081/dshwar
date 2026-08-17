@@ -39,4 +39,10 @@ export {
   type PrincipalInit,
 } from './principal.ts'
 
-export { PRINCIPAL_BINDING, PrincipalService, runWithPrincipal, withPrincipal } from './service.ts'
+export {
+  PRINCIPAL_BINDING,
+  PrincipalService,
+  PrincipalUnboundError,
+  runWithPrincipal,
+  withPrincipal,
+} from './service.ts'

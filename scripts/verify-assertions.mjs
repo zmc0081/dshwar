@@ -265,21 +265,28 @@ console.log('DSHWAR · 断言有效性探针\n')
   )
 }
 
-// 8. principal 抵达 agent 执行层(V0.4.7)—— 拿掉根上的 provide
+// 8. principal 抵达 agent 执行层(V0.4.7)—— 根上 provide 错值
 //    这一条同时属于「弄坏实现」与「作用域」两类:它弄坏的是实现,
 //    但只有在**真实时序下**(HTTP → 网关 → 子进程 → 适配器)才照得到。
+//
+//    ★ V0.6.0 改了变异方式:此前是「整个拿掉 provide」,但 current() 现在
+//    对未绑定**抛** —— 拿掉 provide 会让冒烟因抛错变红,红的是新机制,
+//    不是本探针要照的「principal 静默没抵达执行层」。所以变异改成
+//    provide 了但提供错值(ANONYMOUS 顶替真实 principal):不抛、
+//    fs-tenant 静默落进 anonymous/anonymous/ —— 这才是 V0.4.7 那个
+//    bug 的形状,冒烟必须靠租户目录断言而非异常来抓住它。
 {
   const r = withMutation(
     'gateway/src/runtime.ts',
     (s) =>
       s.replace(
-        '    ctx.provide(PRINCIPAL_BINDING, options.principal)',
-        '    void PRINCIPAL_BINDING',
+        'ctx.provide(PRINCIPAL_BINDING, options.principal ?? ANONYMOUS)',
+        'ctx.provide(PRINCIPAL_BINDING, ANONYMOUS)',
       ),
     ['gateway/test/real-path-smoke.test.ts'],
   )
   expect(
-    '8 拿掉根上的 principal provide → 真实路径冒烟变红',
+    '8 根上 provide 错值(ANONYMOUS 顶替真实 principal)→ 真实路径冒烟变红',
     r.red,
     r.unchanged ? '锚点没匹配上' : '★ 进程档下 principal 不再抵达执行层,而端到端冒烟竟然还是绿的',
   )

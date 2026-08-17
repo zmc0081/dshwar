@@ -1,6 +1,12 @@
 import { Context } from '@deepseek-ai/cordis'
 import { credentialRef, type CredentialRef } from '@deepseek-ai/dsh-credentials'
-import { createPrincipal, PrincipalService, runWithPrincipal } from '@dshwar/principal'
+import {
+  ANONYMOUS,
+  createPrincipal,
+  PRINCIPAL_BINDING,
+  PrincipalService,
+  runWithPrincipal,
+} from '@dshwar/principal'
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
   InMemoryPrincipalCredentialStore,
@@ -19,6 +25,10 @@ let store: InMemoryPrincipalCredentialStore
 async function ctxWith(shadow?: ShadowResolver): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(PrincipalService)
+  // ★ V0.6.0:装配阶段**显式** provide ANONYMOUS —— 与 assembleRuntime 同款。
+  // 不 provide 的话 current() 会抛 PrincipalUnboundError,而那正是本版本要的:
+  // 「没人表过态」与「合法的单用户」不再是同一个值。
+  ctx.provide(PRINCIPAL_BINDING, ANONYMOUS)
   await ctx.plugin(MultiuserCredentials, {
     store,
     ...(shadow === undefined ? {} : { shadow }),

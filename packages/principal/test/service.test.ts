@@ -5,6 +5,7 @@ import {
   createPrincipal,
   PRINCIPAL_BINDING,
   PrincipalService,
+  PrincipalUnboundError,
   runWithPrincipal,
   withPrincipal,
   type Principal,
@@ -17,6 +18,10 @@ async function rootContext(): Promise<Context> {
   const ctx = new Context()
   // fiber 是 PromiseLike,不 await 则服务尚未注册 —— Session 0 在这上面栽过一次
   await ctx.plugin(PrincipalService)
+  // ★ V0.6.0:装配阶段**显式** provide ANONYMOUS —— 与 assembleRuntime 同款。
+  // 不 provide 的话 current() 会抛 PrincipalUnboundError,而那正是本版本要的:
+  // 「没人表过态」与「合法的单用户」不再是同一个值。
+  ctx.provide(PRINCIPAL_BINDING, ANONYMOUS)
   return ctx
 }
 
@@ -92,14 +97,23 @@ describe('withPrincipal · 作用域隔离', () => {
     expect(aCtx.principal).not.toBe(ctx.principal)
   })
 
-  // 复现 Session 0 验证 A5:会话结束不得把 principal 泄漏给下一个会话
-  it('绑定随 provide 的 disposer 解除', async () => {
+  // 复现 Session 0 验证 A5:会话结束不得把 principal 泄漏给下一个会话。
+  //
+  // ★ V0.6.0 起断言的东西变了,而且是**变强**:
+  //   此前解除后 current() 返回 ANONYMOUS —— 一个静默的 fail closed 值,
+  //   症状是「莫名其妙解析不到凭据」。runWithPrincipal 的 TSDoc 当时就把
+  //   这一点写成了警告。现在它**抛**,那句警告因此不再需要。
+  //
+  //   为什么 isolate 过的作用域在解除后没有根绑定兜底:
+  //   `ctx.isolate(slot)` 切断的正是该槽位对父作用域的继承 ——
+  //   这不是 bug,是隔离的定义。
+  it('绑定解除后,逃逸出去的作用域**抛**而不是静默退化', async () => {
     const scoped = ctx.isolate(PRINCIPAL_BINDING)
     const dispose = scoped.provide(PRINCIPAL_BINDING, alice)
 
     expect(scoped.principal.current().id).toBe(alice.id)
     await dispose()
-    expect(scoped.principal.isAnonymous()).toBe(true)
+    expect(() => scoped.principal.current()).toThrow(PrincipalUnboundError)
   })
 })
 
@@ -115,12 +129,15 @@ describe('runWithPrincipal · 生命周期', () => {
     expect(seen).toBe(alice.id)
   })
 
-  it('回调结束后绑定被解除', async () => {
+  it('★ 回调结束后,逃逸的作用域抛 —— 不再静默退化成匿名', async () => {
+    // 「不要让 sessionCtx 逃逸出回调」这条纪律,现在由**运行时**执行,
+    // 而不只是 TSDoc 里的一句话。逃逸的代价从「查半天为什么没凭据」
+    // 变成「立刻拿到一个说清原因的错误」。
     let escaped: Context | undefined
     await runWithPrincipal(ctx, alice, (scoped) => {
       escaped = scoped
     })
-    expect(escaped?.principal.isAnonymous()).toBe(true)
+    expect(() => escaped!.principal.current()).toThrow(PrincipalUnboundError)
   })
 
   it('回调抛错时同样解除绑定', async () => {
@@ -132,7 +149,8 @@ describe('runWithPrincipal · 生命周期', () => {
       }),
     ).rejects.toThrow('boom')
 
-    expect(escaped?.principal.isAnonymous()).toBe(true)
+    // 回调抛错时同样解除 —— finally 里的 dispose 真的跑了
+    expect(() => escaped!.principal.current()).toThrow(PrincipalUnboundError)
   })
 
   // 长命 fiber 里按请求反复派生会累积隔离槽位。这条测试把「为什么网关必须用

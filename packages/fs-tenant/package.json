@@ -1,6 +1,6 @@
 {
   "name": "@dshwar/fs-tenant",
-  "version": "0.5.5",
+  "version": "0.6.0",
   "description": "工作区根按租户钉死 —— 隔离的真实边界。credentials 解决「用谁的钱」,fs 解决「能看谁的数据」。",
   "license": "MIT",
   "type": "module",

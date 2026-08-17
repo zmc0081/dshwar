@@ -7,7 +7,13 @@
 import { Context } from '@deepseek-ai/cordis'
 import { LocalFileSystem } from '@deepseek-ai/dsh-fs-local'
 import type { FileSystem } from '@deepseek-ai/dsh-fs'
-import { createPrincipal, PrincipalService, runWithPrincipal } from '@dshwar/principal'
+import {
+  ANONYMOUS,
+  createPrincipal,
+  PRINCIPAL_BINDING,
+  PrincipalService,
+  runWithPrincipal,
+} from '@dshwar/principal'
 import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve as resolvePath, sep } from 'node:path'
@@ -49,6 +55,10 @@ beforeEach(async () => {
 
   ctx = new Context()
   await ctx.plugin(PrincipalService)
+  // ★ V0.6.0:装配阶段**显式** provide ANONYMOUS —— 与 assembleRuntime 同款。
+  // 不 provide 的话 current() 会抛 PrincipalUnboundError,而那正是本版本要的:
+  // 「没人表过态」与「合法的单用户」不再是同一个值。
+  ctx.provide(PRINCIPAL_BINDING, ANONYMOUS)
 
   // inner 放进被 isolate 的 'fs' 槽位 —— 否则两个 FileSystem 抢同一个服务名
   const innerCtx = ctx.isolate('fs')

@@ -31,7 +31,7 @@ import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { StaticAuth } from '@dshwar/auth-static'
 import { MultiuserCredentials, type PrincipalCredentialStore } from '@dshwar/credentials-multiuser'
 import { TenantFileSystem } from '@dshwar/fs-tenant'
-import { PRINCIPAL_BINDING, PrincipalService, type Principal } from '@dshwar/principal'
+import { ANONYMOUS, PRINCIPAL_BINDING, PrincipalService, type Principal } from '@dshwar/principal'
 import type { AgentHandleLike } from './sessions/store.ts'
 
 /**
@@ -146,9 +146,20 @@ export async function assembleRuntime(options: RuntimeOptions): Promise<Assemble
 
   // ★ V0.4.7:进程隔离档在这里把本进程唯一的主体钉在根上。
   // 不钉的话,agent 执行时读到的是 ANONYMOUS —— 见 RuntimeOptions.principal。
-  if (options.principal !== undefined) {
-    ctx.provide(PRINCIPAL_BINDING, options.principal)
-  }
+  //
+  // ★★ V0.6.0:改成**无条件** provide —— 单用户档也显式 provide ANONYMOUS。
+  //
+  // 这一行是「把缺失变显式」的全部实现。改之前,单用户档什么都不 provide,
+  // 于是 `ctx.get(PRINCIPAL_BINDING)` 返回 undefined —— 而那个 undefined
+  // **同时**意味着「合法的单用户」与「装配根本没跑」,两者在槽位层面分不出来。
+  //
+  // 显式 provide 之后,undefined 只剩一个含义:**没人表过态**。
+  // `PrincipalService.current()` 据此抛 PrincipalUnboundError。
+  //
+  // ⚠️ 这**不防**漏挂认证中间件 —— 那种情形会回落到这里 provide 的根绑定,
+  // 不抛。防线是 gateway/test/auth-coverage.test.ts。见
+  // docs/DECISIONS/undefined-vs-anonymous.md。
+  ctx.provide(PRINCIPAL_BINDING, options.principal ?? ANONYMOUS)
   await ctx.plugin(StaticAuth, {
     entries: options.authEntries.map((e) => ({ ...e })),
     quiet: options.quiet ?? false,
