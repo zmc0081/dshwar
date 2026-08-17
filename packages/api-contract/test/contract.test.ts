@@ -199,23 +199,28 @@ describe('OpenAPI 文档结构', () => {
     expect(doc.info.version).toBe(manifest.version)
   })
 
-  it('两种鉴权方式分离声明', () => {
+  it('三种鉴权方式分离声明(V0.6.0 起含 webhook 签名)', () => {
     expect(Object.keys(doc.components.securitySchemes).sort()).toEqual([
       'adminApiKey',
       'runtimeBearer',
+      'webhookSignature',
     ])
   })
 
-  // 一把 Admin Key 不得横跨租户；运维的 Key 不能冒充用户发起会话
-  it('运行时端点用 runtimeBearer,Admin 端点用 adminApiKey,不混用', () => {
+  // 一把 Admin Key 不得横跨租户;运维的 Key 不能冒充用户发起会话;
+  // webhook 的凭证是签名,三者互不相认
+  it('端点鉴权方式与声明一一对应,不混用', () => {
+    const expected = {
+      admin: 'adminApiKey',
+      runtime: 'runtimeBearer',
+      signature: 'webhookSignature',
+    } as const
     for (const route of ROUTES) {
       const op = (doc.paths[route.path] as Record<string, { security: Record<string, unknown>[] }>)[
         route.method
       ]!
       const scheme = Object.keys(op.security[0]!)[0]
-      expect(scheme, `${route.operationId} 的鉴权方式不对`).toBe(
-        route.auth === 'admin' ? 'adminApiKey' : 'runtimeBearer',
-      )
+      expect(scheme, `${route.operationId} 的鉴权方式不对`).toBe(expected[route.auth])
     }
   })
 

@@ -365,6 +365,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/billing/webhooks/stripe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 接收 Stripe webhook(验签 + 防重放 + 幂等)
+         * @description 凭证是 Stripe-Signature 头(HMAC-SHA256,时间戳参与签名)。验签失败统一 401,不区分原因;重复投递返回 2xx 的 duplicate/already-paid —— 幂等成功必须让 Stripe 停止重试。
+         */
+        post: operations["receiveStripeWebhook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -731,6 +751,19 @@ export interface components {
             writablePaths?: string[];
             allowedHosts?: string[];
             allowShell?: boolean;
+        };
+        WebhookAck: {
+            /** @constant */
+            received: true;
+            /** @enum {string} */
+            outcome: "applied" | "duplicate" | "already-paid" | "ignored";
+            requestId: string;
+        };
+        StripeWebhookEventBody: {
+            id: string;
+            type: string;
+        } & {
+            [key: string]: unknown;
         };
     };
     responses: never;
@@ -2496,6 +2529,69 @@ export interface operations {
                 headers: {
                     /** @description 计划实现该端点的版本 */
                     "x-dshwar-planned-version"?: "0.5.5";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    receiveStripeWebhook: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description t=<epoch秒>,v1=<HMAC-SHA256 hex>。签名盖住 "<t>.<原始 body>" */
+                "Stripe-Signature": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StripeWebhookEventBody"];
+            };
+        };
+        responses: {
+            /** @description 事件已收到(含幂等重复) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookAck"];
+                };
+            };
+            /** @description 请求体或参数不满足 schema */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 凭证缺失、无效或已过期 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 触发限流 */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 服务端内部错误 */
+            500: {
+                headers: {
                     [name: string]: unknown;
                 };
                 content: {

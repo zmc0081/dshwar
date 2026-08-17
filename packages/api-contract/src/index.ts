@@ -104,3 +104,6 @@ export {
   Workspace,
   WorkspacePolicy,
 } from './workbench.ts'
+
+// ---- 支付契约(V0.6.0)----
+export { StripeWebhookEventBody, WebhookAck } from './billing.ts'

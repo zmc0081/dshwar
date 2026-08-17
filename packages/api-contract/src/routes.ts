@@ -19,6 +19,7 @@ import {
   ListUsageResponse,
   UpdateQuotaRequest,
 } from './admin.ts'
+import { StripeWebhookEventBody, WebhookAck } from './billing.ts'
 import { ErrorResponse, PaginationQuery, SessionId, SubjectId } from './common.ts'
 import {
   CreateJobRequest,
@@ -54,6 +55,12 @@ export type AuthScheme =
   | 'runtime'
   /** 按租户签发的 Admin API Key。一把钥匙不得横跨租户。 */
   | 'admin'
+  /**
+   * 请求体的 HMAC 签名(V0.6.0,webhook 专用)。凭证就是签名本身:
+   * 无签名或签名无效一律 401 —— 所以认证覆盖断言(auth-coverage)
+   * 对这类端点同样成立,不需要豁免。
+   */
+  | 'signature'
 
 /** 实现状态。`planned` 的端点契约完整但返回 501。 */
 export type ImplementationStatus = 'implemented' | 'planned'
@@ -560,5 +567,49 @@ const WORKBENCH_ROUTES: readonly RouteDef[] = [
   },
 ]
 
+// ---------------------------------------------------------------------------
+// 支付(V0.6.0)
+// ---------------------------------------------------------------------------
+
+/**
+ * ⚠️ 新增路径(`path.added`),契约冻结判相容。
+ *
+ * webhook 与其它端点的鉴权模型不同:调用方是 Stripe,不持有 Bearer,
+ * 凭证是**请求体的 HMAC 签名**。响应刻意贫瘠 —— 验签失败统一 401
+ * 无原因(不给探测者反馈),幂等重复也是 2xx(让 Stripe 停止重试)。
+ */
+const BILLING_ROUTES: readonly RouteDef[] = [
+  {
+    method: 'post',
+    path: '/v1/billing/webhooks/stripe',
+    operationId: 'receiveStripeWebhook',
+    summary: '接收 Stripe webhook(验签 + 防重放 + 幂等)',
+    description:
+      '凭证是 Stripe-Signature 头(HMAC-SHA256,时间戳参与签名)。' +
+      '验签失败统一 401,不区分原因;重复投递返回 2xx 的 duplicate/already-paid —— ' +
+      '幂等成功必须让 Stripe 停止重试。',
+    tags: ['billing'],
+    auth: 'signature',
+    status: 'implemented',
+    body: StripeWebhookEventBody,
+    headers: [
+      {
+        name: 'Stripe-Signature',
+        description: 't=<epoch秒>,v1=<HMAC-SHA256 hex>。签名盖住 "<t>.<原始 body>"',
+        required: true,
+      },
+    ],
+    responses: {
+      200: { description: '事件已收到(含幂等重复)', schema: WebhookAck },
+      ...COMMON_ERRORS,
+    },
+  },
+]
+
 /** v1 的全部路由。 */
-export const ROUTES: readonly RouteDef[] = [...RUNTIME_ROUTES, ...ADMIN_ROUTES, ...WORKBENCH_ROUTES]
+export const ROUTES: readonly RouteDef[] = [
+  ...RUNTIME_ROUTES,
+  ...ADMIN_ROUTES,
+  ...WORKBENCH_ROUTES,
+  ...BILLING_ROUTES,
+]

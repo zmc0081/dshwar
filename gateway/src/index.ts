@@ -79,6 +79,9 @@ export type { SequencedEvent, TranslateOptions, UpstreamSessionEvent } from './s
 
 export { registerAdminRoutes } from './admin/routes.ts'
 
+export { registerStripeWebhook, stripeWebhookFailClosed } from './billing/webhook.ts'
+export type { StripeWebhookOptions } from './billing/webhook.ts'
+
 export { guardMemberCapacity, MemberCapacityError, memberCapacityOf } from './member-capacity.ts'
 export type { MemberCapacity } from './member-capacity.ts'
 export type {

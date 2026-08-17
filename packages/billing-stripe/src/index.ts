@@ -19,3 +19,14 @@
  */
 
 export { StripeGateway, StripeGatewayError, type StripeGatewayOptions } from './gateway.ts'
+export {
+  InMemoryProcessedEventStore,
+  WebhookVerificationError,
+  processStripeEvent,
+  verifyStripeSignature,
+  type ProcessedEventStore,
+  type ProcessInput,
+  type StripeEvent,
+  type VerifyInput,
+  type WebhookOutcome,
+} from './webhook.ts'

@@ -157,6 +157,12 @@ importers:
       '@dshwar/auth':
         specifier: workspace:*
         version: link:../packages/auth
+      '@dshwar/billing':
+        specifier: workspace:*
+        version: link:../packages/billing
+      '@dshwar/billing-stripe':
+        specifier: workspace:*
+        version: link:../packages/billing-stripe
       '@dshwar/fs-tenant':
         specifier: workspace:*
         version: link:../packages/fs-tenant
@@ -239,12 +245,9 @@ importers:
       '@dshwar/auth-static':
         specifier: workspace:*
         version: link:../packages/auth-static
-      '@dshwar/billing':
+      '@dshwar/billing-local':
         specifier: workspace:*
-        version: link:../packages/billing
-      '@dshwar/billing-stripe':
-        specifier: workspace:*
-        version: link:../packages/billing-stripe
+        version: link:../packages/billing-local
       '@dshwar/credentials-multiuser':
         specifier: workspace:*
         version: link:../packages/credentials-multiuser
@@ -387,6 +390,16 @@ importers:
       '@dshwar/billing':
         specifier: workspace:*
         version: link:../billing
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.0.1
+        version: 4.0.1
+      '@dshwar/billing-local':
+        specifier: workspace:*
+        version: link:../billing-local
+      '@dshwar/metering':
+        specifier: workspace:*
+        version: link:../metering
 
   packages/console-contract:
     devDependencies:

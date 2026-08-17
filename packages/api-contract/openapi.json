@@ -2601,6 +2601,95 @@
         "x-dshwar-status": "planned",
         "x-dshwar-planned-version": "0.5.5"
       }
+    },
+    "/v1/billing/webhooks/stripe": {
+      "post": {
+        "operationId": "receiveStripeWebhook",
+        "summary": "接收 Stripe webhook(验签 + 防重放 + 幂等)",
+        "description": "凭证是 Stripe-Signature 头(HMAC-SHA256,时间戳参与签名)。验签失败统一 401,不区分原因;重复投递返回 2xx 的 duplicate/already-paid —— 幂等成功必须让 Stripe 停止重试。",
+        "tags": [
+          "billing"
+        ],
+        "security": [
+          {
+            "webhookSignature": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Stripe-Signature",
+            "in": "header",
+            "required": true,
+            "description": "t=<epoch秒>,v1=<HMAC-SHA256 hex>。签名盖住 \"<t>.<原始 body>\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StripeWebhookEventBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "事件已收到(含幂等重复)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookAck"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求体或参数不满足 schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "凭证缺失、无效或已过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-dshwar-status": "implemented"
+      }
     }
   },
   "components": {
@@ -2615,6 +2704,12 @@
         "in": "header",
         "name": "X-DSHWAR-Admin-Key",
         "description": "**按租户签发**,一把钥匙不得横跨租户。与运行时令牌分离 —— 供给系统只能写身份镜像,不能读用量与凭据配置"
+      },
+      "webhookSignature": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "Stripe-Signature",
+        "description": "webhook 专用(V0.6.0):凭证是请求体的 HMAC-SHA256 签名,时间戳参与签名以抗重放。无签名或签名无效统一 401,不区分原因"
       }
     },
     "schemas": {
@@ -4172,6 +4267,49 @@
           }
         },
         "additionalProperties": false
+      },
+      "WebhookAck": {
+        "type": "object",
+        "properties": {
+          "received": {
+            "type": "boolean",
+            "const": true
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "applied",
+              "duplicate",
+              "already-paid",
+              "ignored"
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "received",
+          "outcome",
+          "requestId"
+        ],
+        "additionalProperties": false
+      },
+      "StripeWebhookEventBody": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type"
+        ],
+        "additionalProperties": {}
       }
     }
   }

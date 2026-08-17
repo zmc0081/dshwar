@@ -21,6 +21,8 @@
   "include": ["test/**/*.ts"],
   "exclude": ["dist", "node_modules"],
   "references": [
+    { "path": "../billing-local" },
+    { "path": "../metering" },
     {
       "path": "./tsconfig.json"
     }

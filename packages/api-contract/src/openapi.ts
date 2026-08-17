@@ -123,7 +123,15 @@ function buildOperation(route: RouteDef): Record<string, unknown> {
     summary: route.summary,
     ...(route.description === undefined ? {} : { description: route.description }),
     tags: [...route.tags],
-    security: [{ [route.auth === 'admin' ? 'adminApiKey' : 'runtimeBearer']: [] }],
+    security: [
+      {
+        [route.auth === 'admin'
+          ? 'adminApiKey'
+          : route.auth === 'signature'
+            ? 'webhookSignature'
+            : 'runtimeBearer']: [],
+      },
+    ],
     ...(parameters.length === 0 ? {} : { parameters }),
     ...(route.body === undefined
       ? {}
@@ -210,6 +218,13 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
           name: 'X-DSHWAR-Admin-Key',
           description:
             '**按租户签发**,一把钥匙不得横跨租户。与运行时令牌分离 —— 供给系统只能写身份镜像,不能读用量与凭据配置',
+        },
+        webhookSignature: {
+          type: 'apiKey',
+          in: 'header',
+          name: 'Stripe-Signature',
+          description:
+            'webhook 专用(V0.6.0):凭证是请求体的 HMAC-SHA256 签名,时间戳参与签名以抗重放。无签名或签名无效统一 401,不区分原因',
         },
       },
       schemas: buildComponentSchemas(),

@@ -10,6 +10,7 @@
 import type { Context as CordisContext } from '@deepseek-ai/cordis'
 import { Hono } from 'hono'
 import type { AdminKeyResolver } from './admin-keys.ts'
+import { stripeWebhookFailClosed } from './billing/webhook.ts'
 import type { ScimTokenResolver } from './scim-keys.ts'
 import { notFound } from './errors.ts'
 import {
@@ -47,6 +48,14 @@ export interface GatewayOptions {
    * 不必装配整套 agent 插件。
    */
   readonly workbenchRoutes?: RouteRegistrar
+  /**
+   * 支付端点(V0.6.0):Stripe webhook。用 `registerStripeWebhook()` 造。
+   *
+   * **不配也挂路由**:契约宣告了 `/v1/billing/webhooks/stripe`,未配置时
+   * 该路径一律 401(fail closed)而不是 404 —— 404 会告诉探测者
+   * 「这个部署没接支付」,而配没配不该从外面看得出来。
+   */
+  readonly billingRoutes?: RouteRegistrar
   /**
    * SCIM 挂载(V0.3.0 Session 6)。挂在 `/scim/v2`,**不占用 `/v1/`** ——
    * SCIM 有自己的错误格式与版本节奏,混进 `/v1/` 会把两套契约绑在一起。
@@ -115,6 +124,8 @@ export function createGateway(options: GatewayOptions): Hono<GatewayEnv> {
   options.runtimeRoutes?.(app)
   options.adminRoutes?.(app)
   options.workbenchRoutes?.(app)
+  // 支付:配了走真实验签,没配走同路径的 fail closed(见 billingRoutes 的说明)
+  ;(options.billingRoutes ?? stripeWebhookFailClosed())(app)
 
   // 未匹配到任何路由 —— 用契约里的错误形状,而不是 Hono 的默认 404 文本。
   // 这里 throw 而非直接返回,是为了让它和其它错误走同一个 onError 出口。

@@ -58,6 +58,7 @@ import {
   Workspace,
   WorkspacePolicy,
 } from './workbench.ts'
+import { StripeWebhookEventBody, WebhookAck } from './billing.ts'
 
 /**
  * 全部命名 schema。**新增 schema 必须在此登记** —— 漏登记的会在生成时
@@ -112,6 +113,9 @@ export const SCHEMA_REGISTRY: Readonly<Record<string, z.ZodType>> = {
   WorkspacePolicy,
   GetWorkspacePolicyResponse,
   UpdateWorkspacePolicyRequest,
+  // 支付(V0.6.0)
+  WebhookAck,
+  StripeWebhookEventBody,
 }
 
 /** OpenAPI 里引用某个命名 schema 的 `$ref`。 */

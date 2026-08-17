@@ -29,5 +29,10 @@
   },
   "dependencies": {
     "@dshwar/billing": "workspace:*"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@dshwar/billing-local": "workspace:*",
+    "@dshwar/metering": "workspace:*"
   }
 }
