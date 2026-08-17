@@ -1,0 +1,38 @@
+{
+  "name": "@dshwar/llm-local",
+  "version": "0.6.5",
+  "description": "本地模型 provider(Ollama / llama.cpp 的 OpenAI 兼容端点)。复用上游适配器,只做治理层:注册、keyless、清单声明。",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@deepseek-ai/dsh-llm": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-llm-deepseek": "0.1.0-rc.6"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.10"
+  }
+}

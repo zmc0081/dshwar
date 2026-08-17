@@ -24,6 +24,7 @@
     { "path": "./packages/webhooks" },
     { "path": "./packages/attachment-tenant" },
     { "path": "./packages/audit" },
+    { "path": "./packages/llm-local" },
     { "path": "./packages/metering" },
     { "path": "./packages/billing" },
     { "path": "./packages/billing-local" },

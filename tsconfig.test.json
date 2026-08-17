@@ -24,6 +24,7 @@
     { "path": "./packages/console-contract/tsconfig.test.json" },
     { "path": "./packages/credentials-multiuser/tsconfig.test.json" },
     { "path": "./packages/fs-tenant/tsconfig.test.json" },
+    { "path": "./packages/llm-local/tsconfig.test.json" },
     { "path": "./packages/metering/tsconfig.test.json" },
     { "path": "./packages/model-router/tsconfig.test.json" },
     { "path": "./packages/policy/tsconfig.test.json" },
