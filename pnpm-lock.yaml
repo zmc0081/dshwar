@@ -239,6 +239,12 @@ importers:
       '@dshwar/auth-static':
         specifier: workspace:*
         version: link:../packages/auth-static
+      '@dshwar/billing':
+        specifier: workspace:*
+        version: link:../packages/billing
+      '@dshwar/billing-stripe':
+        specifier: workspace:*
+        version: link:../packages/billing-stripe
       '@dshwar/credentials-multiuser':
         specifier: workspace:*
         version: link:../packages/credentials-multiuser
@@ -375,6 +381,12 @@ importers:
       '@dshwar/metering':
         specifier: workspace:*
         version: link:../metering
+
+  packages/billing-stripe:
+    dependencies:
+      '@dshwar/billing':
+        specifier: workspace:*
+        version: link:../billing
 
   packages/console-contract:
     devDependencies:

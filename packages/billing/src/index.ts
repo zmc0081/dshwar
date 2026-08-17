@@ -27,3 +27,9 @@ export {
   type InvoiceStatus,
 } from './invoice.ts'
 export { Billing } from './service.ts'
+export {
+  PaymentNotAllowedError,
+  assertPayable,
+  type PaymentGateway,
+  type PaymentHandle,
+} from './gateway.ts'

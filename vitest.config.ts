@@ -28,6 +28,10 @@ export default defineConfig({
       ...(process.env['DEEPSEEK_API_KEY'] === undefined || process.env['DEEPSEEK_API_KEY'] === ''
         ? ['gateway/test/live-smoke.test.ts']
         : []),
+      // Stripe live smoke:同一套机制,key 是 STRIPE_TEST_KEY(只认 sk_test_ 前缀)。
+      ...(process.env['STRIPE_TEST_KEY'] === undefined || process.env['STRIPE_TEST_KEY'] === ''
+        ? ['gateway/test/stripe-live-smoke.test.ts']
+        : []),
     ],
   },
 })

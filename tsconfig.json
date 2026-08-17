@@ -27,6 +27,7 @@
     { "path": "./packages/metering" },
     { "path": "./packages/billing" },
     { "path": "./packages/billing-local" },
+    { "path": "./packages/billing-stripe" },
     { "path": "./packages/policy" },
     { "path": "./packages/model-router" },
     { "path": "./packages/supervisor" },

@@ -38,6 +38,15 @@ jobs:
   gate:
     name: 门禁 (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
+    # stripe-mock:billing-stripe 的集成测试打它(D5 —— 官方模拟器,无账号无 key)。
+    # 这不是「第二份门禁清单」:清单仍只有 check:all,这里只是给它备好环境。
+    # 测试侧探测 localhost:12111,探不到才 skip —— 而 service 起不来时
+    # GitHub Actions 会直接 fail 整个 job,所以「CI 里静默 skip」不存在。
+    services:
+      stripe-mock:
+        image: stripe/stripe-mock:latest
+        ports:
+          - 12111:12111
     strategy:
       fail-fast: false
       matrix:
