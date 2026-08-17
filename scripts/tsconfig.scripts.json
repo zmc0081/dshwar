@@ -38,6 +38,6 @@
     // 没有它 `JSON.parse` 之外的 import 断言路径会报错。
     "resolveJsonModule": true
   },
-  "include": ["**/*.mjs", "**/*.ts"],
+  "include": ["**/*.mjs", "**/*.mts", "**/*.ts"],
   "exclude": ["node_modules"]
 }
