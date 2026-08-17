@@ -51,10 +51,9 @@ export interface LocalLlmConfig {
   readonly models: readonly LocalModel[]
 }
 
-import { DEFAULT_LOCAL_BASE_URL } from './detect.ts'
+import { DEFAULT_LOCAL_BASE_URL, DEFAULT_LOCAL_PROVIDER } from './detect.ts'
 
-export { DEFAULT_LOCAL_BASE_URL, detectLocalEndpoint } from './detect.ts'
-export const DEFAULT_LOCAL_PROVIDER = 'local'
+export { DEFAULT_LOCAL_BASE_URL, DEFAULT_LOCAL_PROVIDER, detectLocalEndpoint } from './detect.ts'
 
 /**
  * keyless 占位符。它不打开任何东西 —— 泄漏它的损失是零,
@@ -167,3 +166,5 @@ export class LocalLlm {
 
 export { OfflineFallback } from './offline.ts'
 export type { OfflineDecision, OfflineFallbackOptions } from './offline.ts'
+export { summarizeLocalUsage } from './stats.ts'
+export type { LocalUsageRow } from './stats.ts'

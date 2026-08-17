@@ -1,3 +1,6 @@
+/** 默认 provider 名。计量与准入策略里用它区分本地与云端。 */
+export const DEFAULT_LOCAL_PROVIDER = 'local'
+
 /** Ollama 的 OpenAI 兼容端点默认地址。llama.cpp server 是 `http://127.0.0.1:8080/v1`。 */
 export const DEFAULT_LOCAL_BASE_URL = 'http://127.0.0.1:11434/v1'
 

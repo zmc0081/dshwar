@@ -30,9 +30,11 @@
   "dependencies": {
     "@deepseek-ai/cordis": "4.0.1",
     "@deepseek-ai/dsh-llm": "0.1.0-rc.6",
-    "@deepseek-ai/dsh-llm-deepseek": "0.1.0-rc.6"
+    "@deepseek-ai/dsh-llm-deepseek": "0.1.0-rc.6",
+    "@dshwar/metering": "workspace:*"
   },
   "devDependencies": {
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "@dshwar/billing-local": "workspace:*"
   }
 }
