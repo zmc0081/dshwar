@@ -89,6 +89,12 @@ export interface ModelGateLike {
         downgraded: boolean
       }
     | { kind: 'deny' }
+    /**
+     * V0.6.5:云端不可达且没有可用的本地模型 —— 503,信息可拿去行动
+     * (「配置本地模型可离线用」)。与 deny(403,策略问题)分开:
+     * 一个该找管理员改策略,一个该等网络或装 Ollama。
+     */
+    | { kind: 'unavailable'; message: string }
   >
 }
 
@@ -141,6 +147,10 @@ export function registerRuntimeRoutes(options: RuntimeRouteOptions) {
         })
         if (decision.kind === 'deny') {
           throw new ApiError('forbidden', 'model not allowed by tenant policy')
+        }
+        if (decision.kind === 'unavailable') {
+          // 503 而非 403:不是「不许」,是「现在做不到」—— 重试或配本地模型
+          throw new ApiError('unavailable', decision.message)
         }
         if (decision.downgraded) {
           c.header('x-dshwar-model-downgraded', `${decision.provider}/${decision.model}`)

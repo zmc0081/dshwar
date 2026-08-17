@@ -11,6 +11,7 @@
     { "path": "../packages/api-contract" },
     { "path": "../packages/auth" },
     { "path": "../packages/billing" },
+    { "path": "../packages/llm-local" },
     { "path": "../packages/billing-stripe" },
     { "path": "../packages/principal" },
     { "path": "../packages/supervisor" }

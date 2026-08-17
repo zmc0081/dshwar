@@ -27,6 +27,7 @@ import {
   safeRecord,
   type PriceTable,
 } from '@dshwar/metering'
+import { OfflineFallback } from '@dshwar/llm-local'
 import { InMemoryPolicyStore, ModelRouter, type ModelPolicy } from '@dshwar/model-router'
 import { InMemoryQuotaStore, PolicyService } from '@dshwar/policy'
 import { serve } from '@hono/node-server'
@@ -128,6 +129,20 @@ export interface ServerConfig {
       allowedModels: string[]
       fallbackModel: string | null
     }[]
+    /**
+     * 离线降级(V0.6.5)。配了它,云端连接层不可达时自动切到本地模型
+     * (可见降级:响应头 + 审计);本地也没起则 503 明确报错。
+     * 不配 = 不判定 —— 断网表现为上游调用超时,与 V0.6.0 之前一致。
+     */
+    readonly offline?: {
+      /** 云端可达性探测地址(如 `https://api.deepseek.com`)。 */
+      readonly cloudProbeUrl: string
+      /** 降级目标 —— 必须也在 llm-local 的注册清单里。 */
+      readonly localProvider: string
+      readonly localModel: string
+      /** 本地端点。默认 Ollama `http://127.0.0.1:11434/v1`。 */
+      readonly localBaseUrl?: string
+    }
   }
   /**
    * SCIM 供给(V0.3.0)。配了它,身份源就能把用户推进来。
@@ -224,6 +239,20 @@ export async function startServer(
     })) as ModelPolicy[],
   )
   const modelRouter = new ModelRouter({ policies: modelPolicies })
+  // ---- 离线降级(V0.6.5)----
+  const offlineFallback =
+    config.governance?.offline === undefined
+      ? undefined
+      : new OfflineFallback({
+          cloudProbeUrl: config.governance.offline.cloudProbeUrl,
+          localTarget: {
+            provider: config.governance.offline.localProvider,
+            model: config.governance.offline.localModel,
+          },
+          ...(config.governance.offline.localBaseUrl === undefined
+            ? {}
+            : { localBaseUrl: config.governance.offline.localBaseUrl }),
+        })
   const policyService = new PolicyService({
     quotas,
     metering,
@@ -401,6 +430,47 @@ export async function startServer(
               .catch(() => undefined)
           }
           const [provider, model] = decision.model.split('/') as [string, string]
+
+          // ---- 离线降级(V0.6.5):预算裁决之后,可达性裁决 ----
+          if (offlineFallback !== undefined) {
+            const offline = await offlineFallback.decide(provider)
+            if (offline.kind === 'offline-unavailable') {
+              return {
+                kind: 'unavailable',
+                message:
+                  'cloud provider unreachable and no local model endpoint is running; ' +
+                  'start Ollama (or configure llm-local) to use agents offline',
+              }
+            }
+            if (offline.kind === 'downgraded') {
+              // 降级目标也要过准入 —— 与 model-router 对 fallbackModel 的纪律一致
+              const admitted = await modelRouter.resolve({
+                tenantId: input.tenantId,
+                requested: `${offline.provider}/${offline.model}`,
+              })
+              if (admitted.kind === 'deny') return { kind: 'deny' }
+              // 可见降级:审计 + (routes 层)响应头。静默换模型是红线
+              void audits
+                .append({
+                  at: new Date().toISOString(),
+                  actor: 'offline-fallback',
+                  tenantId: input.tenantId,
+                  action: 'model.offline-downgraded',
+                  target: input.subjectId,
+                  before: { model: `${provider}/${model}` },
+                  after: { model: `${offline.provider}/${offline.model}` },
+                  requestId: '-',
+                })
+                .catch(() => undefined)
+              return {
+                kind: 'allow',
+                provider: offline.provider,
+                model: offline.model,
+                downgraded: true,
+              }
+            }
+          }
+
           return { kind: 'allow', provider, model, downgraded: decision.downgraded }
         },
       },

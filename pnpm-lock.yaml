@@ -166,6 +166,9 @@ importers:
       '@dshwar/fs-tenant':
         specifier: workspace:*
         version: link:../packages/fs-tenant
+      '@dshwar/llm-local':
+        specifier: workspace:*
+        version: link:../packages/llm-local
       '@dshwar/metering':
         specifier: workspace:*
         version: link:../packages/metering

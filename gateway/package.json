@@ -39,6 +39,7 @@
     "@dshwar/billing": "workspace:*",
     "@dshwar/billing-stripe": "workspace:*",
     "@dshwar/fs-tenant": "workspace:*",
+    "@dshwar/llm-local": "workspace:*",
     "@dshwar/metering": "workspace:*",
     "@dshwar/model-router": "workspace:*",
     "@dshwar/policy": "workspace:*",
