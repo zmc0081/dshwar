@@ -1,6 +1,6 @@
 {
   "name": "@dshwar/console-contract",
-  "version": "0.6.5",
+  "version": "0.8.0",
   "description": "控制平面契约:租户 / 成员 / 角色 / 配额 / 用量 / 审计查询的共享类型。与 /v1 运行时契约分开版本化。",
   "license": "MIT",
   "type": "module",

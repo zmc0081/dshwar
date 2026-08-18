@@ -1,6 +1,6 @@
 {
   "name": "@dshwar/sdk",
-  "version": "0.6.5",
+  "version": "0.8.0",
   "description": "DSHWAR API v1 的 TypeScript SDK。类型由 OpenAPI 生成,不手写。",
   "license": "MIT",
   "type": "module",

@@ -1,6 +1,6 @@
 {
   "name": "@dshwar/supervisor",
-  "version": "0.6.5",
+  "version": "0.8.0",
   "description": "进程隔离的进程池。一 principal 一进程 —— 越界成本从「一段提示词」升到「一个进程逃逸漏洞」。",
   "license": "MIT",
   "type": "module",

@@ -1,6 +1,6 @@
 {
   "name": "@dshwar/llm-local",
-  "version": "0.6.5",
+  "version": "0.8.0",
   "description": "本地模型 provider(Ollama / llama.cpp 的 OpenAI 兼容端点)。复用上游适配器,只做治理层:注册、keyless、清单声明。",
   "license": "MIT",
   "type": "module",

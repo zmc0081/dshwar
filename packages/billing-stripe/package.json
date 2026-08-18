@@ -1,6 +1,6 @@
 {
   "name": "@dshwar/billing-stripe",
-  "version": "0.6.5",
+  "version": "0.8.0",
   "description": "Stripe 支付适配器(开源,D4)。裸 fetch 打 Stripe API,零第三方依赖;测试打官方 stripe-mock。",
   "license": "MIT",
   "type": "module",

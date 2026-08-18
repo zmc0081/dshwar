@@ -1,6 +1,6 @@
 {
   "name": "@dshwar/audit",
-  "version": "0.6.5",
+  "version": "0.8.0",
   "description": "仅追加的操作审计。没有 update,没有 delete —— 改得掉的审计等于没有审计。",
   "license": "MIT",
   "type": "module",
