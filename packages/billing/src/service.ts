@@ -53,6 +53,19 @@ export abstract class Billing extends Service {
    *
    * 返回的发票是 `draft`:金额算好但未定稿,重新生成(void 后)可以反映
    * 迟到的用量记录;`issued` 之后金额冻结。
+   *
+   * ## ★ 卖方未配置时**必须拒绝出票**(实现方的义务)
+   *
+   * 抛 {@link SellerNotConfiguredError},**不得**返回一张卖方栏为空
+   * 或填着占位符的发票。
+   *
+   * ⚠️ 这条区别不是措辞:一张卖方栏空白的发票流进会计系统,会被当成
+   * **数据错误**处理 —— 它会进对账差异、进人工核查队列,而**不会**被
+   * 报成一个配置错误。等有人查到根因时,已经离配置文件很远了。
+   *
+   * **拒绝发生在我们这边;静默降级的后果发生在客户的会计那边。**
+   *
+   * @throws {SellerNotConfiguredError} 卖方未配置
    */
   abstract generateInvoice(tenantId: string, period: BillingPeriod): Promise<Invoice>
 

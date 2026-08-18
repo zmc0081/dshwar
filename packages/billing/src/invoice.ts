@@ -15,6 +15,8 @@
  * V0.6.0 先把最小闭环立住,扩状态是相容变更(enum 加值,消费方按未知值兜底)。
  */
 
+import type { InvoiceSeller } from './seller.ts'
+
 /** 发票状态。 */
 export type InvoiceStatus = 'draft' | 'issued' | 'paid' | 'void'
 
@@ -55,6 +57,13 @@ export interface Invoice {
   readonly tenantId: string
   readonly period: BillingPeriod
   readonly currency: string
+  /**
+   * 开票主体。**非可选** —— 一张没有卖方的发票不是发票,是一份数据错误。
+   *
+   * ⚠️ 与 `TenantBranding.legalEntityName`(页脚版权行)刻意不复用:
+   * 那个填错只是难看,这个填错是开错发票。见 `seller.ts` 的说明。
+   */
+  readonly seller: InvoiceSeller
   readonly status: InvoiceStatus
   readonly lines: readonly InvoiceLine[]
   /** 全部行金额之和。整数加法,无舍入。 */

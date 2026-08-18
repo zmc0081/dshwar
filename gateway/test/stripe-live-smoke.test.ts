@@ -23,6 +23,7 @@
  * (`docs/RELEASE-CHECKLIST.md`),不是自动化门禁。
  */
 import type { BillingPeriod, Invoice } from '@dshwar/billing'
+import { legalEntity } from '@dshwar/billing'
 import { StripeGateway } from '@dshwar/billing-stripe'
 import { describe, expect, it } from 'vitest'
 
@@ -45,6 +46,7 @@ describe.skipIf(KEY === undefined || KEY === '')('Stripe live smoke(真实 test 
       tenantId: 'smoke-test',
       period: PERIOD,
       currency: 'usd', // test key 的账户未必开通 CNY;USD 是全账户默认
+      seller: { legalName: legalEntity('DSHWAR Smoke Test'), taxId: null, address: null },
       status: 'issued',
       lines: [],
       totalMinor: 100, // $1.00 —— test 模式,不产生真实扣款

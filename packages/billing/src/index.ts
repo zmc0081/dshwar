@@ -26,6 +26,15 @@ export {
   type InvoiceLine,
   type InvoiceStatus,
 } from './invoice.ts'
+export {
+  assertSellerConfigured,
+  EmptyLegalEntityError,
+  legalEntity,
+  SellerNotConfiguredError,
+  type InvoiceSeller,
+  type LegalEntityName,
+} from './seller.ts'
+
 export { Billing } from './service.ts'
 export {
   PaymentNotAllowedError,

@@ -3,6 +3,7 @@ import {
   InvalidMinorUnitsError,
   InvoiceStateError,
   assertMinorUnits,
+  legalEntity,
   type BillingPeriod,
 } from '@dshwar/billing'
 import { InMemoryMeteringStore, type PriceTable, type RawUsage } from '@dshwar/metering'
@@ -16,6 +17,12 @@ const PRICES: PriceTable = {
     'deepseek/deepseek-chat': { inputPerMTokenMinor: 200, outputPerMTokenMinor: 800 },
     'deepseek/deepseek-reasoner': { inputPerMTokenMinor: 400, outputPerMTokenMinor: 1600 },
   },
+}
+
+const SELLER = {
+  legalName: legalEntity('Acme Inc.'),
+  taxId: '91310000MA1K35NX7Y',
+  address: '上海市…',
 }
 
 const JULY: BillingPeriod = { start: '2026-07-01T00:00:00Z', end: '2026-08-01T00:00:00Z' }
@@ -41,6 +48,7 @@ async function harness() {
   const invoices = new InMemoryInvoiceStore()
   let tick = 0
   await ctx.plugin(LocalBilling, {
+    seller: SELLER,
     metering,
     prices: PRICES,
     invoices,

@@ -34,7 +34,8 @@
     "@dshwar/metering": "workspace:*"
   },
   "devDependencies": {
-    "vitest": "^4.1.10",
-    "@dshwar/billing-local": "workspace:*"
+    "@dshwar/billing": "workspace:*",
+    "@dshwar/billing-local": "workspace:*",
+    "vitest": "^4.1.10"
   }
 }

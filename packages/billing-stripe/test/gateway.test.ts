@@ -7,7 +7,7 @@
  * 且断言「fetch 根本没被调」—— 拒绝晚了就不算拒绝。
  */
 import type { BillingPeriod, Invoice } from '@dshwar/billing'
-import { PaymentNotAllowedError } from '@dshwar/billing'
+import { legalEntity, PaymentNotAllowedError } from '@dshwar/billing'
 import { describe, expect, it, vi } from 'vitest'
 import { StripeGateway, StripeGatewayError } from '../src/index.ts'
 
@@ -19,6 +19,7 @@ function invoice(over: Partial<Invoice> = {}): Invoice {
     tenantId: 'acme',
     period: PERIOD,
     currency: 'CNY',
+    seller: { legalName: legalEntity('Acme Inc.'), taxId: null, address: null },
     status: 'issued',
     lines: [],
     totalMinor: 3000,

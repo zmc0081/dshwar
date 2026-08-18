@@ -3,7 +3,9 @@ import {
   Billing,
   InvoiceStateError,
   assertMinorUnits,
+  assertSellerConfigured,
   canTransition,
+  type InvoiceSeller,
   type BillingPeriod,
   type Invoice,
   type InvoiceLine,
@@ -18,7 +20,23 @@ import {
 import { randomUUID } from 'node:crypto'
 import type { InvoiceStore } from './store.ts'
 
+/**
+ * 卖方配置的位置,进错误信息。
+ *
+ * 错误信息里指出**去哪配**,是这条断言价值的一半 —— 另一半是拒绝本身。
+ * 只说「未配置卖方」而不说去哪配,排查的人还得先找一遍。
+ */
+const SELLER_CONFIG_PATH =
+  'gateway.config.json 的 governance.billing.seller,或程序化装配时 LocalBilling 的 options.seller'
+
 export interface LocalBillingOptions {
+  /**
+   * 开票主体。**必填** —— 见类注释「为什么卖方拦在装配期」。
+   *
+   * ⚠️ 类型上必填只挡得住**程序化装配**;配置文件驱动的那条路
+   * (JSON 反序列化)类型是被擦掉的,由构造函数的运行时断言兜住。
+   */
+  readonly seller: InvoiceSeller
   /** 用量来源。出账时按周期过滤其明细。 */
   readonly metering: MeteringStore
   /** 价格表。查不到价的模型计 0 —— 是「没配价」不是「免费」,见 metering 的说明。 */
@@ -42,16 +60,43 @@ export interface LocalBillingOptions {
  * **一行只 round 一次**。不复用 `aggregateDaily` 的行金额正是因为它按日
  * round:30 个已舍入日值相加,与整期一次 round,能差出几分钱 ——
  * 几分钱不多,但「发票对不上用量页」这件事本身就是客诉。
+ *
+ * ## ★ 为什么卖方拦在**装配期**,而不是等到出票
+ *
+ * 这一档(开源自建)的卖方**天然是自建者自己** —— `billing-stripe` 开源之后
+ * 他用的是自己的 Stripe 账号,钱进他的账户。所以「未配置」在这一档
+ * **不是一个待定的业务选择,是纯粹的配置遗漏**,与逻辑档 + 多用户身份
+ * 那条闸门同级(`assertSinglePrincipalCapable`)。
+ *
+ * **判据是「装了这个插件的人,意图是什么」**:`LocalBilling` 的全部方法都是
+ * 发票 —— 只想看用量不出账的人根本不装它(走 `@dshwar/metering` 的
+ * `summarizeLocalUsage` 就够)。⇒ 装了它 = 打算出票 = 卖方是必需配置。
+ *
+ * ⚠️ **时机差别很实际**:不拦在装配期的话,配置遗漏要到**第一次出票**才显形,
+ * 而第一次出票通常是**月底**。月底是发现配置错误最糟的时刻 ——
+ * 出账窗口有限,而能改配置的人可能正好不在。
+ *
+ * **出票时仍然再断言一次**,两条理由:契约要求所有实现方都拒绝出票
+ * (对 `billing-hosted` 等同样成立),以及类型可以被 `as` 掉而断言不会。
  */
 export class LocalBilling extends Billing {
   private readonly options: LocalBillingOptions
 
   constructor(ctx: Context, options: LocalBillingOptions) {
     super(ctx)
+    // ★ 卖方拦在**装配期**,不等到出票 —— 理由见类注释。
+    //   配置文件那条路类型是被擦掉的,所以这里必须是运行时断言。
+    assertSellerConfigured(options.seller, SELLER_CONFIG_PATH)
     this.options = options
   }
 
   override async generateInvoice(tenantId: string, period: BillingPeriod): Promise<Invoice> {
+    // ★ 拒绝出票,**不降级**。绝不能回落到占位卖方 —— 一张卖方栏是占位符的
+    //   发票会被会计系统当成**数据错误**处理,而不是被报成配置错误。
+    //   装配期已经断言过一次;这里是契约义务(所有实现方都要拒),
+    //   而且它挡得住「类型被 as 掉」与「options 被事后改写」两条路。
+    assertSellerConfigured(this.options.seller, SELLER_CONFIG_PATH)
+
     // 幂等:同一周期已有非 void 发票 → 返回既有的,不重复出账
     const existing = (await this.options.invoices.listByTenant(tenantId)).find(
       (i) => i.status !== 'void' && i.period.start === period.start && i.period.end === period.end,
@@ -68,6 +113,7 @@ export class LocalBilling extends Billing {
       tenantId,
       period,
       currency: this.options.prices.currency,
+      seller: this.options.seller,
       status: 'draft',
       lines: this.rateLines(records),
       totalMinor: 0,

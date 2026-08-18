@@ -7,10 +7,13 @@
  *    「本地算力不计费」不等于「本地用量隐身」
  */
 import { Context } from '@deepseek-ai/cordis'
+import { legalEntity } from '@dshwar/billing'
 import { InMemoryInvoiceStore, LocalBilling } from '@dshwar/billing-local'
 import { InMemoryMeteringStore, type PriceTable, type RawUsage } from '@dshwar/metering'
 import { describe, expect, it } from 'vitest'
 import { summarizeLocalUsage } from '../src/index.ts'
+
+const SELLER = { legalName: legalEntity('Acme Inc.'), taxId: null, address: null }
 
 function usage(over: Partial<RawUsage>): RawUsage {
   return {
@@ -94,7 +97,12 @@ describe('账单语义:本地算力不计费,但不隐身', () => {
     await metering.record(
       usage({ subjectId: 'bob', usage: { inputTokens: 5_000_000, outputTokens: 1_000_000 } }),
     )
-    await ctx.plugin(LocalBilling, { metering, prices, invoices: new InMemoryInvoiceStore() })
+    await ctx.plugin(LocalBilling, {
+      seller: SELLER,
+      metering,
+      prices,
+      invoices: new InMemoryInvoiceStore(),
+    })
 
     const invoice = await ctx.billing.generateInvoice('acme', {
       start: '2026-07-01T00:00:00Z',

@@ -22,6 +22,7 @@
  * (fetch spy,断言拒绝发生在网络之前)。两个文件测两件事,不要合并。
  */
 import type { BillingPeriod, Invoice } from '@dshwar/billing'
+import { legalEntity } from '@dshwar/billing'
 import { describe, expect, it } from 'vitest'
 import { StripeGateway } from '../src/index.ts'
 
@@ -50,6 +51,7 @@ function issuedInvoice(): Invoice {
     tenantId: 'acme',
     period: PERIOD,
     currency: 'CNY',
+    seller: { legalName: legalEntity('Acme Inc.'), taxId: null, address: null },
     status: 'issued',
     lines: [],
     totalMinor: 3000,

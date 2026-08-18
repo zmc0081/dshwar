@@ -469,6 +469,9 @@ importers:
         specifier: workspace:*
         version: link:../metering
     devDependencies:
+      '@dshwar/billing':
+        specifier: workspace:*
+        version: link:../billing
       '@dshwar/billing-local':
         specifier: workspace:*
         version: link:../billing-local

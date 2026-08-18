@@ -10,6 +10,7 @@
  */
 import { createHmac } from 'node:crypto'
 import { InMemoryMeteringStore, type PriceTable } from '@dshwar/metering'
+import { legalEntity } from '@dshwar/billing'
 import { InMemoryInvoiceStore, LocalBilling } from '@dshwar/billing-local'
 import { Context } from '@deepseek-ai/cordis'
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -19,6 +20,8 @@ import {
   processStripeEvent,
   verifyStripeSignature,
 } from '../src/index.ts'
+
+const SELLER = { legalName: legalEntity('Acme Inc.'), taxId: null, address: null }
 
 const SECRET = 'whsec_test_secret_1'
 const NOW = 1_780_000_000 // 固定的 epoch 秒;所有时间断言相对它
@@ -162,6 +165,7 @@ describe('防线 3 · 幂等', () => {
       at: '2026-07-03T10:00:00Z',
     })
     await ctx.plugin(LocalBilling, {
+      seller: SELLER,
       metering,
       prices: PRICES,
       invoices: new InMemoryInvoiceStore(),

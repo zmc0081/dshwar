@@ -9,6 +9,7 @@
 import { createHmac } from 'node:crypto'
 import { Context } from '@deepseek-ai/cordis'
 import { StaticAuth } from '@dshwar/auth-static'
+import { legalEntity } from '@dshwar/billing'
 import { InMemoryInvoiceStore, LocalBilling } from '@dshwar/billing-local'
 import { InMemoryProcessedEventStore } from '@dshwar/billing-stripe'
 import { InMemoryMeteringStore, type PriceTable } from '@dshwar/metering'
@@ -17,6 +18,8 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { createGateway } from '../src/app.ts'
 import { InMemoryAdminKeyResolver } from '../src/admin-keys.ts'
 import { registerStripeWebhook } from '../src/billing/webhook.ts'
+
+const SELLER = { legalName: legalEntity('Acme Inc.'), taxId: null, address: null }
 
 const SECRET = 'whsec_gw_test'
 const PRICES: PriceTable = {
@@ -48,6 +51,7 @@ async function harness() {
     at: '2026-07-03T10:00:00Z',
   })
   await ctx.plugin(LocalBilling, {
+    seller: SELLER,
     metering,
     prices: PRICES,
     invoices: new InMemoryInvoiceStore(),

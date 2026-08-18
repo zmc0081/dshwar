@@ -339,6 +339,36 @@ console.log('DSHWAR · 断言有效性探针\n')
   )
 }
 
+// 15. ★ 卖方未配置时**拒绝出票**,而不是静默降级(V0.6.5 收官)
+//
+//     这条断言的价值全在「拒绝」两个字上。一个「回落到占位卖方」的实现
+//     会让 `expect(invoice.seller).toBeTruthy()` 那种写法**照常通过** ——
+//     而它出去的是一张看起来正常、卖方栏是占位符的发票。
+//
+//     ⚠️ **故障会落在谁头上,决定了这条该怎么写**:拒绝出票 → 我们的运维
+//     当场看到「未配置卖方」;静默降级 → 客户的会计把它当成**数据错误**,
+//     进对账差异、进人工核查队列,而根因离配置文件已经很远了。
+//
+//     所以变异植入的正是那种「看起来更友好」的实现。
+{
+  const r = withMutation(
+    'packages/billing-local/src/service.ts',
+    (s) =>
+      s.replace(
+        '    assertSellerConfigured(this.options.seller, SELLER_CONFIG_PATH)',
+        "    const _fallback = this.options.seller ?? { legalName: '(未配置)', taxId: null, address: null }\n    void _fallback",
+      ),
+    ['packages/billing-local/test/seller.test.ts'],
+  )
+  expect(
+    '15 卖方未配置改成静默降级 → 拒绝出票的断言变红',
+    r.red,
+    r.unchanged
+      ? '锚点没匹配上'
+      : '★ 未配置卖方竟然出得了票 —— 那张发票会被客户的会计当成数据错误,而不是被报成配置错误',
+  )
+}
+
 // 9. console 契约与领域模型的一致性(V0.5.0)—— **类型层面的探针**
 //
 //    前八条都靠「跑 vitest 看红不红」。这一条不行:它断言的是**类型**
