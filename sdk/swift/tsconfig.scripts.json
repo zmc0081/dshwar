@@ -1,0 +1,20 @@
+// 生成链路的类型检查项目。
+//
+// 本包**没有 `src/**/*.ts`** —— 它的产物是 .kt / .swift,TypeScript 只出现在
+// 生成器里。所以这里不像别的包那样有一个 `tsconfig.json`:那会是一个
+// include 为空的项目,而 `tsc -b` 对空项目**安静地成功**(守卫「登记进解决
+// 方案的项目都真的检查了文件」正是为此而设)。
+//
+// 这两个脚本出错的后果是「生成的 SDK 与契约不符」—— 而那种不符不会在本包的
+// 测试里现形,只会在客户手里现形。
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "rewriteRelativeImportExtensions": false,
+    "rootDir": "."
+  },
+  "include": ["scripts/**/*.ts"],
+  "exclude": ["node_modules"]
+}

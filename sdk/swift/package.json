@@ -1,0 +1,24 @@
+{
+  "name": "@dshwar/sdk-swift",
+  "version": "0.8.0",
+  "private": false,
+  "description": "Swift SDK —— 由 OpenAPI 契约生成,不手写。",
+  "license": "MIT",
+  "type": "module",
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "scripts": {
+    "generate": "node --experimental-strip-types scripts/generate.ts"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@dshwar/api-contract": "workspace:*"
+  }
+}

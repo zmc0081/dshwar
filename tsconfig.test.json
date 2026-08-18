@@ -37,6 +37,8 @@
     { "path": "./packages/webhooks/tsconfig.test.json" },
     { "path": "./adapters/dsh-0.1.0/tsconfig.test.json" },
     { "path": "./gateway/tsconfig.test.json" },
-    { "path": "./sdk/typescript/tsconfig.test.json" }
+    { "path": "./sdk/typescript/tsconfig.test.json" },
+    { "path": "./sdk/kotlin/tsconfig.test.json" },
+    { "path": "./sdk/swift/tsconfig.test.json" }
   ]
 }

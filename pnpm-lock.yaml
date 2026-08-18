@@ -549,6 +549,18 @@ importers:
 
   packages/webhooks: {}
 
+  sdk/kotlin:
+    devDependencies:
+      '@dshwar/api-contract':
+        specifier: workspace:*
+        version: link:../../packages/api-contract
+
+  sdk/swift:
+    devDependencies:
+      '@dshwar/api-contract':
+        specifier: workspace:*
+        version: link:../../packages/api-contract
+
   sdk/typescript:
     devDependencies:
       '@dshwar/api-contract':

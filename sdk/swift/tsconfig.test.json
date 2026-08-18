@@ -1,0 +1,12 @@
+// 测试的类型检查项目。理由同 tsconfig.scripts.json:本包没有 src/*.ts。
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "rewriteRelativeImportExtensions": false,
+    "rootDir": "."
+  },
+  "include": ["test/**/*.ts", "scripts/**/*.ts"],
+  "exclude": ["node_modules"]
+}

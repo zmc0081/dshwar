@@ -369,6 +369,44 @@ console.log('DSHWAR · 断言有效性探针\n')
   )
 }
 
+// 16-18. ★ SDK 与契约的同步 —— **三种语言各一条,不合并**(V0.8.0)
+//
+//     「改了契约没重新生成 SDK」在 V0.5.0 期间被抓到过一次,那时只有 TS SDK。
+//     现在是三种语言,**同一个漏洞面各有一份**。
+//
+//     ⚠️ **为什么不写成一条循环三个目标的探针**:CLAUDE.md 的「一条探针一个
+//     目标」—— 多目标时红是「或」,一个目标的红会盖住另一个的空跑。
+//     Kotlin 的渲染器会不会红,与 TS 的渲染器会不会红**没有任何关系**。
+//
+//     变异改的是**契约本身**,不是渲染器 —— 那才是真实的失败形态:
+//     有人改了 Zod schema、跑了 api-contract 的 generate,却忘了跑 SDK 的。
+{
+  /** @type {[number, string, string][]} */
+  const sdks = [
+    [16, 'TS', 'sdk/typescript/test/generated.test.ts'],
+    [17, 'Kotlin', 'sdk/kotlin/test/generated.test.ts'],
+    [18, 'Swift', 'sdk/swift/test/generated.test.ts'],
+  ]
+  for (const [n, lang, target] of sdks) {
+    const r = withMutation(
+      'packages/api-contract/openapi.json',
+      (s) => {
+        const doc = JSON.parse(s)
+        doc.components.schemas.Session.properties.stowawayField = { type: 'string' }
+        return `${JSON.stringify(doc, null, 2)}\n`
+      },
+      [target],
+    )
+    expect(
+      `${n} 契约加字段而 ${lang} SDK 未重新生成 → 同步断言变红`,
+      r.red,
+      r.unchanged
+        ? '锚点没匹配上'
+        : `★ ${lang} SDK 与契约脱节竟然没被发现 —— 调用方会拿到过期类型,而它编译得过`,
+    )
+  }
+}
+
 // 9. console 契约与领域模型的一致性(V0.5.0)—— **类型层面的探针**
 //
 //    前八条都靠「跑 vitest 看红不红」。这一条不行:它断言的是**类型**

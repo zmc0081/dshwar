@@ -79,6 +79,10 @@ export type { AuthScheme, ImplementationStatus, RouteDef, RouteResponse } from '
 export { buildComponentSchemas, nameOf, SCHEMA_REGISTRY, schemaRef } from './registry.ts'
 
 export { buildOpenApiDocument } from './openapi.ts'
+
+// ---- 模型 IR(V0.8.0:三语言 SDK 生成的共同上游)----
+export { extractModels, objectSchemaNames, UnsupportedSchemaError } from './model-ir.ts'
+export type { IrField, IrModel, IrType } from './model-ir.ts'
 export type { OpenApiDocument } from './openapi.ts'
 
 export { breakingChanges, diffContract } from './freeze.ts'

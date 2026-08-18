@@ -17,6 +17,8 @@
   "references": [
     { "path": "./scripts/tsconfig.scripts.json" },
     { "path": "./packages/api-contract/tsconfig.scripts.json" },
-    { "path": "./sdk/typescript/tsconfig.scripts.json" }
+    { "path": "./sdk/typescript/tsconfig.scripts.json" },
+    { "path": "./sdk/kotlin/tsconfig.scripts.json" },
+    { "path": "./sdk/swift/tsconfig.scripts.json" }
   ]
 }

@@ -1159,7 +1159,15 @@ ${added.output.slice(0, 400)}`,
     {
       writeFileSync(
         tasksPath,
-        tasksSrc.replace('> 实现细节见 SESSION_TASKS_HISTORY.md', ''),
+        // ⚠️ `replaceAll` 而不是 `replace`(只替换第一处)。
+        //
+        // 原先是 `replace`,于是这条夹具的成败取决于「文件里**第一个**指针
+        // 属于哪个版本块」—— V0.8.0 立项时在前面插了一个开发中的块,
+        // 第一处就落到它身上,而开发中的块不受这条校验管,
+        // 于是 check:docs 照样绿、这条负向验证失败。
+        //
+        // **一条依赖文档顺序的夹具,就是一条会被无关改动打偏的夹具。**
+        tasksSrc.replaceAll('> 实现细节见 SESSION_TASKS_HISTORY.md', ''),
         'utf8',
       )
       const r = runDocs()
@@ -1181,6 +1189,69 @@ ${added.output.slice(0, 400)}`,
       )
     }
   })
+}
+
+// ---------------------------------------------------------------------
+// 29. 新增 SDK 必须有「与契约同步」的断言(V0.8.0)
+//
+//     加第四种语言时漏掉那份断言,不会让任何东西变红:新 SDK 的产物照样
+//     生成、照样提交,只是**永远不再校验**。这一组盯的正是那个静默的口子。
+// ---------------------------------------------------------------------
+{
+  // 29a 负向 —— 一个连 render.ts 都没有的 SDK
+  {
+    writeFixture(
+      'sdk/__guard_fixture__/package.json',
+      JSON.stringify({ name: '@dshwar/sdk-fixture', version: '0.8.0', private: true }, null, 2) +
+        '\n',
+    )
+    const r = runGuards()
+    expect(
+      '29a 新 SDK 没有 scripts/render.ts → 守卫变红',
+      !r.ok && /render\.ts|同步断言/.test(r.output),
+      !r.ok ? undefined : '★ 守卫放行了一个没有共用渲染路径的 SDK',
+    )
+  }
+
+  // 29b 负向 —— 有 render.ts,但测试**不比对产物**(最像「已经测了」的那种)
+  {
+    writeFixture(
+      'sdk/__guard_fixture__/scripts/render.ts',
+      'export function renderFixture(): string {\n  return "fixture"\n}\n',
+    )
+    writeFixture(
+      'sdk/__guard_fixture__/test/smoke.test.ts',
+      [
+        "import { describe, expect, it } from 'vitest'",
+        "import { renderFixture } from '../scripts/render.ts'",
+        '',
+        // 调了渲染函数,但没有与已提交的产物比对 —— 证明不了产物是最新的
+        "describe('假的', () => {",
+        "  it('渲染出点东西', () => {",
+        '    expect(renderFixture().length).toBeGreaterThan(0)',
+        '  })',
+        '})',
+        '',
+      ].join('\n'),
+    )
+    const r = runGuards()
+    expect(
+      '29b 有 render.ts 但测试不比对产物 → 守卫变红(它证明不了产物是最新的)',
+      !r.ok && /同步断言/.test(r.output),
+      !r.ok ? undefined : '★ 守卫把「调了渲染函数」当成了「校验了同步」—— 两者不是一回事',
+    )
+    rmSync(p('sdk/__guard_fixture__'), { recursive: true, force: true })
+  }
+
+  // 29c 正向对照 —— 三个真实 SDK 必须被放行
+  {
+    const r = runGuards()
+    expect(
+      '29c 正向对照:三个真实 SDK 被放行(规则不是「见到 sdk 目录就红」)',
+      r.ok,
+      r.ok ? undefined : '守卫把合规的 SDK 也拦了',
+    )
+  }
 }
 
 // ---------------------------------------------------------------------

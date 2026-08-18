@@ -10,7 +10,7 @@
  */
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { collectFiles, grepFiles, isPackageJson, isTs, repoPath } from './lib/scan.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -779,6 +779,77 @@ const CI_JOB_VERIFICATION = {
  * 判据 2 比判据 1 强得多 —— 一个 job 可以跑一条真命令却没人验证那条命令
  * 是否真的会红(`measure-process-cost --assert` 在 2026-08-17 之前正是如此)。
  */
+/**
+ * ★ **每个 SDK 都要有「与契约同步」的断言。**
+ *
+ * ## 它防的是「加了第四种语言,而没人盯着它」
+ *
+ * 「改了契约没重新生成 SDK」在 V0.5.0 期间被抓到过一次 —— 那时只有 TS SDK。
+ * 三种语言之后,**同一个漏洞面各有一份**;而加第四种语言时,漏掉那份断言
+ * 不会让任何东西变红:新 SDK 的产物照样生成、照样提交,只是永远不再校验。
+ *
+ * ## 判据:每个 `sdk/*` 都必须同时有
+ *
+ * 1. `scripts/render.ts` —— 纯渲染函数(生成脚本与测试**共用**的那条路径)
+ * 2. `test/**` 里引用 `render`,且断言「重渲染 == 已提交」
+ *
+ * ⚠️ 第 2 条查的是**测试引用了渲染函数**,而不是「有测试文件」——
+ * 一个不调渲染函数的测试证明不了产物是最新的。
+ *
+ * ⚠️ **第一版判据是错的,而且它报了假阳性。** 原先写成
+ * `/toBe\(render/`,而 TS SDK 把渲染结果先存进变量再比对
+ * (`.toBe(regenerated.trim())`)—— 于是守卫指着一个**完全合规**的 SDK
+ * 说它缺断言。
+ *
+ * 这是「一个报错的工具与一个不报错的工具同样需要被核对」的第二例
+ * (第一例是 `session-tasks.mjs check` 的三个假阳性)。
+ * 判据改成三条合取:**引用渲染函数 + 读已提交的产物 + 有等值断言** ——
+ * 三者缺一都不足以证明「产物是最新的」。
+ */
+function checkSdkHasSyncAssertion() {
+  /** @type {{file: string, line: number, text: string}[]} */
+  const out = []
+  const sdkRoot = p('sdk')
+  if (!existsSync(sdkRoot)) return out
+
+  for (const entry of readdirSync(sdkRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    const name = entry.name
+    const render = join(sdkRoot, name, 'scripts', 'render.ts')
+    if (!existsSync(render)) {
+      out.push({
+        file: `sdk/${name}`,
+        line: 0,
+        text: `sdk/${name} 没有 scripts/render.ts —— 生成脚本与校验测试就无法共用同一条渲染路径`,
+      })
+      continue
+    }
+
+    const testDir = join(sdkRoot, name, 'test')
+    const tests = existsSync(testDir) ? collectFiles(testDir, isTs) : []
+    const hasSync = tests.some((f) => {
+      const src = readFileSync(f, 'utf8')
+      // 三条合取,缺一都证明不了「产物是最新的」:
+      //   ① 引用了那条共用的渲染路径
+      //   ② 读了**已提交的产物**(只渲染不读,比的是渲染器与自己)
+      //   ③ 有等值断言(`toBe(` —— 注意 `toBeGreaterThan(` 不匹配)
+      return (
+        /from '\.\.\/scripts\/render\.ts'/.test(src) &&
+        /src['"\s,]+.{0,4}generated/.test(src) &&
+        /\.toBe\(/.test(src)
+      )
+    })
+    if (!hasSync) {
+      out.push({
+        file: `sdk/${name}/test`,
+        line: 0,
+        text: `sdk/${name} 缺「重渲染 == 已提交」的同步断言 —— 契约改了不重新生成不会有人发现`,
+      })
+    }
+  }
+  return out
+}
+
 function checkCiJobsAreSubstantive() {
   const ciPath = p('.github/workflows/ci.yml')
   /** @type {{file: string, line: number, text: string}[]} */
@@ -1079,6 +1150,17 @@ if (rootScripts.length === 0) {
   console.log('        这是同一个模式的第三次:测试文件不被检查 → CI 不跑断言探针 →')
   console.log('        守卫脚本自己不被检查。每次都是「检查机制自己的那一层没人管」。')
   for (const h of rootScripts) console.log(`        ${h.text}`)
+}
+
+const sdkSync = checkSdkHasSyncAssertion()
+if (sdkSync.length === 0) {
+  console.log('  通过  每个 SDK 都有「与契约同步」的断言(逐语言,不共用)')
+} else {
+  failed += 1
+  console.log(`  违规  有 SDK 缺同步断言  (${sdkSync.length} 处)`)
+  console.log('        「改了契约没重新生成」在 V0.5.0 抓到过一次,那时只有 TS SDK。')
+  console.log('        每多一种语言,漏洞面就多一份 —— 断言也必须多一份。')
+  for (const h of sdkSync) console.log(`        ${h.file}  ${h.text}`)
 }
 
 const ciHollow = checkCiJobsAreSubstantive()
