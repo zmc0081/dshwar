@@ -24,6 +24,8 @@ function app(options: {
   configuredMax?: number
   memberCount?: number
   omitCapacity?: boolean
+  /** 与 {@link omitCapacity} 成对 —— 注释里的不变式两边都要能被植入。 */
+  omitMemberCount?: boolean
 }) {
   const cap = () =>
     memberCapacityOf({
@@ -42,7 +44,9 @@ function app(options: {
       audit: { record: () => undefined } as never,
       credentialRefs: [],
       ...(options.omitCapacity === true ? {} : { capacity: cap }),
-      memberCount: async () => options.memberCount ?? 0,
+      ...(options.omitMemberCount === true
+        ? {}
+        : { memberCount: async () => options.memberCount ?? 0 }),
     }),
   })
 }
@@ -90,6 +94,35 @@ describe('GET /v1/admin/capacity', () => {
       headers: ADMIN,
     })
     // 501 而不是 404:404 会让第三方以为路径写错了,从而去猜别的路径
+    expect(res.status).toBe(501)
+  })
+
+  it('★ 没配 memberCount 时同样回落 501 —— 与 capacity 成对,不兜 0', async () => {
+    // ⚠️ **这条路径在 V0.8.0 之前没有任何测试走过。**
+    //
+    // 那时 memberCount 缺席会兜一个 `?? 0`,而 `AdminRouteOptions.memberCount`
+    // 的注释写着「与 capacity 成对 —— 缺一个这个端点就没意义」——
+    // **注释描述的不变式,代码只执行了一半**(与 events.ts 的 agent/error 同形)。
+    //
+    // 那个 0 不是显示错一个数:`console-web` 的 healthOf 按成员数选文案,
+    // 逻辑档下 0 落进安抚性的「只支持一位成员」,而真实的 >1 本该落进
+    // 「已超出上限,**必须**改用进程隔离」—— V0.4.7 整版要拦的数据事故。
+    // **哨兵把安全警告换成了产品限制。**
+    const res = await app({ level: 'process', omitMemberCount: true }).request(
+      '/v1/admin/capacity',
+      { headers: ADMIN },
+    )
+    expect(res.status, '缺 memberCount 竟然返回了 200 —— 那个成员数是兜出来的').toBe(501)
+  })
+
+  it('★ 两个都缺时也是 501(不是某一个恰好先判)', async () => {
+    // 单独判各自那条不足以证明「成对」:一个只判 capacity 的实现
+    // 也能通过 omitCapacity 那条。这条钉住的是**两者都缺**同样被拒。
+    const res = await app({
+      level: 'process',
+      omitCapacity: true,
+      omitMemberCount: true,
+    }).request('/v1/admin/capacity', { headers: ADMIN })
     expect(res.status).toBe(501)
   })
 

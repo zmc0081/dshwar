@@ -85,7 +85,18 @@ export interface AdminRouteOptions {
     readonly rssPerProcessMb: number
     readonly basis: string
   }
-  /** 数当前启用成员数。与 capacity 成对 —— 缺一个这个端点就没意义。 */
+  /**
+   * 数当前启用成员数。**与 {@link capacity} 成对 —— 缺一个这个端点就没意义。**
+   *
+   * ⚠️ 「成对」是**承诺,不是描述**:缺任一都 501,由
+   * `gateway/test/capacity-endpoint.test.ts` 的 `omitCapacity` / `omitMemberCount`
+   * 两条测试各盯一半。
+   *
+   * 这句话从 V0.5.0 起就写在这里,而**直到 V0.8.0 才真的被执行** ——
+   * 在那之前 memberCount 缺席会兜一个 `?? 0`,把隔离档超限的安全警告
+   * 换成安抚文案。与 `api-contract/src/events.ts` 的 `agent/error` 同形:
+   * **写进注释的每一条不变式都该有一条测试盯着。**
+   */
   readonly memberCount?: (tenantId: string) => Promise<number>
 }
 
@@ -339,14 +350,33 @@ export function registerAdminRoutes(options: AdminRouteOptions) {
      * 而排障时人看的是配置文件。要改请改配置重启。
      */
     app.get('/v1/admin/capacity', async (c) => {
-      if (options.capacity === undefined) throw notImplemented('V0.5.0')
+      // ★ **两个依赖成对判,缺任一都是 501。**
+      //
+      // 此前只判了 capacity,memberCount 走 `?? 0` 兜底 —— 于是
+      // {@link AdminRouteOptions.memberCount} 注释里那句「与 capacity 成对 ——
+      // 缺一个这个端点就没意义」**只被执行了一半**。
+      //
+      // ⚠️ 那个 0 不是「显示错一个数」这么轻:`console-web` 的 `healthOf`
+      // 按成员数选**文案**,而逻辑档下 0 会落到 `single-user` 那一支 ——
+      // 安抚性的「逻辑隔离档,只支持一位成员」。而真实的 >1 本该落到 `full`:
+      // 「已超出逻辑隔离档的上限。**必须**改用进程隔离」。
+      //
+      // 后者是 V0.4.7 整版要拦的那条数据事故(逻辑档多 principal 全落进
+      // `anonymous/anonymous/` 互相静默覆盖)。**哨兵把一条安全警告换成了
+      // 一句「这是产品限制」** —— 管理员看到后者不会去改隔离档。
+      //
+      // 501 而不是可空:线上 `memberCount` 是 required 的非空整数,
+      // 「没接线」的正确答案是「这个端点还没实现」,不是「成员数是 null」。
+      if (options.capacity === undefined || options.memberCount === undefined) {
+        throw notImplemented('V0.5.0')
+      }
       const admin = c.get('admin')!
       const requestId = c.get('requestId')
 
       const cap = options.capacity()
       // 成员数按**调用方的租户**数,不是全局 —— Admin Key 按租户签发,
       // 一把钥匙不得横跨租户(CLAUDE.md 第七节)。
-      const memberCount = (await options.memberCount?.(admin.tenantId)) ?? 0
+      const memberCount = await options.memberCount(admin.tenantId)
 
       return c.json({
         isolationLevel: cap.level,
