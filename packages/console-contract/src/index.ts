@@ -38,7 +38,7 @@ export { capabilitiesOf, CONSOLE_ROLES } from './roles.ts'
 // 🚨 应用图标(任务栏/程序坞/安装程序)**不可白牌** —— 它烧在安装包里,
 //    而「安装包永远中性,一个二进制服务所有租户」是既定决策。
 //    这是决策的直接后果,不是遗漏;别记成待办。详见 branding.ts 的模块注释。
-export { logoFor, NEUTRAL_BRANDING } from './branding.ts'
+export { logoFor, NEUTRAL_BRANDING, SUGGESTED_PRIMARY_COLOR } from './branding.ts'
 export type { AssetRef, TenantBranding } from './branding.ts'
 
 export type {

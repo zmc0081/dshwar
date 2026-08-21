@@ -177,7 +177,7 @@
 | `logoLight`         | `AssetRef \| null`  | ❌   | `null` → 回落文字 wordmark | 顶栏(浅色主题)· 关于页 · 登录页(见裁决 1)                                          |
 | `logoDark`          | `AssetRef \| null`  | ❌   | `null` → 回落 `logoLight`  | 同上(深色主题)                                                                     |
 | `favicon`           | `AssetRef \| null`  | ❌   | `null` → 回落项目默认      | 浏览器标签页 · 书签 · PWA 图标 · Tauri 任务栏(见下注)                              |
-| `primaryColor`      | `HexColor`          | ✅   | `"#2F6FEB"`                | 主按钮 · 链接 · 选中态 · 焦点环 · 图表主色 · 进度条                                |
+| `primaryColor`      | `HexColor \| null`  | ❌   | `null` → 中性外观(无彩)    | 主按钮 · 链接 · 选中态 · 焦点环 · 图表主色 · 进度条                                |
 | `accentColor`       | `HexColor \| null`  | ❌   | `null` → 由主色派生        | 次级强调 · 徽标 · 标签                                                             |
 | `supportUrl`        | `HttpsUrl \| null`  | ❌   | `null` → 隐藏入口          | 顶栏「获取帮助」· 错误页脚 · 容量页超限提示的下一步                                |
 | `supportEmail`      | `Email \| null`     | ❌   | `null` → 隐藏              | 同上(与 `supportUrl` 至少给一个,否则求助无门)                                      |
@@ -239,12 +239,49 @@ logo,标签页写着 DSHWAR。
    派生算法可以**保证每一档与其配对前景色的对比度达标**(WCAG AA ≥ 4.5:1),
    逐档手填做不到。
 
-⚠️ **写入时校验,不在渲染时兜底**:主色若与两种主题的背景都无法凑出达标
-对比度,**拒绝保存并说明原因**,而不是悄悄换一个近似色。
+⚠️ **写入时校验,不在渲染时兜底。** 校验的是**派生结果**的三项下限,
+不是种子色本身 —— 种子色好不好看不是判据,派生出来的角色令牌能不能读才是:
+
+| 令牌                    | 对比度下限 |
+| ----------------------- | ---------- |
+| `accent.text`           | ≥ 4.5      |
+| `accent.border`         | ≥ 3.0      |
+| `accent.surface` 上墨字 | ≥ 7.0      |
+
+不达标**拒绝保存并说明原因**,而不是悄悄换一个近似色。
 悄悄换的后果是客户以为自己设了品牌色,看到的却不是它 —— 而他会认为是 bug。
 
 > 这与本仓「安全默认优先 —— 认不出或不安全就拒,不降级服务」是同一条判据,
 > 只是这次「不安全」指的是**读不了**。
+
+⚠️ **实心填充落在中亮带 `L ∈ (0.55, 0.80)` 被重打光时,保存前必须回显
+原色与重打光结果并要求管理员确认。这是阻塞步骤,不是提示** ——
+一个可以划过去的提示等于没有:管理员会在「我设的颜色没生效」的工单里
+才第一次注意到它。
+
+#### ⚠️ V0.8.0 回写:`string` → `string | null`,默认值移除
+
+设计侧核对时发现**两处**(详见 [`design-system-sync.md`](design-system-sync.md)):
+
+1. **旧默认色 `#2F6FEB` 的 L = 0.573,落在中亮带内** ——
+   契约一边要求「带内要阻塞确认」,一边把一个带内的值设成默认,
+   于是那条确认流程**在默认路径上永远走不到**,等于半条死代码。
+2. **用默认值冒充「未配置」** —— 与 V0.6.0 的发票卖方字段同形:
+   两种状态必须在**类型层**可分,靠哨兵值区分是运行时约定,
+   而运行时约定会被下一个人当成普通值。
+
+⇒ `primaryColor` 改为 `string | null`(`null` = 未配置 = 中性无彩),
+默认值移除;另出一个**建议起点**常量 `SUGGESTED_PRIMARY_COLOR = '#1D5BD4'`
+(L 0.509,带外,策略 VERBATIM)。
+
+**建议 ≠ 默认**:默认值会让「未配置」不可见,而建议值只在管理员**主动采纳**
+时才成为配置 —— 采纳这个动作本身就把状态从「未配置」变成了「配置成这个值」。
+
+⚠️ **禁止 `?? '#2F6FEB'` 之类的兜底**:那会把类型层刚区分开的两种状态在
+第一个调用点重新合并 —— 类型上仍分开,行为上又合并,**且不会有任何东西变红**。
+判空**收敛在派生入口一处**(`derive(seed: string | null)`),不在调用点判。
+由 `check-guards.mjs` 的「primaryColor 的 null 不许被兜底掉」守着,
+负向验证 30a/30b + **正向对照 30c**。
 
 #### `signInHeadline` / `signInSubtext` —— 范围比名字看起来小得多
 
@@ -341,7 +378,8 @@ export interface TenantBranding {
   readonly logoDark: AssetRef | null
   readonly favicon: AssetRef | null
   /** `#RRGGBB`。写入时校验对比度,不达标**拒绝保存**。 */
-  readonly primaryColor: string
+  /** `null` = 未配置 → 中性外观(无彩)。**不要给它默认值。** */
+  readonly primaryColor: string | null
   readonly accentColor: string | null
   readonly supportUrl: string | null
   readonly supportEmail: string | null
@@ -354,6 +392,12 @@ export interface TenantBranding {
   /** 预留:租户专属登录入口的随机句柄。V0.7.x 之前恒为 null。 */
   readonly signInHandle: string | null
 }
+```
+
+⚠️ **建议起点是独立常量,不是默认值**:
+
+```ts
+export const SUGGESTED_PRIMARY_COLOR = '#1D5BD4' // L 0.509,带外 → VERBATIM
 ```
 
 ⚠️ **色阶不在契约里** —— 客户端由 `primaryColor` 确定性派生。

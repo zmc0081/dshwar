@@ -1255,6 +1255,85 @@ ${added.output.slice(0, 400)}`,
 }
 
 // ---------------------------------------------------------------------
+// 30. primaryColor 的 null 不许被兜底掉(V0.8.0)
+//
+//     V0.8.0 把 primaryColor 从 string(哨兵默认 #2F6FEB)改成 string | null。
+//     而一行 `?? '#2F6FEB'` 就能把这次改动**完全抵消** —— 类型上仍分开,
+//     行为上又合并,**且没有任何东西会变红**。这一组盯的正是那个口子。
+// ---------------------------------------------------------------------
+{
+  // 30a 负向 —— 用 ?? 兜一个颜色字面量
+  {
+    writeFixture(
+      'packages/__guard_fixture__/src/theme.ts',
+      [
+        '// 负向测试夹具:由 scripts/verify-guards.mjs 生成,跑完即删。',
+        "import type { TenantBranding } from '@dshwar/console-contract'",
+        'export function seedOf(branding: TenantBranding): string {',
+        // 这一行正是守卫要拦的:把「未配置」重新合并成「某个默认色」
+        "  return branding.primaryColor ?? '#2F6FEB'",
+        '}',
+        '',
+      ].join('\n'),
+    )
+    const r = runGuards()
+    expect(
+      '30a 调用点用 ?? 兜一个默认色 → 守卫变红(两种状态又被合并)',
+      !r.ok && /兜底|primaryColor/.test(r.output),
+      !r.ok ? undefined : '★ 守卫放行了兜底 —— 类型层刚分开的两种状态在调用点又合并了',
+    )
+  }
+
+  // 30b 负向 —— 换成 || 与建议色常量,同样要拦
+  //     少了这一条,一个只认 `?? '#'` 的实现也能通过 30a。
+  {
+    writeFixture(
+      'packages/__guard_fixture__/src/theme.ts',
+      [
+        '// 负向测试夹具。',
+        "import { SUGGESTED_PRIMARY_COLOR, type TenantBranding } from '@dshwar/console-contract'",
+        'export function seedOf(branding: TenantBranding): string {',
+        '  return branding.primaryColor || SUGGESTED_PRIMARY_COLOR',
+        '}',
+        '',
+      ].join('\n'),
+    )
+    const r = runGuards()
+    expect(
+      '30b 换成 || 与建议色常量 → 同样变红(判据不是只认一种写法)',
+      !r.ok && /兜底|primaryColor/.test(r.output),
+      !r.ok ? undefined : '守卫只认 `?? "#"` 一种写法 —— 换个写法就绕过去了',
+    )
+    rmSync(p('packages/__guard_fixture__'), { recursive: true, force: true })
+  }
+
+  // 30c 正向对照 —— **正确**的写法必须被放行
+  //     少了它,一个「见到 primaryColor 就红」的实现也能通过前两条,
+  //     而那样任何人都没法读这个字段。
+  {
+    writeFixture(
+      'packages/__guard_fixture__/src/theme.ts',
+      [
+        '// 负向测试夹具:这是**正确**的写法,必须放行。',
+        "import type { TenantBranding } from '@dshwar/console-contract'",
+        '// 判空收敛在派生入口一处,不在调用点兜底',
+        'export function seedOf(branding: TenantBranding): string | null {',
+        '  return branding.primaryColor',
+        '}',
+        '',
+      ].join('\n'),
+    )
+    const r = runGuards()
+    expect(
+      '30c 正向对照:原样传递 null 的写法被放行(规则不是「见到 primaryColor 就红」)',
+      r.ok,
+      r.ok ? undefined : '守卫把正确的写法也拦了 —— 那样没人能读这个字段',
+    )
+    rmSync(p('packages/__guard_fixture__'), { recursive: true, force: true })
+  }
+}
+
+// ---------------------------------------------------------------------
 // 收尾:确认清理干净,守卫回到基线
 // ---------------------------------------------------------------------
 {

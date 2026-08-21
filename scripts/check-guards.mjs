@@ -780,6 +780,52 @@ const CI_JOB_VERIFICATION = {
  * 是否真的会红(`measure-process-cost --assert` 在 2026-08-17 之前正是如此)。
  */
 /**
+ * ★ **`primaryColor` 的 null 不许被兜底掉。**
+ *
+ * ## 它防的是「类型层刚分开的两种状态,在第一个调用点又被合并」
+ *
+ * V0.8.0 把 `primaryColor` 从 `string`(哨兵默认 `#2F6FEB`)改成 `string | null`,
+ * 为的是让**「未配置」与「配置成某个值」在类型层可分**。
+ *
+ * 而一行 `branding.primaryColor ?? '#2F6FEB'` 就能把这次改动**完全抵消** ——
+ * 类型上仍然是分开的,行为上又合并了,**而且没有任何东西会变红**。
+ *
+ * ⚠️ 判空必须**收敛在派生入口一处**(`derive(seed: string | null)`),
+ * 不在调用点判。每个调用点各判一次的后果是:总有一个点判错,
+ * 而那个点的表现是「这个租户的界面莫名其妙有颜色」。
+ *
+ * ## 判据
+ *
+ * 出现 `primaryColor` 后接 `??` / `||` 再接一个颜色字面量或建议色常量,即违规。
+ * 行级豁免走 `dshwar-guard-allow:`(与其它守卫同款)。
+ */
+function checkPrimaryColorHasNoFallback() {
+  /** @type {{file: string, line: number, text: string}[]} */
+  const out = []
+  const roots = ['packages', 'gateway', 'console-web', 'sdk'].map((d) => p(d)).filter(existsSync)
+
+  for (const root of roots) {
+    for (const file of collectFiles(root, isTs)) {
+      const rel = repoPath(REPO, file)
+      const lines = readFileSync(file, 'utf8').split(/\r?\n/)
+      for (const [i, line] of lines.entries()) {
+        if (/^\s*(\/\/|\*|\/\*)/.test(line)) continue
+        if (
+          /dshwar-guard-allow:\s*\S/.test(line) ||
+          /dshwar-guard-allow:\s*\S/.test(lines[i - 1] ?? '')
+        )
+          continue
+        // primaryColor ?? '#xxx'  /  primaryColor || "#xxx"  /  primaryColor ?? SUGGESTED_...
+        if (/primaryColor\s*(\?\?|\|\|)\s*(['"`]#|SUGGESTED_PRIMARY_COLOR)/.test(line)) {
+          out.push({ file: rel, line: i + 1, text: `${rel}:${i + 1}  ${line.trim()}` })
+        }
+      }
+    }
+  }
+  return out
+}
+
+/**
  * ★ **每个 SDK 都要有「与契约同步」的断言。**
  *
  * ## 它防的是「加了第四种语言,而没人盯着它」
@@ -1150,6 +1196,19 @@ if (rootScripts.length === 0) {
   console.log('        这是同一个模式的第三次:测试文件不被检查 → CI 不跑断言探针 →')
   console.log('        守卫脚本自己不被检查。每次都是「检查机制自己的那一层没人管」。')
   for (const h of rootScripts) console.log(`        ${h.text}`)
+}
+
+const colorFallback = checkPrimaryColorHasNoFallback()
+if (colorFallback.length === 0) {
+  console.log('  通过  primaryColor 的 null 没有被兜底掉(未配置 ≠ 配置成某个值)')
+} else {
+  failed += 1
+  console.log(`  违规  primaryColor 被兜底成了默认色  (${colorFallback.length} 处)`)
+  console.log('        V0.8.0 把它改成 string | null,为的是让「未配置」与「配置成某个值」')
+  console.log('        在类型层可分。一行 `?? "#2F6FEB"` 就把这次改动完全抵消 ——')
+  console.log('        类型上仍分开,行为上又合并,而且没有任何东西会变红。')
+  console.log('        判空收敛在派生入口一处(derive(seed: string | null)),不在调用点判。')
+  for (const h of colorFallback) console.log(`        ${h.text}`)
 }
 
 const sdkSync = checkSdkHasSyncAssertion()
