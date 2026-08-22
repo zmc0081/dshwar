@@ -101,6 +101,68 @@ function expect(name, passed, detail) {
   if (detail) console.log(`        ${detail}`)
 }
 
+/**
+ * ★ **顺路批量,失败时逐条回落。**
+ *
+ * ## 约束:批量化不得让「哪一条红了」变模糊
+ *
+ * 一次跑多个夹具能省下 fork 的钱(check-guards 单次 321 ms,verify-guards
+ * 要 fork 它四十次),但天真的批量会把失败信息退化成「有 N 条失败」——
+ * **那省下的时间会在排查时全部还回去,而且更贵**。
+ *
+ * 所以这里的批量只覆盖**顺路**:全批通过时,一次运行、逐条报通过。
+ * 只要有**任何一条**不符合预期,就**整批丢弃结果,逐条单独重跑** ——
+ * 于是失败路径上的行为与批量化之前**逐字节相同**,包括每条的名字与说明。
+ *
+ * 代价刚好落在对的地方:**通过时省时间,失败时花时间**。
+ * 而失败是少数情况,排查才是贵的那一头。
+ *
+ * ⚠️ 为什么不能靠「从批量输出里按夹具路径归属」:`check-guards` 每条守卫
+ * 只打印前 10 条命中(`hits.slice(0, 10)`),第 11 条起只剩一句「另有 N 处」。
+ * 按路径归属在批量下随时会因为截断而认错人 —— 这个坑本轮已经踩过一次
+ * (判据写成 `includes(夹具路径)`,而输出被截断,于是把「守卫报了 14 处违规」
+ * 读成了「守卫没反应」)。
+ *
+ * @template T
+ * @param {T[]} items 一批检查项
+ * @param {{
+ *   write: (item: T) => void,
+ *   clean: () => void,
+ *   run: () => { ok: boolean, output: string },
+ *   verdict: (item: T, r: { ok: boolean, output: string }) => boolean,
+ *   explain: (item: T, r: { ok: boolean, output: string }) => string,
+ *   label: (item: T) => string,
+ * }} hooks write=写这一项的夹具 · clean=清掉全部夹具 · run=跑一次被测脚本 ·
+ *   verdict=这一项过没过 · explain=失败说明 · label=这一项的名字
+ */
+function batchedChecks(items, { write, clean, run, verdict, explain, label }) {
+  if (items.length === 0) {
+    // 空批与「全部通过」在输出上一模一样 —— 不许它悄悄发生。
+    throw new Error('batchedChecks 收到空批 —— 本组检查空跑了')
+  }
+
+  clean()
+  for (const item of items) write(item)
+  const batch = run()
+  clean()
+
+  const allPassed = items.every((item) => verdict(item, batch))
+  if (allPassed) {
+    for (const item of items) expect(label(item), true, undefined)
+    return
+  }
+
+  // 有失败 —— 整批结果作废,逐条单独重跑。**失败路径 = 批量化之前的行为。**
+  for (const item of items) {
+    clean()
+    write(item)
+    const solo = run()
+    clean()
+    const passed = verdict(item, solo)
+    expect(label(item), passed, passed ? undefined : explain(item, solo))
+  }
+}
+
 console.log('DSHWAR · 守卫的负向测试\n')
 
 // 先确认基线是干净的 —— 否则后面所有「失败」都说明不了问题
@@ -455,23 +517,26 @@ try {
       rmSync(p('gateway/__guard_fixture5__'), { recursive: true, force: true })
     }
 
-    for (const f of HARD_RULE_FIXTURES) {
-      dropFixtures()
-      writeFixture(
-        f.path,
-        `// 负向测试夹具:由 scripts/verify-guards.mjs 生成,跑完即删。\n${f.body}\n`,
-      )
-      const r = runGuards()
-      expect(
-        `31 [${f.guard}] 植入违规 → 守卫变红`,
-        !r.ok && r.output.includes(f.guard),
-        !r.ok && r.output.includes(f.guard)
-          ? undefined
-          : r.ok
-            ? `守卫放行了违规夹具 —— ${f.why}。这条守卫此前从未被验证过。`
-            : `守卫红了,但报的不是「${f.guard}」—— 命中的是别的守卫,本条其实没验到东西。`,
-      )
-    }
+    // 四条夹具各触发**不同**的守卫,于是一次运行就能逐条判 —— 见 batchedChecks。
+    batchedChecks(HARD_RULE_FIXTURES, {
+      clean: dropFixtures,
+      run: runGuards,
+      label: (f) => `31 [${f.guard}] 植入违规 → 守卫变红`,
+      write: (f) =>
+        writeFixture(
+          f.path,
+          `// 负向测试夹具:由 scripts/verify-guards.mjs 生成,跑完即删。\n${f.body}\n`,
+        ),
+      // ⚠️ 判据必须是「这条守卫**报了违规**」,不是「输出里出现过它的名字」——
+      //   check-guards **通过**时也会打印 `通过  <守卫名>`。孤立跑时 !r.ok 恰好
+      //   挡住了这个洞;一批四条时,别的夹具让 r.ok 为假,这条就靠一行「通过」
+      //   冒充了成功。**批量化把这个洞照了出来。**
+      verdict: (f, r) => !r.ok && r.output.includes(`违规  ${f.guard}`),
+      explain: (f, r) =>
+        r.ok
+          ? `守卫放行了违规夹具 —— ${f.why}。这条守卫此前从未被验证过。`
+          : `守卫红了,但报的不是「${f.guard}」—— 命中的是别的守卫,本条其实没验到东西。`,
+    })
     dropFixtures()
 
     // ★ 反向对照 —— **哪些合法写法一定不能被判成违规**
@@ -524,25 +589,24 @@ try {
       },
     ]
 
-    for (const c of LEGAL_WRITINGS) {
-      dropLegal()
-      writeFixture(
-        c.path,
-        `// 反向对照夹具:由 scripts/verify-guards.mjs 生成,跑完即删。\n${c.body}\n`,
-      )
-      const r = runGuards()
-      expect(
-        c.label,
-        r.ok,
-        r.ok
-          ? undefined
-          : `守卫冤枉了一个合法写法 —— ${c.why}\n${r.output
-              .split('\n')
-              .filter((l) => /违规|失败/.test(l))
-              .slice(0, 4)
-              .join('\n')}`,
-      )
-    }
+    // 四条合法夹具互不冲突,一次跑完;任何一条不符合预期就整批逐条重跑。
+    batchedChecks(LEGAL_WRITINGS, {
+      clean: dropLegal,
+      run: runGuards,
+      label: (c) => c.label,
+      write: (c) =>
+        writeFixture(
+          c.path,
+          `// 反向对照夹具:由 scripts/verify-guards.mjs 生成,跑完即删。\n${c.body}\n`,
+        ),
+      verdict: (_c, r) => r.ok,
+      explain: (c, r) =>
+        `守卫冤枉了一个合法写法 —— ${c.why}\n${r.output
+          .split('\n')
+          .filter((l) => /违规|失败/.test(l))
+          .slice(0, 4)
+          .join('\n')}`,
+    })
     dropLegal()
 
     // ★ 完备性:check-guards 报出的每一条守卫,要么在上表里,
@@ -737,8 +801,8 @@ try {
       const r = runOss()
       expect(
         c.label,
-        !r.ok && r.output.includes(c.kind),
-        !r.ok && r.output.includes(c.kind)
+        !r.ok && r.output.includes(`违规  ${c.kind}`),
+        !r.ok && r.output.includes(`违规  ${c.kind}`)
           ? undefined
           : r.ok
             ? `开源纯净度检查放行了「${c.kind}」—— 硬规则 9,同时是 SignPath 免费签名的资格条件`

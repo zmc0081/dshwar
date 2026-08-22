@@ -188,10 +188,25 @@ export function syncDist() {
  * 重新构建 llm-local 之后才红。若当时按第 1 种含义去「加强断言」,
  * 就会基于误判改掉一条本来是对的断言。
  *
- * ## 还原之后也要重建
+ * ## 还原之后也要重建 —— 但**推迟到退出时**做一次,不是每条探针做一次
  *
- * 否则变异过的 dist 会留给下一条探针和开发者的下一次 `pnpm test` ——
- * 一个用来保证纪律的脚本把仓库改坏了还不说,正是本模块存在的理由。
+ * 变异过的 dist 不能留给开发者的下一次 `pnpm test`:一个用来保证纪律的脚本
+ * 把仓库改坏了还不说,正是本模块存在的理由。这条约束没有放松。
+ *
+ * 但它**不必在每条探针之后立刻做**:下一条探针进来时先 `syncDist()`,
+ * 而那次构建看到的是**已经还原的**源文件,于是顺手把上一条的变异也建回去了。
+ * 也就是说,探针之间的那次重建除了给下一次构建做同样的事,没有别的作用。
+ *
+ * 实测这次重建 **0.67 s**,而探针有二十一条 —— 一次 `verify:assertions`
+ * 里有十四秒花在「重建一份下一秒又要重建的 dist」上。
+ *
+ * 改成:**还原后标记 dist 脏,退出时统一重建一次**。
+ * 注册在 `process.on('exit')` 上,所以正常结束、异常退出、`process.exit()`
+ * 三条路都会走到 —— 唯一走不到的是被 SIGKILL,而那种情况下什么清理都做不了。
+ *
+ * ⚠️ **不变的部分**:每条探针在跑测试**之前**仍然 `syncDist()`。
+ * 那一次是不能省的 —— 省掉它,跨包消费方读到的就是未变异的 dist,
+ * 「没变红」于是重新变成两种含义。
  *
  * @param {{path: string, mutate: (original: string) => string}[]} edits
  * @param {readonly string[]} targets Vitest 目标
@@ -204,9 +219,35 @@ export function runTestsUnderMutation(edits, targets) {
       return { ...runVitest(targets), built }
     })
   } finally {
-    // 还原之后重建:不把变异的 dist 留给任何人
-    syncDist()
+    // 源文件已还原,但 dist 里还是变异后的产物 —— 记账,退出时统一还。
+    markDistDirty()
   }
+}
+
+/** dist 里是否留着变异后的产物。见 {@link runTestsUnderMutation} 的说明。 */
+let distDirty = false
+
+function markDistDirty() {
+  if (!distDirty) {
+    distDirty = true
+    // 只注册一次。`exit` 处理器必须是同步的 —— syncDist 走 execFileSync,满足。
+    process.on('exit', () => {
+      if (distDirty) syncDist()
+    })
+  }
+}
+
+/**
+ * 立刻把推迟的重建做掉。
+ *
+ * 正常情况下不需要调它 —— 退出时会自动做。留这个口子是给
+ * 「同一个进程里跑完探针之后还要读 dist」的场景,今天没有这种调用方。
+ */
+export function flushDist() {
+  if (!distDirty) return true
+  const ok = syncDist()
+  distDirty = false
+  return ok
 }
 
 /**

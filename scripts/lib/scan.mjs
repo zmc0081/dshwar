@@ -85,6 +85,43 @@ export function repoPath(repoRoot, absolute) {
 const ALLOW_MARKER = /dshwar-guard-allow:\s*(\S.*)$/
 
 /**
+ * 单次进程内的文件内容缓存(按行切好)。
+ *
+ * ## 为什么值得
+ *
+ * `check-guards.mjs` 有二十多条守卫,其中八条各自 grep 一遍 `packages/` 与
+ * `gateway/` 的全部 TS 文件 —— 同一批文件被**读了八遍、切了八遍行**。
+ * 实测:一次 check-guards 约 506 ms,其中 node 启动 91 ms、`collectFiles`
+ * 只有 4 ms,剩下的四百多毫秒基本都在这里。
+ *
+ * 而 `verify-guards.mjs` 要 fork 它**四十次**(每条负向验证一次)——
+ * 于是这个缓存是唯一一处「改一行、四十处都快」的地方。
+ *
+ * ⚠️ **缓存只活在一次进程里,这一点是必须的。** 守卫脚本是一次性的:
+ * 起来、扫一遍、退出。而 `verify-guards` 每次植入夹具后都**重新 fork**,
+ * 拿到的是全新的进程和空缓存 —— 所以不存在「夹具写了但守卫读到旧内容」。
+ * 若哪天有人把守卫改成常驻或在同一进程里跑两遍,这个缓存**会**给出陈旧结果;
+ * 那时要么按 mtime 失效,要么显式清空。这句话留在这里就是为了那一天。
+ */
+const contentCache = new Map()
+
+/** @param {string} file @returns {string[] | undefined} 按行切好的内容;读不到返回 undefined */
+function linesOf(file) {
+  const cached = contentCache.get(file)
+  if (cached !== undefined) return cached === null ? undefined : cached
+  let content
+  try {
+    content = readFileSync(file, 'utf8')
+  } catch {
+    contentCache.set(file, null)
+    return undefined
+  }
+  const lines = content.split(/\r?\n/)
+  contentCache.set(file, lines)
+  return lines
+}
+
+/**
  * 在若干文件中查找匹配行。
  *
  * 带 `dshwar-guard-allow: <理由>` 标记的行会被跳过,理由为空则**不算豁免**。
@@ -98,13 +135,8 @@ export function grepFiles(files, pattern, repoRoot) {
   /** @type {{file: string, line: number, text: string}[]} */
   const hits = []
   for (const file of files) {
-    let content
-    try {
-      content = readFileSync(file, 'utf8')
-    } catch {
-      continue
-    }
-    const lines = content.split(/\r?\n/)
+    const lines = linesOf(file)
+    if (lines === undefined) continue
     for (let i = 0; i < lines.length; i += 1) {
       const text = lines[i] ?? ''
       pattern.lastIndex = 0
