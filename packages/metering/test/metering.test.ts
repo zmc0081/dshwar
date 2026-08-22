@@ -149,6 +149,42 @@ for (const [label, make] of [
       await store.record(raw({ step: 1 }))
       expect(await store.query({ tenantId: 'acme' })).toHaveLength(2)
     })
+
+    it('★ query 按 at 升序 —— 接口写死的保证,两个实现各验一次', async () => {
+      // ⚠️ 这条补于 V0.8.0。此前 `InMemoryMeteringStore.query` 只 filter 不 sort,
+      // 而接口注释从 V0.4.0 起就写着「按 at 升序」——
+      // **同一个接口的两个实现,在一条写死的保证上行为不同,且没人盯着。**
+      //
+      // 它一直没咬人只因为唯一的生产接线取 `at` 后同步 push(push 序恰好=时间序),
+      // 而三个消费方都与顺序无关。但注释在**邀请**下一个消费方直接取首尾条当边界。
+      //
+      // 「一个接口有几个实现,那条保证就要被验几次」—— 与 V0.8.0
+      // 「SDK 三种语言各验一次」是同一条纪律,所以这条放在参数化循环里。
+      const store = make()
+      // 故意乱序写入:中 → 早 → 晚。不排序时会原样吐回写入顺序。
+      await store.record(raw({ turn: 2, at: '2026-08-16T10:00:02.000Z' }))
+      await store.record(raw({ turn: 1, at: '2026-08-16T10:00:01.000Z' }))
+      await store.record(raw({ turn: 3, at: '2026-08-16T10:00:03.000Z' }))
+
+      const got = await store.query({ tenantId: 'acme' })
+      expect(got.map((r) => r.at)).toEqual([
+        '2026-08-16T10:00:01.000Z',
+        '2026-08-16T10:00:02.000Z',
+        '2026-08-16T10:00:03.000Z',
+      ])
+    })
+
+    it('★ 同 at 的多条保持写入顺序 —— 排序必须是稳定的', async () => {
+      // 注释承诺了两件事(升序 + 同 at 保持写入序),所以要验两条。
+      // 只验升序的话,一个用不稳定比较的实现照样能通过上一条。
+      const store = make()
+      await store.record(raw({ step: 0 }))
+      await store.record(raw({ step: 1 }))
+      await store.record(raw({ step: 2 }))
+
+      const got = await store.query({ tenantId: 'acme' })
+      expect(got.map((r) => r.step)).toEqual([0, 1, 2])
+    })
   })
 }
 

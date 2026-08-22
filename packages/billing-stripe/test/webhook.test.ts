@@ -17,8 +17,10 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import {
   InMemoryProcessedEventStore,
   WebhookVerificationError,
+  STRIPE_PROVIDER,
   processStripeEvent,
   verifyStripeSignature,
+  type PaymentApplied,
 } from '../src/index.ts'
 
 const SELLER = { legalName: legalEntity('Acme Inc.'), taxId: null, address: null }
@@ -294,5 +296,92 @@ describe('防线 3 · 幂等', () => {
         processed,
       }),
     ).rejects.toThrow()
+  })
+
+  // =========================================================================
+  // 落账通报(V0.8.0)—— 「钱到账、发票转 paid」必须留痕
+  //
+  // ⚠️ 这一组的**成对性**是要点,不是凑数:
+  // 只验「applied 记了一条」的话,一个「每次调用都记一条」的实现照样全绿 ——
+  // 而那个实现会在 Stripe 每次重试时都记一笔收款,审计里出现 N 笔钱。
+  // **重复记账的回归只有靠「另外三条路径保持为空」才看得见。**
+  // =========================================================================
+
+  it('★ applied 恰好通报一条,且载荷能对到银行流水与 Stripe 后台', async () => {
+    const applied: PaymentApplied[] = []
+    const outcome = await processStripeEvent({
+      event: paidEvent('evt_notify'),
+      billing: ctx.billing,
+      processed,
+      onApplied: (a) => applied.push(a),
+    })
+
+    expect(outcome).toBe('applied')
+    expect(applied, '账本改了却没有通报 —— 审计里将没有这笔收款').toHaveLength(1)
+
+    const invoice = await ctx.billing.getInvoice('acme', invoiceId)
+    expect(applied[0]).toEqual({
+      provider: STRIPE_PROVIDER,
+      tenantId: 'acme',
+      invoiceId,
+      // 支付意图 id:对得到银行流水
+      paymentRef: 'pi_hook_1',
+      // 事件 id:对得到 Stripe 后台的那一次投递。与 paymentRef 刻意分开两个字段。
+      eventId: 'evt_notify',
+      totalMinor: invoice!.totalMinor,
+      currency: invoice!.currency,
+    })
+  })
+
+  it('★ duplicate 不通报 —— 否则 Stripe 每重试一次审计就多一笔钱', async () => {
+    const applied: PaymentApplied[] = []
+    const input = {
+      billing: ctx.billing,
+      processed,
+      onApplied: (a: PaymentApplied) => applied.push(a),
+    }
+    expect(await processStripeEvent({ event: paidEvent('evt_d'), ...input })).toBe('applied')
+    expect(await processStripeEvent({ event: paidEvent('evt_d'), ...input })).toBe('duplicate')
+
+    expect(applied, '重复投递被多通报了一次 —— 审计里会出现两笔同样的收款').toHaveLength(1)
+  })
+
+  it('★ already-paid 不通报 —— 账本一个字节都没改', async () => {
+    // 模拟进程重启:dedup 记录丢了,同一笔支付换事件 id 重投,
+    // 由账本层(paid → paid 抛 InvoiceStateError)兜住。
+    const applied: PaymentApplied[] = []
+    const onApplied = (a: PaymentApplied) => applied.push(a)
+    expect(
+      await processStripeEvent({
+        event: paidEvent('evt_p1'),
+        billing: ctx.billing,
+        processed,
+        onApplied,
+      }),
+    ).toBe('applied')
+    expect(
+      await processStripeEvent({
+        event: paidEvent('evt_p2'),
+        billing: ctx.billing,
+        // 全新的 store = 重启后的空 dedup 表
+        processed: new InMemoryProcessedEventStore(),
+        onApplied,
+      }),
+    ).toBe('already-paid')
+
+    expect(applied, 'already-paid 也通报了 —— 那条路径下账本没有任何变化').toHaveLength(1)
+  })
+
+  it('★ ignored 不通报 —— 别的系统的收款,与本账本无关', async () => {
+    const applied: PaymentApplied[] = []
+    const outcome = await processStripeEvent({
+      event: { id: 'evt_other', type: 'invoice.created', raw: { id: 'evt_other' } },
+      billing: ctx.billing,
+      processed,
+      onApplied: (a) => applied.push(a),
+    })
+
+    expect(outcome).toBe('ignored')
+    expect(applied).toHaveLength(0)
   })
 })

@@ -56,6 +56,8 @@ import { guardMemberCapacity, memberCapacityOf } from './member-capacity.ts'
 import { assembleRuntime, type StaticAuthEntry } from './runtime.ts'
 import { registerRuntimeRoutes } from './sessions/routes.ts'
 import { GatewaySessionStore } from './sessions/store.ts'
+import { registerWorkspaceRoutes } from './workspaces/routes.ts'
+import { InMemoryWorkspaceStore } from './workspaces/store.ts'
 
 /** 配置文件的形状。字段少是刻意的 —— 每加一个都是一处要长期维护的兼容面。 */
 export interface ServerConfig {
@@ -392,9 +394,35 @@ export async function startServer(
     ...(supervisor === undefined ? {} : { supervisor, store }),
   })
 
+  // ---- 工作台装配(V0.5.5 的实现,V0.8.0 才接上线)----
+  //
+  // ⚠️ **这一行此前漏了整整三个版本。** `registerWorkspaceRoutes` 从 V0.5.5
+  // 起就实现完整、测试齐全,但它在全仓的调用点**只有 gateway/test/ 里的三处** ——
+  // 出厂网关从不装配它,于是七条 `/v1/workspaces*` 端点在真实部署里全部 404。
+  //
+  // 没有任何一道红,因为工作台测试**自己手工调 createGateway 把它挂上去**:
+  // 验的是「挂进去之后行为正确」,不是「出厂真的挂了它」。
+  // 盯住这一行的是 `test/server.test.ts` 的出厂装配守卫 —— 注释掉它必须变红。
+  const workspaces = new InMemoryWorkspaceStore()
+
   const app = createGateway({
     ctx: runtime.ctx,
     adminKeys,
+    // ⚠️ **刻意不传 `policies`。** 传了的话 `/v1/workspaces/{id}/policy` 会开始
+    // 接受 PATCH 并把策略存下来,而 `createPolicyEnforcer` 在运行时路径上
+    // **零调用点**(全仓只有 index.ts 的导出与它自己的单测)——
+    // 也就是说策略会被保存、被显示,却从不被查询。
+    //
+    // 那比 501 危险得多:管理员设下「这个工作区不许跑 shell」,界面确认保存,
+    // 而 agent 照跑不误。缺席让这两个端点回落 501,`routes.ts` 的原话是
+    // 「缺席**不等于放行** —— 它意味着这个部署没接策略层」,那是实话。
+    workbenchRoutes: registerWorkspaceRoutes({
+      store: workspaces,
+      // 与 assembleRuntime 的 fs-tenant 用**同一个根** —— 两个根的话
+      // agent 写进 A、控制台从 B 列,产物列表永远是空的而且不报错。
+      workspaceRoot: resolve(config.workspaceRoot),
+      audit: auditSink,
+    }),
     runtimeRoutes: registerRuntimeRoutes({
       store,
       createAgent: isolated.createAgent,

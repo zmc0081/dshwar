@@ -499,6 +499,23 @@ const WORKBENCH_ROUTES: readonly RouteDef[] = [
       ...COMMON_ERRORS,
     },
   },
+  // ---- 作业:契约在,实现不在(V0.8.0 更正)----
+  //
+  // ⚠️ **下面三条此前标着 `implemented`,而 `gateway/src/jobs/` 里只有 `store.ts`,
+  // 一个 handler 都没有。** 于是它们在出厂网关里返回 **404** ——
+  // 正是本文件开头(`workbench.ts`)点名要避免的那个 404:
+  // 「404 会让第三方以为路径写错、去猜别的路径」。
+  //
+  // 根因不在实现缺席,而在**标错 status 把它们从 501 名单里踢了出去**:
+  // `gateway/src/admin/routes.ts` 的兜底循环只覆盖 `status === 'planned'`。
+  // 对照组就在下面 —— `/v1/attachments` 同样没实现,但它标着 planned,
+  // 于是正确地返回 501。**501 机制是好的,坏的只有这三条的标注。**
+  //
+  // 盯住这类偏差的是 `gateway/test/shipped-assembly.test.ts`(出厂装配守卫):
+  // 它对着真实 `startServer()` 逐条请求,`implemented` 不得 404、`planned` 必须 501。
+  //
+  // ⚠️ `plannedVersion` 是**占位**,不是承诺:作业的执行语义(排队、取消、
+  // 与 session 的关系)还没定,定下来之前给不出真实档期。
   {
     method: 'get',
     path: '/v1/jobs',
@@ -506,10 +523,15 @@ const WORKBENCH_ROUTES: readonly RouteDef[] = [
     summary: '列出作业',
     tags: ['workbench', 'jobs'],
     auth: 'runtime',
-    status: 'implemented',
+    status: 'planned',
+    plannedVersion: '0.9.0',
     query: PaginationQuery,
     responses: {
       200: { description: '作业列表', schema: ListJobsResponse },
+      501: {
+        description: '契约已定,实现在计划中(见 x-dshwar-planned-version)',
+        schema: ErrorResponse,
+      },
       ...COMMON_ERRORS,
     },
   },
@@ -520,10 +542,15 @@ const WORKBENCH_ROUTES: readonly RouteDef[] = [
     summary: '提交一个作业',
     tags: ['workbench', 'jobs'],
     auth: 'runtime',
-    status: 'implemented',
+    status: 'planned',
+    plannedVersion: '0.9.0',
     body: CreateJobRequest,
     responses: {
       201: { description: '已入队', schema: GetJobResponse },
+      501: {
+        description: '契约已定,实现在计划中(见 x-dshwar-planned-version)',
+        schema: ErrorResponse,
+      },
       ...COMMON_ERRORS,
     },
   },
@@ -535,9 +562,14 @@ const WORKBENCH_ROUTES: readonly RouteDef[] = [
     summary: '取一个作业',
     tags: ['workbench', 'jobs'],
     auth: 'runtime',
-    status: 'implemented',
+    status: 'planned',
+    plannedVersion: '0.9.0',
     responses: {
       200: { description: '作业', schema: GetJobResponse },
+      501: {
+        description: '契约已定,实现在计划中(见 x-dshwar-planned-version)',
+        schema: ErrorResponse,
+      },
       ...COMMON_ERRORS,
     },
   },

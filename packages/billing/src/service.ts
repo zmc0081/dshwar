@@ -86,7 +86,16 @@ export abstract class Billing extends Service {
    *
    * ⚠️ 这是**记账**动作,不是收款动作 —— 调用方(支付适配器的 webhook、
    * 或人工核对对公转账的运营)负责确认钱真的到了。本方法不验证 paymentRef,
-   * 只把它原样落进发票与审计。
+   * 只把它原样落进**发票**。
+   *
+   * ⚠️ **审计由调用方在本方法成功返回后写,不在这里。** 本契约不从 ctx 读
+   * 任何东西(见类注释「租户由调用方显式传入」),因此拿不到 AuditSink ——
+   * 它做不到自己记审计。Stripe 那条通路的接缝是 `@dshwar/billing-stripe`
+   * 的 `ProcessInput.onApplied`,网关在 `registerStripeWebhook` 处接进 AuditSink。
+   *
+   * 这句话在 V0.8.0 之前写的是「原样落进发票**与审计**」,而三个 billing 包里
+   * 一次审计写入都没有 —— 已兑现的前半句掩护了未兑现的后半句。
+   * 改成现在这样之后,它描述的是**真实的分工**,而不是一个没人负责的承诺。
    *
    * @param paymentRef 外部凭证:支付网关的事件/意图 id,或线下转账的备注号
    * @throws {InvoiceStateError} 当前状态不允许(draft 不能直接 paid;paid 是终态)

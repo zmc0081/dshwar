@@ -2323,9 +2323,29 @@
                 }
               }
             }
+          },
+          "501": {
+            "description": "契约已定,实现在计划中(见 x-dshwar-planned-version)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "x-dshwar-planned-version": {
+                "description": "计划实现该端点的版本",
+                "schema": {
+                  "type": "string",
+                  "const": "0.9.0"
+                }
+              }
+            }
           }
         },
-        "x-dshwar-status": "implemented"
+        "x-dshwar-status": "planned",
+        "x-dshwar-planned-version": "0.9.0"
       },
       "post": {
         "operationId": "createJob",
@@ -2399,9 +2419,29 @@
                 }
               }
             }
+          },
+          "501": {
+            "description": "契约已定,实现在计划中(见 x-dshwar-planned-version)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "x-dshwar-planned-version": {
+                "description": "计划实现该端点的版本",
+                "schema": {
+                  "type": "string",
+                  "const": "0.9.0"
+                }
+              }
+            }
           }
         },
-        "x-dshwar-status": "implemented"
+        "x-dshwar-status": "planned",
+        "x-dshwar-planned-version": "0.9.0"
       }
     },
     "/v1/jobs/{id}": {
@@ -2477,9 +2517,29 @@
                 }
               }
             }
+          },
+          "501": {
+            "description": "契约已定,实现在计划中(见 x-dshwar-planned-version)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {
+              "x-dshwar-planned-version": {
+                "description": "计划实现该端点的版本",
+                "schema": {
+                  "type": "string",
+                  "const": "0.9.0"
+                }
+              }
+            }
           }
         },
-        "x-dshwar-status": "implemented"
+        "x-dshwar-status": "planned",
+        "x-dshwar-planned-version": "0.9.0"
       }
     },
     "/v1/attachments": {

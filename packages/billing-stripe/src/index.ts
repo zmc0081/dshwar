@@ -18,12 +18,18 @@
  * @module @dshwar/billing-stripe
  */
 
-export { StripeGateway, StripeGatewayError, type StripeGatewayOptions } from './gateway.ts'
+export {
+  STRIPE_PROVIDER,
+  StripeGateway,
+  StripeGatewayError,
+  type StripeGatewayOptions,
+} from './gateway.ts'
 export {
   InMemoryProcessedEventStore,
   WebhookVerificationError,
   processStripeEvent,
   verifyStripeSignature,
+  type PaymentApplied,
   type ProcessedEventStore,
   type ProcessInput,
   type StripeEvent,

@@ -2343,6 +2343,17 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description 契约已定,实现在计划中(见 x-dshwar-planned-version) */
+            501: {
+                headers: {
+                    /** @description 计划实现该端点的版本 */
+                    "x-dshwar-planned-version"?: "0.9.0";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     createJob: {
@@ -2403,6 +2414,17 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description 契约已定,实现在计划中(见 x-dshwar-planned-version) */
+            501: {
+                headers: {
+                    /** @description 计划实现该端点的版本 */
+                    "x-dshwar-planned-version"?: "0.9.0";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     getJob: {
@@ -2455,6 +2477,17 @@ export interface operations {
             /** @description 服务端内部错误 */
             500: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 契约已定,实现在计划中(见 x-dshwar-planned-version) */
+            501: {
+                headers: {
+                    /** @description 计划实现该端点的版本 */
+                    "x-dshwar-planned-version"?: "0.9.0";
                     [name: string]: unknown;
                 };
                 content: {

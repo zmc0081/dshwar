@@ -141,9 +141,16 @@ export class StripeGateway implements PaymentGateway {
   }
 }
 
+/**
+ * 本适配器的通道名。**唯一定义处** —— PaymentHandle.provider(@dshwar/billing
+ * 的 gateway.ts:13 写着「审计与对账用」)与 webhook 落账通报里的 provider
+ * 必须是同一个字面量,否则「对账」对的是两张不同的表。
+ */
+export const STRIPE_PROVIDER = 'stripe'
+
 function toHandle(intent: PaymentIntentLike): PaymentHandle {
   return {
-    provider: 'stripe',
+    provider: STRIPE_PROVIDER,
     externalId: intent.id,
     status: intent.status,
     ...(intent.client_secret == null ? {} : { clientSecret: intent.client_secret }),

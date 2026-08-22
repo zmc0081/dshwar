@@ -11,7 +11,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { StaticAuth } from '@dshwar/auth-static'
 import { legalEntity } from '@dshwar/billing'
 import { InMemoryInvoiceStore, LocalBilling } from '@dshwar/billing-local'
-import { InMemoryProcessedEventStore } from '@dshwar/billing-stripe'
+import { InMemoryProcessedEventStore, type PaymentApplied } from '@dshwar/billing-stripe'
 import { InMemoryMeteringStore, type PriceTable } from '@dshwar/metering'
 import { PrincipalService } from '@dshwar/principal'
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -64,6 +64,7 @@ async function harness() {
   await ctx.billing.issueInvoice('acme', invoice.id)
 
   const rejected: string[] = []
+  const applied: { payload: PaymentApplied; requestId: string }[] = []
   const app = createGateway({
     ctx,
     adminKeys: new InMemoryAdminKeyResolver([]),
@@ -72,9 +73,10 @@ async function harness() {
       billing: ctx.billing,
       processed: new InMemoryProcessedEventStore(),
       onRejected: (r) => rejected.push(r),
+      onApplied: (payload, requestId) => applied.push({ payload, requestId }),
     }),
   })
-  return { app, ctx, invoiceId: invoice.id, rejected }
+  return { app, ctx, invoiceId: invoice.id, rejected, applied }
 }
 
 function paidPayload(invoiceId: string, eventId = 'evt_gw_1'): string {
@@ -110,6 +112,15 @@ describe('webhook HTTP 全链路', () => {
     const invoice = await h.ctx.billing.getInvoice('acme', h.invoiceId)
     expect(invoice?.status).toBe('paid')
     expect(invoice?.paymentRef).toBe('pi_gw_1')
+
+    // ★ V0.8.0:落账必须留痕。此前成功路径直接返回 200,审计里一条都没有 ——
+    //   而「钱到账、发票转 paid」是合规审查一定会问时间线的那一类。
+    expect(h.applied, '发票转成了 paid,却没有任何落账通报进审计').toHaveLength(1)
+    expect(h.applied[0]!.payload.paymentRef).toBe('pi_gw_1')
+    expect(h.applied[0]!.payload.tenantId).toBe('acme')
+    // requestId 由网关层补进来(billing-stripe 不该知道有 HTTP),
+    // 它是审计记录与 Stripe 后台那一次投递之间唯一的桥。
+    expect(h.applied[0]!.requestId).toBe(ack.requestId)
   })
 
   it('无签名 → 401,响应体不含任何原因;拒绝进了通报回调', async () => {
@@ -159,6 +170,11 @@ describe('webhook HTTP 全链路', () => {
     const second = await send()
     expect(((await first.json()) as { outcome: string }).outcome).toBe('applied')
     expect(((await second.json()) as { outcome: string }).outcome).toBe('duplicate')
+
+    // ★ 与上面「applied 必须通报」成对:Stripe 是 at-least-once,
+    //   重试若也通报,审计里就会出现两笔同样的收款。
+    //   **只验「有通报」的话,一个每次都通报的实现照样全绿。**
+    expect(h.applied, '重复投递被多通报了一次 —— 审计里会多出一笔不存在的收款').toHaveLength(1)
   })
 
   it('★ 未配置支付的网关:同一路径 401 而不是 404 —— 配没配从外面看不出来', async () => {

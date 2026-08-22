@@ -23,7 +23,9 @@
  * 这是接 webhook 的第一大坑,所以类型上就只收 string。
  */
 import { createHmac, timingSafeEqual } from 'node:crypto'
-import { InvoiceStateError, type Billing } from '@dshwar/billing'
+import { InvoiceStateError, type Billing, type Invoice } from '@dshwar/billing'
+// 无循环依赖:gateway.ts 只 import @dshwar/billing,不 import 本文件。
+import { STRIPE_PROVIDER } from './gateway.ts'
 
 /**
  * 验签失败。`reason` 只面向服务端日志与审计 ——
@@ -151,10 +153,52 @@ export class InMemoryProcessedEventStore implements ProcessedEventStore {
 /** 处理结果。`duplicate` 与 `already-paid` 都是幂等成功 —— 对 Stripe 一律 2xx,停止重试。 */
 export type WebhookOutcome = 'applied' | 'duplicate' | 'already-paid' | 'ignored'
 
+/**
+ * 一次「钱到账,并且账本真的改了」的事实 —— {@link ProcessInput.onApplied} 的载荷。
+ *
+ * ## 为什么需要它:`markPaid` 记不了审计,而这件事必须留痕
+ *
+ * `@dshwar/billing` 的契约**不从 ctx 读任何东西**(见其类注释:租户由调用方
+ * 显式传入),所以 `markPaid` 拿不到 AuditSink —— 它做不到自己记审计。
+ * 而「钱到账、发票从 issued 变 paid」是全系统最该有时间线的状态变更:
+ * **任何合规审查都会问「这笔钱什么时候、凭什么记进来的」。**
+ *
+ * V0.8.0 之前这里一条记录都没有,`markPaid` 的注释却写着「落进发票与审计」——
+ * 已兑现的前半句掩护了未兑现的后半句。
+ *
+ * ## 字段按「审查会问什么」选,不按「手头有什么」选
+ *
+ * `paymentRef` 与 `eventId` 是两个东西:前者是支付意图(能对到银行流水),
+ * 后者是这一次投递(能对到 Stripe 后台的重试记录)。审计只留一个都对不上账。
+ */
+export interface PaymentApplied {
+  /** 通道名。与 PaymentHandle.provider 同一个字面量,否则对账对的是两张表。 */
+  readonly provider: string
+  readonly tenantId: string
+  readonly invoiceId: string
+  /** 外部凭证:支付网关的意图 id。 */
+  readonly paymentRef: string
+  /** 这一次 webhook 投递的事件 id —— 与 paymentRef 不是一回事。 */
+  readonly eventId: string
+  readonly totalMinor: number
+  readonly currency: string
+}
+
 export interface ProcessInput {
   readonly event: StripeEvent
   readonly billing: Billing
   readonly processed: ProcessedEventStore
+  /**
+   * 落账通报 —— 只在**账本真的改了**时触发,即 outcome 为 `applied` 的那一次。
+   *
+   * ⚠️ **`duplicate` / `already-paid` / `ignored` 一律不触发。**
+   * 这不是节省日志:那三条路径下账本一个字节都没改,而一条「已收款」的审计
+   * 记录意味着「这一刻账变了」。Stripe 会对同一笔支付重试多次,
+   * 若每次重试都记一条,审计里就出现 N 笔收款 —— **重复记账的回归从此看不见**。
+   *
+   * 所以对应的测试是成对的:applied 恰好一条,另外三条路径**保持为空**。
+   */
+  readonly onApplied?: (applied: PaymentApplied) => void
 }
 
 /**
@@ -189,8 +233,9 @@ export async function processStripeEvent(input: ProcessInput): Promise<WebhookOu
     return 'ignored'
   }
 
+  let invoice: Invoice
   try {
-    await billing.markPaid(tenantId, invoiceId, intentId)
+    invoice = await billing.markPaid(tenantId, invoiceId, intentId)
   } catch (cause) {
     if (cause instanceof InvoiceStateError) {
       // paid → paid:账已记过(比如上一次处理在 record() 前崩掉后的重试)。
@@ -198,6 +243,7 @@ export async function processStripeEvent(input: ProcessInput): Promise<WebhookOu
       const current = await billing.getInvoice(tenantId, invoiceId)
       if (current?.status === 'paid') {
         await processed.record(event.id)
+        // ★ 刻意不通报:账本一个字节都没改。见 onApplied 的说明。
         return 'already-paid'
       }
     }
@@ -206,5 +252,16 @@ export async function processStripeEvent(input: ProcessInput): Promise<WebhookOu
   }
 
   await processed.record(event.id)
+  // ★ 通报紧贴 `return 'applied'`,中间不许插任何分支 ——
+  //   这样「哪条路径会通报」读一眼就能确定,不必推理控制流。
+  input.onApplied?.({
+    provider: STRIPE_PROVIDER,
+    tenantId,
+    invoiceId,
+    paymentRef: intentId,
+    eventId: event.id,
+    totalMinor: invoice.totalMinor,
+    currency: invoice.currency,
+  })
   return 'applied'
 }

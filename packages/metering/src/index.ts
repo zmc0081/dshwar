@@ -93,7 +93,21 @@ export interface UsageFilter {
 
 export interface MeteringStore {
   record(raw: RawUsage): Promise<void>
-  /** 原始明细,按 at 升序。 */
+  /**
+   * 原始明细,按 `at` **字典序**升序;同 `at` 保持写入顺序。
+   *
+   * ⚠️ 「字典序」不是啰嗦 —— **两个实现只有用同一种比较才可能给出同一个顺序**。
+   * `KvMeteringStore` 靠 `Object.keys().sort()`(UTF-16 码元序)兑现,
+   * 换成 `localeCompare` 或 `Date.parse` 差值都会在混合精度的 ISO 串上分家:
+   * 字典序把 `…00.500Z` 排在 `…00Z` 之前(`.` = 0x2E < `Z` = 0x5A),`Date.parse` 排在之后。
+   *
+   * 这条前提已经被消费方**显式依赖**:`billing-local/src/service.ts:107`
+   * 用 `r.at >= start && r.at < end` 圈账期,注释就写着「ISO 8601 UTC 的字典序即时间序」。
+   *
+   * ⚠️ V0.8.0 之前 `InMemoryMeteringStore` **没有兑现这条**(返回 push 顺序),
+   * 而接口上这句话从 V0.4.0 起就写着 —— 同一个接口的两个实现,在一条写死的
+   * 保证上行为不同,且没有任何测试盯着。现在两个实现由**同一条参数化测试**验。
+   */
   query(filter: UsageFilter): Promise<RawUsage[]>
 }
 
@@ -106,10 +120,18 @@ export class InMemoryMeteringStore implements MeteringStore {
   }
 
   async query(filter: UsageFilter): Promise<RawUsage[]> {
-    return this.records.filter(
-      (r) =>
-        r.tenantId === filter.tenantId &&
-        (filter.subjectId === undefined || r.subjectId === filter.subjectId),
+    return (
+      this.records
+        .filter(
+          (r) =>
+            r.tenantId === filter.tenantId &&
+            (filter.subjectId === undefined || r.subjectId === filter.subjectId),
+        )
+        // 排的是 filter() 返回的**副本**,不是 this.records —— 原地排会永久毁掉
+        // 写入顺序,而那正是同一毫秒多条记录唯一的定序信息(Kv 侧靠 `#seq` 尾缀保住)。
+        // 比较用字典序,与 KvMeteringStore 的 `Object.keys().sort()` 字节级一致;
+        // 理由见 MeteringStore.query 的说明。ES2019 起 sort 稳定,同 at 保持写入序。
+        .sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
     )
   }
 }

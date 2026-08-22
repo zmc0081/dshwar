@@ -24,6 +24,7 @@ import {
   WebhookVerificationError,
   processStripeEvent,
   verifyStripeSignature,
+  type PaymentApplied,
   type ProcessedEventStore,
 } from '@dshwar/billing-stripe'
 import { unauthorized } from '../errors.ts'
@@ -38,6 +39,19 @@ export interface StripeWebhookOptions {
    * 伪造请求是安全信号,值得被看见。
    */
   readonly onRejected?: (reason: string) => void
+  /**
+   * 落账的通报(落审计用)。与 {@link StripeWebhookOptions.onRejected} 成对:
+   * 那条记「有人在伪造」,这条记「钱真的进来了、发票转成了 paid」。
+   *
+   * ⚠️ V0.8.0 之前**只有拒绝这一半**:成功路径直接返回 200,
+   * 审计里一条都没有 —— 而 `markPaid` 的注释写着「原样落进发票与审计」。
+   * 「钱到账、发票转 paid」在任何合规审查里都是必须有时间线的那一类。
+   *
+   * `requestId` 单独作第二个参数、不进载荷:它是 HTTP 层的东西,
+   * `@dshwar/billing-stripe` 不该知道有 HTTP —— 但审计必须能对到
+   * Stripe 后台看到的那一次投递,所以由本层补上。
+   */
+  readonly onApplied?: (applied: PaymentApplied, requestId: string) => void
 }
 
 /** 把 webhook 端点挂到 app 上。 */
@@ -61,12 +75,19 @@ export function registerStripeWebhook(options: StripeWebhookOptions) {
         throw cause
       }
 
+      const requestId = c.get('requestId')
+      // 收窄成局部变量,闭包里就不必再判一次可选性
+      const onApplied = options.onApplied
       const outcome = await processStripeEvent({
         event,
         billing: options.billing,
         processed: options.processed,
+        // exactOptionalPropertyTypes:可选字段不许显式赋 undefined,只能条件展开
+        ...(onApplied === undefined
+          ? {}
+          : { onApplied: (applied: PaymentApplied) => onApplied(applied, requestId) }),
       })
-      return c.json({ received: true, outcome, requestId: c.get('requestId') }, 200)
+      return c.json({ received: true, outcome, requestId }, 200)
     })
   }
 }

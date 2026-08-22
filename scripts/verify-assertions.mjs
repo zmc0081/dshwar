@@ -407,6 +407,99 @@ console.log('DSHWAR · 断言有效性探针\n')
   }
 }
 
+// 19. ★ 出厂装配 —— 把 `workbenchRoutes` 那一行从 server.ts 拿掉(V0.8.0)
+//
+//     这是**第四次同一转向**的负向验证(CLAUDE.md 第六节那张表的第 4 行):
+//     判据从「组件能不能装配」挪到「**出厂到底装了什么**」。
+//
+//     被拿掉的这一行,在仓库里**本来就是缺的,缺了三个版本**:
+//     `registerWorkspaceRoutes` 从 V0.5.5 起实现完整、单测齐全,而
+//     `server.ts` 从不传它 —— 七条 `/v1/workspaces*` 在真实部署里全部 404,
+//     **一道红都没有**。因为工作台测试自己手工调 `createGateway` 把它挂上去。
+//
+//     ⚠️ 所以这条探针问的不是「工作区端点能不能工作」(那有 workspaces.test.ts),
+//     而是「**出厂的 startServer 挂没挂它**」—— 只有 shipped-assembly.test.ts
+//     调出厂入口,所以它是唯一目标(CLAUDE.md「一条探针一个目标」)。
+//
+//     变异后 `workspaces` 与两个 import 变成未使用 → tsc 会失败。
+//     那是**预期内**的:目标测试 import 的是 `../src/server.ts`(同包相对路径),
+//     不经过 dist,所以构建失败不影响结论;而 `withMutation` 只在
+//     「构建失败**且**测试还绿」时才拒绝下结论。
+{
+  const r = withMutation(
+    'gateway/src/server.ts',
+    // anchor 到属性名 + 4 空格缩进的收尾,而不是整块字面量 ——
+    // 后者被 Prettier 重排注释宽度就会失配,而失配是静默的(报「锚点没匹配上」)。
+    (s) => s.replace(/ {4}workbenchRoutes: registerWorkspaceRoutes\(\{[\s\S]*?\n {4}\}\),\n/, ''),
+    ['gateway/test/shipped-assembly.test.ts'],
+  )
+  expect(
+    '19 出厂网关不再装配工作台路由 → 出厂装配断言变红',
+    r.red,
+    r.unchanged
+      ? '锚点没匹配上 —— server.ts 里的 workbenchRoutes 块换了形状,先修锚点'
+      : '★ 出厂网关少挂了七条已实现的端点,竟然没被发现 —— ' +
+          '这正是它守的那个 bug 本身,而它没守住',
+  )
+}
+
+// 20-21. ★ 落账审计的**两个方向** —— 漏报与多报(V0.8.0)
+//
+//     「钱到账、发票转 paid」在合规审查里必须有时间线。V0.8.0 之前
+//     `markPaid` 的注释写着「原样落进发票与审计」,而三个 billing 包里
+//     一次审计写入都没有 —— 已兑现的前半句掩护了未兑现的后半句。
+//
+//     ⚠️ **为什么要两条而不是一条**:一个「每次调用都通报」的实现能通过
+//     「applied 有通报」那条断言,却会在 Stripe 每次重试时都记一笔收款 ——
+//     审计里出现 N 笔不存在的钱。**多报比漏报更难发现**:漏报时审计是空的,
+//     一眼看得出;多报时审计满满当当,看起来比正确实现还认真。
+//
+//     两条各一个目标(同一个测试文件),不合并成「或」。
+{
+  // 20. 漏报:通报整块删掉
+  const r = withMutation(
+    'packages/billing-stripe/src/webhook.ts',
+    (s) => s.replace(/\n {2}input\.onApplied\?\.\(\{[\s\S]*?\n {2}\}\)/, ''),
+    ['packages/billing-stripe/test/webhook.test.ts'],
+  )
+  expect(
+    '20 落账不再通报 → 「applied 恰好一条」的断言变红',
+    r.red,
+    r.unchanged
+      ? '锚点没匹配上 —— processStripeEvent 里的通报块换了形状'
+      : '★ 钱到账、发票转 paid,审计里一条都没有,竟然没被发现',
+  )
+}
+
+{
+  // 21. 多报:在 already-paid 分支上也通报(账本一个字节都没改的那条路径)
+  const r = withMutation(
+    'packages/billing-stripe/src/webhook.ts',
+    (s) =>
+      s.replace(
+        "        // ★ 刻意不通报:账本一个字节都没改。见 onApplied 的说明。\n        return 'already-paid'",
+        '        input.onApplied?.({\n' +
+          '          provider: STRIPE_PROVIDER,\n' +
+          '          tenantId,\n' +
+          '          invoiceId,\n' +
+          '          paymentRef: intentId,\n' +
+          '          eventId: event.id,\n' +
+          '          totalMinor: current.totalMinor,\n' +
+          '          currency: current.currency,\n' +
+          '        })\n' +
+          "        return 'already-paid'",
+      ),
+    ['packages/billing-stripe/test/webhook.test.ts'],
+  )
+  expect(
+    '21 already-paid 也通报 → 「另外三条路径保持为空」的断言变红',
+    r.red,
+    r.unchanged
+      ? '锚点没匹配上 —— already-paid 分支换了形状'
+      : '★ 重复记账没被发现 —— 这正是「只验有通报、不验没多报」会漏掉的那一半',
+  )
+}
+
 // 9. console 契约与领域模型的一致性(V0.5.0)—— **类型层面的探针**
 //
 //    前八条都靠「跑 vitest 看红不红」。这一条不行:它断言的是**类型**
