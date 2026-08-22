@@ -59,6 +59,10 @@ export const CONTRACT_CHANGE_CODES = [
   // ---- V0.8.0 补的四条。补之前它们对应的 8 种破坏性变更全部漏报(实测)。----
   'schema.ref.changed',
   'schema.union.changed',
+  'schema.nullable.added',
+  'schema.nullable.removed',
+  'schema.variant.removed',
+  'schema.variant.added',
   'response.removed',
   'response.added',
   'operation.security.changed',
@@ -631,19 +635,78 @@ function diffUnion(
 
     const beforeSet = new Set((b ?? []).map((s) => JSON.stringify(s)))
     const afterSet = new Set((a ?? []).map((s) => JSON.stringify(s)))
-
     const removed = [...beforeSet].filter((s) => !afterSet.has(s))
     const added = [...afterSet].filter((s) => !beforeSet.has(s))
     if (removed.length === 0 && added.length === 0) continue
 
-    changes.push({
-      kind: 'breaking',
-      code: 'schema.union.changed',
-      where: `${where}.${key}`,
-      detail:
-        `${key} 分支集合变了(去掉 ${removed.length} 个,新增 ${added.length} 个)—— ` +
-        '请求侧与响应侧方向相反,按保守的一边判',
-    })
+    // ---- 可空:`[X, {type:'null'}]`。本仓 24 个 anyOf 节点全是这个形态。----
+    const isNull = (s: string) => s === JSON.stringify({ type: 'null' })
+    const wasNullable = [...beforeSet].some(isNull)
+    const isNullable = [...afterSet].some(isNull)
+    if (wasNullable !== isNullable) {
+      changes.push({
+        kind: 'breaking',
+        code: isNullable ? 'schema.nullable.added' : 'schema.nullable.removed',
+        where: `${where}.${key}`,
+        detail: isNullable
+          ? '字段变为可空 —— 无条件读它的客户端会拿到 null'
+          : '字段不再可空 —— 一直在传 null 的老客户端会被拒',
+      })
+    }
+
+    // ---- 判别式联合的分支:每个分支带 `properties.type.const`。----
+    const variantOf = (s: string): string | undefined => {
+      const parsed = JSON.parse(s) as { properties?: { type?: { const?: unknown } } }
+      const c = parsed.properties?.type?.const
+      return typeof c === 'string' ? c : undefined
+    }
+    const removedVariants = removed.map(variantOf).filter((v) => v !== undefined)
+    const addedVariants = added.map(variantOf).filter((v) => v !== undefined)
+
+    if (removedVariants.length > 0) {
+      changes.push({
+        kind: 'breaking',
+        code: 'schema.variant.removed',
+        where: `${where}.${key}`,
+        detail: `联合分支 ${removedVariants.join(' / ')} 被删除 —— 下游正在处理的分支变成死代码`,
+      })
+    }
+    if (addedVariants.length > 0) {
+      // ★ 相容,与 `enum.value.added` **同一条依据**:`common.ts` 的契约级要求
+      //   「本枚举会在 v1 内追加新值……同样的要求适用于 `StreamEventType`
+      //   与其余所有闭集枚举」。先立规定,再放宽检查。
+      //
+      // ⚠️ 这一条是修一处**误报**补的。本函数第一版把「分支集合变了」一律判破坏,
+      //   于是**给 SSE 加一个事件类型会被拦住** —— 而那正是 V0.4.6 放宽
+      //   `enum.value.added` 时点名要允许的演进。两条规则对同一件事给相反答案,
+      //   而 union 那条是后来的、错的那条。
+      changes.push({
+        kind: 'additive',
+        code: 'schema.variant.added',
+        where: `${where}.${key}`,
+        detail: `新增联合分支 ${addedVariants.join(' / ')} —— 客户端须有 default 分支(契约级要求)`,
+      })
+    }
+
+    // ---- 兜底:既不是可空包装、也不是判别式分支的变化。----
+    //
+    // ⚠️ **今天这一档是空的** —— 全文档 24 个 anyOf 全是可空包装,
+    // 唯一的 oneOf(StreamEvent)9 个分支全带 const,`allOf` 零处。
+    // 保留它是因为 Zod 换一次表示就可能产生新形态,而**一个悄悄什么都不判的
+    // 分支与没有这个函数等价**。所以这里判破坏而不是放行:
+    // 认不出来的结构变化必须停下来让人看一眼,不能默默放过。
+    const accounted = removedVariants.length + addedVariants.length
+    const unexplained = removed.length + added.length - accounted
+    if (unexplained > 0 && wasNullable === isNullable) {
+      changes.push({
+        kind: 'breaking',
+        code: 'schema.union.changed',
+        where: `${where}.${key}`,
+        detail:
+          `${key} 有 ${unexplained} 处分支变化既不是可空包装也不是判别式分支 —— ` +
+          '本比较器认不出它的语义,停下来让人判',
+      })
+    }
   }
 }
 

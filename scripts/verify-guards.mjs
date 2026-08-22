@@ -380,6 +380,151 @@ try {
   }
 
   // ---------------------------------------------------------------------
+  // 31. 硬规则守卫**逐条**负向验证 + 完备性(V0.8.0)
+  //
+  //     ⚠️ **在此之前,check-guards.mjs 的 22 条守卫里有 5 条一次都没被验过**,
+  //     其中三条守的是硬规则本身:
+  //
+  //       · 凭据取值泄漏   —— 硬规则 5(Admin API 永不返回凭据值)
+  //       · ANONYMOUS 越界 —— 硬规则 6(缺失 principal 一律 fail closed)
+  //       · 散落的 env 读取 —— PR 自查(配置只经 profile 注入)
+  //
+  //     它们共享同一套 `grepFiles` 机器。**机器坏了,11/12 会红;
+  //     单条守卫的正则写错了,没有任何东西会红** —— 而正则写错的表现
+  //     与「仓库很干净」在输出上一模一样。
+  //
+  //     这与契约冻结检查那次(8/9)是同一形状:**共享机制被验证,
+  //     逐项判据没有。** 所以照那次的办法做:一条守卫一条负向验证,
+  //     外加一条完备性断言把清单钉死。
+  //
+  //     ★「密码体系」此前属于**顺带覆盖**:11/12 本意是测豁免机制,夹具里
+  //     恰好植了个 `passwordHash`,于是连带证明了那条守卫会红。顺带覆盖最阴 ——
+  //     断言通过,但验的不是你以为的那个东西,而且**改一下 11/12 的夹具内容
+  //     就静默失效**。现在它在下表里有自己的一条,与 11/12 再无关系。
+  // ---------------------------------------------------------------------
+  {
+    /**
+     * 守卫名 → 一份能触发它的夹具。
+     *
+     * `path` 必须落在该守卫的扫描范围内 —— 范围写错的话夹具不会命中,
+     * 而那时本条会报「守卫没红」,看起来像守卫坏了,其实是夹具放错了地方。
+     * 所以每条都注明了范围依据。
+     *
+     * @type {{ guard: string, path: string, body: string, why: string }[]}
+     */
+    const HARD_RULE_FIXTURES = [
+      {
+        guard: '密码体系',
+        // 范围:packages/**/*.ts + gateway/**/*.ts
+        path: 'packages/__guard_fixture5__/src/password.ts',
+        body: "export const hash = 'bcrypt'",
+        why: '硬规则 4 —— DSHWAR 是身份消费者,不存密码',
+      },
+      {
+        guard: '凭据取值泄漏',
+        // 范围:gateway/**/*.ts —— 只有网关会碰 Admin API
+        path: 'gateway/__guard_fixture5__/leak.ts',
+        body:
+          'export const v = (store: { resolve(r: string): { value: string } }) =>\n' +
+          '  store.resolve("K").value',
+        why: '硬规则 5 —— Admin API 只暴露 describe 语义,永不返回值',
+      },
+      {
+        guard: '散落的 env 读取',
+        // 范围:packages/**/*.ts
+        path: 'packages/__guard_fixture5__/src/env.ts',
+        body: "export const k = process.env['DEEPSEEK_API_KEY']",
+        why: 'PR 自查 —— 配置只经 profile 注入,不散落 env 读取',
+      },
+      {
+        guard: 'ANONYMOUS 越界',
+        // 范围:packages/*/src/**,且排除 packages/principal/ ——
+        // 夹具落在 packages/__guard_fixture5__/src/ 下,两个条件都满足
+        path: 'packages/__guard_fixture5__/src/anon.ts',
+        body: "export const who = 'ANONYMOUS'",
+        why: '硬规则 6 —— 缺失 principal 一律 fail closed,不得回退到匿名',
+      },
+    ]
+
+    const dropFixtures = () => {
+      rmSync(p('packages/__guard_fixture5__'), { recursive: true, force: true })
+      rmSync(p('gateway/__guard_fixture5__'), { recursive: true, force: true })
+    }
+
+    for (const f of HARD_RULE_FIXTURES) {
+      dropFixtures()
+      writeFixture(
+        f.path,
+        `// 负向测试夹具:由 scripts/verify-guards.mjs 生成,跑完即删。\n${f.body}\n`,
+      )
+      const r = runGuards()
+      expect(
+        `31 [${f.guard}] 植入违规 → 守卫变红`,
+        !r.ok && r.output.includes(f.guard),
+        !r.ok && r.output.includes(f.guard)
+          ? undefined
+          : r.ok
+            ? `守卫放行了违规夹具 —— ${f.why}。这条守卫此前从未被验证过。`
+            : `守卫红了,但报的不是「${f.guard}」—— 命中的是别的守卫,本条其实没验到东西。`,
+      )
+    }
+    dropFixtures()
+
+    // ★ 完备性:check-guards 报出的每一条守卫,要么在上表里,
+    //   要么在下面这份「另有专门验证」的登记里。两边都没有 = 没人看着它。
+    //
+    //   清单从 check-guards 的**真实输出**现取,不抄一份 ——
+    //   抄一份就是给自己留「两边不同步而没人知道」的洞。
+    {
+      /**
+       * 已由别处专门验证的守卫。括号里是验它的那几条。
+       *
+       * ⚠️ 往这里加名字**不等于**验证过了 —— 加之前先确认那几条真的存在。
+       * 这份登记的作用是让完备性断言不重复计数,不是豁免通道。
+       */
+      const VERIFIED_ELSEWHERE = [
+        '深链上游内部实现', // 1a / 1b
+        '上游依赖未精确锁版', // 2
+        '上游锁定版本全仓一致', // 6:篡改 adapters 的版本假设 → 契约测试变红
+        '全部 TS 项目已登记进根 tsconfig references', // 7
+        '全部 test/ 已登记进根 tsconfig.test.json references', // 15
+        'test/ 下的 .mjs 夹具都被 checkJs 覆盖', // 20
+        '全部 scripts/ 已登记进根 tsconfig.scripts.json references', // 18
+        '有 TS 源码的包都有 tsconfig.json', // 19
+        'principal.current() 调用点全部已登记', // 16 / 16b
+        '前端三条约束(路由 / 浏览器专有 API / 统一 SDK 层)', // 24a–24e
+        '变异后跑测试走受控通路(拉起 vitest 的地方只有 lib/mutate.mjs)', // 25a / 25b
+        '守卫脚本不越权写仓库(check-* 只读,verify-* 走受控通路)', // 23a–23c
+        '登记进解决方案的项目都真的检查了文件', // 22a / 22b
+        '根 scripts/ 的 .mjs 被 checkJs 覆盖(门禁脚本自己也被检查)', // 17 / 18
+        'primaryColor 的 null 没有被兜底掉(未配置 ≠ 配置成某个值)', // 30a–30c
+        '每个 SDK 都有「与契约同步」的断言(逐语言,不共用)', // 29a–29c
+        'CI job 都做实质检查且已登记(没有恒绿的绿勾)', // 26a–26c
+        'CI 只调 check:all 一个入口,没有第二份门禁清单', // 21a–21c
+      ]
+
+      const accounted = new Set([...HARD_RULE_FIXTURES.map((f) => f.guard), ...VERIFIED_ELSEWHERE])
+      const listed = runGuards()
+      const names = [...listed.output.matchAll(/^\s*(?:通过|失败)\s{2}(.+?)\s*$/gm)].map(
+        (m) => m[1] ?? '',
+      )
+      const missing = names.filter((n) => !accounted.has(n))
+
+      expect(
+        '31 每条 check-guards 守卫都有负向验证(完备性)',
+        listed.ok && names.length > 0 && missing.length === 0,
+        listed.ok && names.length > 0 && missing.length === 0
+          ? undefined
+          : !listed.ok || names.length === 0
+            ? `取不到守卫清单(基线红了?输出格式变了?)—— 完备性无从判定,不许当成通过:\n${listed.output.slice(0, 300)}`
+            : `这些守卫没有任何负向验证:${missing.join(' / ')}\n` +
+              '⚠️ 加一条守卫就要加一条负向验证 —— 否则它会像硬规则 5/6 那两条一样,' +
+              '在门禁面板上占一个绿勾,而它的正则写错了没有任何东西会红。',
+      )
+    }
+  }
+
+  // ---------------------------------------------------------------------
   // 11/12. 豁免标记本身必须受控
   //
   //      行级豁免(dshwar-guard-allow)是必要的:执行一条规则的代码往往长得像
@@ -453,6 +598,105 @@ try {
     )
 
     rmSync(p('packages/__guard_fixture__'), { recursive: true, force: true })
+  }
+
+  // ---------------------------------------------------------------------
+  // 32. 开源纯净度的**另外三种违规**(V0.8.0)
+  //
+  //     13 号只验了「公开包**依赖**闭源组件」一种。这个脚本实际会产生
+  //     **四种**违规,另外三种一次都没被验过 —— 而它们守的是硬规则 9,
+  //     同时也是 SignPath Foundation 免费签名的资格条件。
+  //
+  //     ⚠️ 尤其「源码引用闭源组件」:它 grep 的是 `src/` 下的 TS 文件,
+  //     判据是一份**显式清单**(CLOSED_SOURCE)。清单少一项、正则转义写错,
+  //     表现都是「仓库很干净」—— 与真的干净在输出上一模一样。
+  // ---------------------------------------------------------------------
+  {
+    const runOss = () => run([p('scripts', 'check-oss-purity.mjs')])
+    const basePkg = (/** @type {Record<string, unknown>} */ over) =>
+      JSON.stringify(
+        { name: '@dshwar/__oss_fixture__', version: '0.8.0', files: ['dist'], ...over },
+        null,
+        2,
+      ) + '\n'
+
+    /** @type {{ label: string, kind: string, write: () => void }[]} */
+    const OSS_CASES = [
+      {
+        label: '32a 源码引用闭源组件 → 开源纯净度检查变红',
+        kind: '源码引用闭源组件',
+        write: () => {
+          writeFixture('packages/__oss_fixture__/package.json', basePkg({}))
+          writeFixture(
+            'packages/__oss_fixture__/src/index.ts',
+            "// 负向测试夹具\nimport type { X } from '@dshwar/billing-hosted'\nexport type Y = X\n",
+          )
+        },
+      },
+      {
+        label: '32b 缺 files 白名单 → 开源纯净度检查变红',
+        kind: '缺少 files 白名单',
+        write: () => {
+          // 没有 files 字段 = 整个目录进 tarball,含本地实验与临时文件
+          writeFixture(
+            'packages/__oss_fixture__/package.json',
+            JSON.stringify({ name: '@dshwar/__oss_fixture__', version: '0.8.0' }, null, 2) + '\n',
+          )
+        },
+      },
+      {
+        label: '32c files 含可疑条目 → 开源纯净度检查变红',
+        kind: 'files 含可疑条目',
+        write: () => {
+          writeFixture(
+            'packages/__oss_fixture__/package.json',
+            basePkg({ files: ['dist', '.env'] }),
+          )
+        },
+      },
+    ]
+
+    for (const c of OSS_CASES) {
+      rmSync(p('packages/__oss_fixture__'), { recursive: true, force: true })
+      c.write()
+      const r = runOss()
+      expect(
+        c.label,
+        !r.ok && r.output.includes(c.kind),
+        !r.ok && r.output.includes(c.kind)
+          ? undefined
+          : r.ok
+            ? `开源纯净度检查放行了「${c.kind}」—— 硬规则 9,同时是 SignPath 免费签名的资格条件`
+            : `红了,但报的不是「${c.kind}」—— 命中的是别的违规,本条其实没验到东西`,
+      )
+    }
+    rmSync(p('packages/__oss_fixture__'), { recursive: true, force: true })
+
+    // ★ 完备性:脚本报出的每一条通过项都要有人验。清单从**真实输出**现取。
+    {
+      /** 已被 13 号验证的那一维(公开包依赖闭源组件)。 */
+      const COVERED_BY_13 = '无公开包依赖私有包'
+      // 四种违规按脚本的三条汇总行归并:
+      //   源码引用闭源组件 → 「开源构建产物不含闭源组件」
+      //   缺少 files 白名单 / files 含可疑条目 → 「全部将发布包都有 files 白名单」
+      const covered = new Set([
+        COVERED_BY_13,
+        '开源构建产物不含闭源组件',
+        '全部将发布包都有 files 白名单',
+      ])
+      const listed = runOss()
+      const names = [...listed.output.matchAll(/^\s*通过\s{2}(.+?)\s*$/gm)].map((m) => m[1] ?? '')
+      const missing = names.filter((n) => !covered.has(n))
+      expect(
+        '32 开源纯净度的每一维都有负向验证(完备性)',
+        listed.ok && names.length > 0 && missing.length === 0,
+        listed.ok && names.length > 0 && missing.length === 0
+          ? undefined
+          : !listed.ok || names.length === 0
+            ? `取不到清单(基线红了?输出格式变了?)—— 不许当成通过:\n${listed.output.slice(0, 300)}`
+            : `这些维度没有负向验证:${missing.join(' / ')}`,
+      )
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -619,11 +863,67 @@ try {
       {
         code: 'schema.union.changed',
         blocked: true,
-        // 本仓用 anyOf 表达可空,所以「把可空字段改成不可空」走这条
+        // 兜底档:分支变了,但既不是可空包装的增减、也不是判别式分支。
+        // 本仓今天没有这种形态 —— 这条负向验证正是为了让那个空档不空转:
+        // 一个悄悄什么都不判的兜底分支,与没有这个函数等价。
+        mutate: (d) => {
+          d.components.schemas.ListSessionsResponse.properties.nextCursor.anyOf = [
+            { type: 'integer' },
+            { type: 'null' },
+          ]
+        },
+      },
+      {
+        code: 'schema.nullable.removed',
+        blocked: true,
+        // 本仓用 `[X, null]` 表达可空(24 个 anyOf 节点全是这个形态)。
+        // 去掉 null 分支 = 服务端不再接受 null,一直在传 null 的老客户端立刻被拒。
         mutate: (d) => {
           d.components.schemas.ListSessionsResponse.properties.nextCursor.anyOf = [
             { type: 'string' },
           ]
+        },
+      },
+      {
+        code: 'schema.nullable.added',
+        blocked: true,
+        // 反方向:响应字段变可空 —— 无条件读它的客户端会拿到 null。
+        // 与 property.required.relaxed 同一个故事,套同一套保守判法。
+        mutate: (d) => {
+          d.components.schemas.Session.properties.id = {
+            anyOf: [{ type: 'string' }, { type: 'null' }],
+          }
+        },
+      },
+      {
+        code: 'schema.variant.removed',
+        blocked: true,
+        // ⚠️ SSE 是这份契约的旗舰面,而 `StreamEvent` 只有 `oneOf` ——
+        //   没有 type / enum / properties / items。V0.8.0 之前 diffSchema
+        //   走完一遍**一个字段都比不到**:删掉一整个事件类型是 0 处破坏。
+        mutate: (d) => {
+          d.components.schemas.StreamEvent.oneOf = d.components.schemas.StreamEvent.oneOf.slice(
+            0,
+            -1,
+          )
+        },
+      },
+      {
+        code: 'schema.variant.added',
+        blocked: false,
+        // ★ 相容 —— 与 enum.value.added 同一条依据:common.ts 的契约级要求
+        //   「同样的要求适用于 StreamEventType 与其余所有闭集枚举」。
+        //
+        // ⚠️ 这条负向验证是修一处**误报**补的:diffUnion 第一版把分支集合的
+        //   任何变化一律判破坏,于是给 SSE 加事件类型会被拦住 —— 而那正是
+        //   V0.4.6 放宽 enum.value.added 时点名要允许的演进。
+        //   **两条规则对同一件事给了相反答案,而后来的那条是错的。**
+        mutate: (d) => {
+          d.components.schemas.StreamEvent.oneOf.push({
+            type: 'object',
+            properties: { type: { type: 'string', const: 'zz.probe' } },
+            required: ['type'],
+          })
         },
       },
       {
@@ -674,14 +974,17 @@ try {
         const mentions = r.output.includes(c.code)
         const reactedRight = c.blocked ? !r.ok : r.ok
 
+        const passed = reactedRight && mentions
         expect(
           `8/9 [${c.code}] ${c.blocked ? '被拦住' : '被放行'}`,
-          reactedRight && mentions,
-          !reactedRight
-            ? c.blocked
-              ? `契约冻结检查**放行**了这种破坏性变更 —— 门禁输出的「破坏性 0 处」对它不成立`
-              : `契约冻结检查**拦住**了相容变更 —— 规则变成了「禁止一切演进」:\n${r.output.slice(0, 300)}`
-            : `门禁反应对了,但输出里没有 ${c.code} —— 分类打到了别的码上,诊断会指错方向`,
+          passed,
+          passed
+            ? undefined
+            : !reactedRight
+              ? c.blocked
+                ? `契约冻结检查**放行**了这种破坏性变更 —— 门禁输出的「破坏性 0 处」对它不成立`
+                : `契约冻结检查**拦住**了相容变更 —— 规则变成了「禁止一切演进」:\n${r.output.slice(0, 300)}`
+              : `门禁反应对了,但输出里没有 ${c.code} —— 分类打到了别的码上,诊断会指错方向`,
         )
       }
 
@@ -715,13 +1018,15 @@ try {
       expect(
         '8/9 每个 ContractChangeCode 都有一条负向验证(完备性)',
         listed.ok && all.length > 0 && missing.length === 0 && stale.length === 0,
-        !listed.ok || all.length === 0
-          ? `取不到 CONTRACT_CHANGE_CODES —— 完备性无从判定,不许当成通过:\n${listed.output.slice(0, 300)}`
-          : missing.length > 0
-            ? `这些分类码没有负向验证:${missing.join(', ')}\n` +
-              '⚠️ 加一个分类码就要在 CONTRACT_CASES 里加一条 —— 否则它会像 V0.8.0 之前那样,' +
-              '悄悄成为「门禁声称覆盖、实际从未验证」的那一部分。'
-            : `CONTRACT_CASES 里有已经不存在的码:${stale.join(', ')}(码改名或删除了?)`,
+        listed.ok && all.length > 0 && missing.length === 0 && stale.length === 0
+          ? undefined
+          : !listed.ok || all.length === 0
+            ? `取不到 CONTRACT_CHANGE_CODES —— 完备性无从判定,不许当成通过:\n${listed.output.slice(0, 300)}`
+            : missing.length > 0
+              ? `这些分类码没有负向验证:${missing.join(', ')}\n` +
+                '⚠️ 加一个分类码就要在 CONTRACT_CASES 里加一条 —— 否则它会像 V0.8.0 之前那样,' +
+                '悄悄成为「门禁声称覆盖、实际从未验证」的那一部分。'
+              : `CONTRACT_CASES 里有已经不存在的码:${stale.join(', ')}(码改名或删除了?)`,
       )
     }
   }
@@ -1320,6 +1625,58 @@ try {
           : '★ 缺阈值时 CI 会安静退出 0 —— 门禁退化成恒绿而面板照样是绿勾',
       )
     }
+
+    // 27c/27d —— **两维各验一次**(V0.8.0)
+    //
+    // ⚠️ 27a 把两个阈值一起压到 0,于是冷启动与内存**同时**超标 ——
+    // 红是「或」。把 `coldStartMs > limit.coldStartMs` 单独改坏,27a 照样通过。
+    //
+    // 这与「一条探针一个目标」是同一件事,只是发生在门禁那一侧:
+    // **一次同时触发多维的负向验证,证明不了任何单独一维在工作。**
+    //
+    // 所以下面两条各压一维、把另一维放到不可能超的高度,
+    // 并且**断言另一维确实没出现在失败清单里** —— 那句「没出现」才是
+    // 「这一维是被单独验的」的证据。
+    /** @type {{ label: string, tight: 'coldStartMs' | 'rssMb', expect: string, absent: string }[]} */
+    const DIMENSIONS = [
+      {
+        label: '27c 只压冷启动阈值 → 只有冷启动那一维报超标',
+        tight: 'coldStartMs',
+        expect: '冷启动中位数',
+        absent: '常驻内存中位数',
+      },
+      {
+        label: '27d 只压内存阈值 → 只有内存那一维报超标',
+        tight: 'rssMb',
+        expect: '常驻内存中位数',
+        absent: '冷启动中位数',
+      },
+    ]
+    for (const dim of DIMENSIONS) {
+      const relaxed = dim.tight === 'coldStartMs' ? 'rssMb: 9_999_999' : 'coldStartMs: 9_999_999'
+      const tightened = `${dim.tight}: 0`
+      const pair =
+        dim.tight === 'coldStartMs' ? `${tightened}, ${relaxed}` : `${relaxed}, ${tightened}`
+      writeFileSync(
+        costPath,
+        costSrc
+          .replace(/linux: \{ coldStartMs: \d+, rssMb: \d+ \}/, `linux: { ${pair} }`)
+          .replace(/win32: \{ coldStartMs: \d+, rssMb: \d+ \}/, `win32: { ${pair} }`),
+        'utf8',
+      )
+      const r = runCost([])
+      expect(
+        dim.label,
+        !r.ok && r.output.includes(dim.expect) && !r.output.includes(dim.absent),
+        !r.ok && r.output.includes(dim.expect) && !r.output.includes(dim.absent)
+          ? undefined
+          : r.ok
+            ? `阈值压到 0 竟然没超标 —— ${dim.tight} 那一维的比较没在判定任何东西`
+            : !r.output.includes(dim.expect)
+              ? `红了,但失败清单里没有「${dim.expect}」—— 红的是别的原因`
+              : `失败清单里同时出现了「${dim.absent}」—— 另一维也被压了,这条又变成「或」了`,
+      )
+    }
   })
 }
 
@@ -1369,6 +1726,42 @@ try {
         '28b 已压缩的版本块丢了归档指针 → check:docs 变红',
         !r.ok && /指向归档/.test(r.output),
         !r.ok ? undefined : '压缩后没人能找到实现细节,而门禁竟然是绿的',
+      )
+    }
+
+    // 28d 负向 —— 主文件超过字符上限(校验 1)
+    //
+    // ⚠️ **这一维此前零负向验证**,而它是第三节整节存在的理由:
+    // 超限时 Claude Code 读不全任务书,会基于残缺上下文开发,
+    // **且不会主动告知哪部分被截断**。本项目已经因文档膨胀吃过一次亏。
+    //
+    // 28a/28b 覆盖的是另外两条校验。三条校验、两条负向验证 ——
+    // 与契约冻结检查(8/9)、硬规则守卫(31)是同一形状:
+    // **多维判定,负向验证只走通其中几维。**
+    {
+      // 上限 150,000 字符;填到 160,000 稳稳超过,又不至于写出一个巨大的文件。
+      // 用中文填充不是随意选的:第三节明写「单位是字符,不是字节」,
+      // 中文在 UTF-8 下一个字符占 3 字节 —— 若判定误用了字节数,
+      // 这段填充会让它**提前**触发,与「超限才红」区分不开。
+      // 所以填充刻意压在 160,000 字符 ≈ 480,000 字节:
+      // 按字符判 → 超限(红);按字节判 → 也红,但会在远低于此时就红,
+      // 所以下面顺带断言输出里的字符数确实是 16 万量级而不是 48 万。
+      const filler = `\n\n<!-- 负向测试填充,由 scripts/verify-guards.mjs 生成 -->\n${'占位文字。'.repeat(32_000)}\n`
+      writeFileSync(tasksPath, tasksSrc + filler, 'utf8')
+      const r = runDocs()
+      const reported = /主文件 ([\d,]+) 字符/.exec(r.output)
+      const chars = Number((reported?.[1] ?? '0').replace(/,/g, ''))
+
+      expect(
+        '28d 主文件超过字符上限 → check:docs 变红',
+        !r.ok && /主文件/.test(r.output) && chars > 150_000 && chars < 300_000,
+        !r.ok && /主文件/.test(r.output) && chars > 150_000 && chars < 300_000
+          ? undefined
+          : r.ok
+            ? '★ 主文件超了 15 万字符,check:docs 竟然是绿的 —— 而超限时 Claude Code 读不全任务书,且不会告知截断'
+            : chars >= 300_000
+              ? `报出的是 ${chars} —— 量的是**字节**不是字符(第三节:中文一字符 3 字节,两者差约 1.6 倍)`
+              : `红了,但报的不是字符数超限:\n${r.output.slice(0, 300)}`,
       )
     }
 
