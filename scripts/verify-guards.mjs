@@ -939,6 +939,51 @@ try {
         },
       },
       {
+        code: 'media.type.removed',
+        blocked: true,
+        // 「整块 content 消失」不需要单独的码 —— 它等价于每个媒体类型都被删,
+        // 由同一条规则逐个报出。这里删单个,是更难被发现的那一种。
+        mutate: (d) => {
+          delete d.paths['/v1/sessions'].get.responses['200'].content['application/json']
+        },
+      },
+      {
+        code: 'media.type.added',
+        blocked: false,
+        mutate: (d) => {
+          d.paths['/v1/sessions'].get.responses['200'].content['text/plain'] = {
+            schema: { type: 'string' },
+          }
+        },
+      },
+      {
+        code: 'parameter.removed',
+        blocked: true,
+        // ⚠️ 删参数的坏法是**静默的**:一直在传它的客户端不会报错,
+        //   那个值只是从此被忽略。分页参数没了 = 每次都取全量。
+        mutate: (d) => {
+          d.paths['/v1/sessions'].get.parameters = d.paths['/v1/sessions'].get.parameters.slice(1)
+        },
+      },
+      {
+        // ★ **advisory 档 —— 这一条验的是「不阻塞」。**
+        //
+        // `blocked: false` 在这里的含义与别处不同:别处是「这是相容变更」,
+        // 这里是「**它有能力染红门禁的话就是个 bug**」。
+        //
+        // 一个本该不阻塞却阻塞了的 advisory,与一个漏报同样麻烦:
+        // Zod 换一次表示就冒出几十条,而那正是第五节要求 48 小时跟上的时刻。
+        // 几十条误报会训练人跳过契约冻结检查 —— 而它刚补完十几个维度。
+        //
+        // 同时断言输出里有这个码:只验退出码 0 的话,一个**什么都不检出**的
+        // advisory 也能通过 —— 那是这一档最容易退化成的样子。
+        code: 'schema.constraint.tightened',
+        blocked: false,
+        mutate: (d) => {
+          d.components.schemas.Session.properties.id.maxLength = 10
+        },
+      },
+      {
         code: 'operation.security.changed',
         blocked: true,
         // 把一个终端用户端点改成 Admin Key —— 该端点的全部调用方立刻 401

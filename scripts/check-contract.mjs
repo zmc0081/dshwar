@@ -142,6 +142,32 @@ if (baseline === undefined) {
 const changes = diffContract(baseline, current)
 const breaking = breakingChanges(changes)
 const additive = changes.filter((c) => c.kind === 'additive')
+/**
+ * ★ **advisory 只打印,不参与任何退出码判定。**
+ *
+ * 它收的是「判得出变了、判不出破坏了谁」的那一类 —— 约束收紧的破坏性
+ * 取决于调用方实际发送的值,而分类器看不到调用方。
+ *
+ * ⚠️ 下面这个变量**绝不能进任何 `process.exit` 的条件**。
+ * 让它有能力染红门禁的后果很具体:Zod 换一次表示就冒出几十条,
+ * 而那正是第五节要求 48 小时跟上上游的时刻 —— 几十条误报会训练人
+ * 跳过这条检查,而它刚补完十几个维度。
+ * **一条会让人学会忽略它的规则,比一个漏报更贵。**
+ *
+ * 谁盯着这一点:`verify-guards.mjs` 里那条负向验证 ——
+ * 植入一次约束收紧,断言输出里有它**且退出码仍是 0**。
+ */
+const advisory = changes.filter((c) => c.kind === 'advisory')
+
+/** 提示档的渲染。放在函数里,是为了让「它只被调用、从不参与判定」一眼可见。 */
+function printAdvisory() {
+  if (advisory.length === 0) return
+  console.log(`\n提示 ${advisory.length} 处(不阻塞,需人工判断):`)
+  for (const change of advisory.slice(0, 10)) {
+    console.log(`    提示  [${change.code}] ${change.where}  ${change.detail}`)
+  }
+  if (advisory.length > 10) console.log(`    ...  另有 ${advisory.length - 10} 处提示`)
+}
 
 if (asJson) {
   console.log(JSON.stringify({ baseRef, changes }, null, 2))
@@ -157,9 +183,15 @@ for (const change of additive.slice(0, 20)) {
 if (additive.length > 20) console.log(`    ...  另有 ${additive.length - 20} 处相容变更`)
 
 if (breaking.length === 0) {
-  console.log(additive.length === 0 ? '\n契约未变。' : '\n全部为相容变更,放行。')
+  console.log(
+    additive.length === 0 && advisory.length === 0 ? '\n契约未变。' : '\n全部为相容变更,放行。',
+  )
+  // ⚠️ 打印在 exit 之前,但**不参与** exit 的条件 —— 这正是 advisory 的定义。
+  printAdvisory()
   process.exit(0)
 }
+
+printAdvisory()
 
 console.log('')
 for (const change of breaking) {

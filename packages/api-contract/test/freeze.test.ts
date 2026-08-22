@@ -196,3 +196,182 @@ describe('相容变更必须放行 —— 否则规则等于禁止一切演进',
     expect(diffContract(before, after)).toEqual([])
   })
 })
+
+// ============================================================================
+// 策略一致性 —— **新增分类码时必须核对它与既有码是否冲突**(V0.8.0)
+//
+// ## 它拦的是什么
+//
+// V0.8.0 加 `diffUnion` 时,把「联合多了一个分支」判成了**破坏性**。
+// 而同一件事在 `enum.value.added` 上是**相容**的,依据是 `common.ts` 明写的
+// 契约级要求:「本枚举会在 v1 内追加新值……**同样的要求适用于
+// `StreamEventType` 与其余所有闭集枚举**」。
+//
+// 于是仓库里同时存在两条对同一件事给出相反答案的规则,而后来的那条是错的:
+// **给 SSE 加一个事件类型会被契约冻结检查拦住** —— 那正是 V0.4.6 放宽
+// `enum.value.added` 时点名要允许的演进。
+//
+// ⚠️ 这不是「规则写错了」,是「**新规则落地时没有核对既有规则**」。
+// 修好这一次只值一次;把核对变成一条会红的断言,才管住下一次。
+//
+// ## 判据:同一族的码必须同向
+//
+// 「闭集加一个成员」是一族,「闭集删一个成员」是另一族。
+// 族内任何一条与其余不同向,就是有人在没核对的情况下引入了新规则。
+// ============================================================================
+describe('策略一致性:同一族的分类码必须同向', () => {
+  /**
+   * 「往闭集里加一个成员」—— 全部必须是**相容**。
+   *
+   * 依据是 `common.ts` 的契约级要求(客户端必须有 default 分支、
+   * 不得断言穷尽),它明写覆盖「其余所有闭集枚举」。
+   */
+  const MEMBER_ADDED: { readonly what: string; readonly mutate: (doc: never) => void }[] = [
+    {
+      what: 'enum.value.added —— 错误码加一个值',
+      mutate: (doc) => {
+        const d = doc as unknown as Record<string, never>
+        const e = (d['components'] as never as { schemas: Record<string, never> }).schemas[
+          'ErrorResponse'
+        ] as never as { properties: { error: { properties: { code: { enum: string[] } } } } }
+        e.properties.error.properties.code.enum.push('zz.policy.probe')
+      },
+    },
+    {
+      what: 'schema.variant.added —— SSE 加一个事件类型',
+      mutate: (doc) => {
+        const d = doc as unknown as { components: { schemas: Record<string, unknown> } }
+        const se = d.components.schemas['StreamEvent'] as { oneOf: unknown[] }
+        se.oneOf.push({
+          type: 'object',
+          properties: { type: { type: 'string', const: 'zz.policy.probe' } },
+          required: ['type'],
+        })
+      },
+    },
+    {
+      what: 'response.added —— 端点加一个响应码',
+      mutate: (doc) => {
+        const d = doc as unknown as {
+          paths: Record<string, Record<string, { responses: Record<string, unknown> }>>
+        }
+        d.paths['/v1/sessions']!['get']!.responses['599'] = { description: '探针' }
+      },
+    },
+    {
+      what: 'media.type.added —— 响应加一个媒体类型',
+      mutate: (doc) => {
+        const d = doc as unknown as {
+          paths: Record<
+            string,
+            Record<string, { responses: Record<string, { content: Record<string, unknown> }> }>
+          >
+        }
+        d.paths['/v1/sessions']!['get']!.responses['200']!.content['text/plain'] = {
+          schema: { type: 'string' },
+        }
+      },
+    },
+  ]
+
+  it('★ 「闭集加一个成员」一族全部相容 —— 一条不同向就是没核对既有规则', () => {
+    let asserted = 0
+    const offenders: string[] = []
+    for (const c of MEMBER_ADDED) {
+      const after = clone(REAL)
+      c.mutate(after as never)
+      // 变异必须真的改到东西,否则本条是空跑
+      expect(JSON.stringify(after), `${c.what}:变异无效,本条空跑了`).not.toBe(JSON.stringify(REAL))
+      asserted += 1
+      const broke = codes(REAL, after)
+      if (broke.length > 0) offenders.push(`${c.what} → ${broke.join(',')}`)
+    }
+    expect(asserted).toBe(MEMBER_ADDED.length)
+    expect(
+      offenders,
+      '这些「加一个成员」被判成了破坏性,而同族的 enum.value.added 是相容的。\n' +
+        '⚠️ 依据是 common.ts 明写的契约级要求:客户端必须有 default 分支,' +
+        '「同样的要求适用于 StreamEventType 与其余所有闭集枚举」。\n' +
+        '新增分类码时要先核对它与既有码、以及 common.ts 的策略是否冲突 ——' +
+        'V0.8.0 的 schema.variant.added 就是这么错的。',
+    ).toEqual([])
+  })
+
+  it('★ 「闭集删一个成员」一族全部破坏 —— 删值会让下游分支变成死代码', () => {
+    /** 与上一条成对:只验加值放行,一个「什么都放行」的实现照样全绿。 */
+    const MEMBER_REMOVED: { readonly what: string; readonly mutate: (doc: never) => void }[] = [
+      {
+        what: 'enum.value.removed',
+        mutate: (doc) => {
+          const d = doc as unknown as { components: { schemas: Record<string, unknown> } }
+          const e = d.components.schemas['ErrorResponse'] as {
+            properties: { error: { properties: { code: { enum: string[] } } } }
+          }
+          e.properties.error.properties.code.enum.pop()
+        },
+      },
+      {
+        what: 'schema.variant.removed',
+        mutate: (doc) => {
+          const d = doc as unknown as { components: { schemas: Record<string, unknown> } }
+          const se = d.components.schemas['StreamEvent'] as { oneOf: unknown[] }
+          se.oneOf.pop()
+        },
+      },
+      {
+        what: 'response.removed',
+        mutate: (doc) => {
+          const d = doc as unknown as {
+            paths: Record<string, Record<string, { responses: Record<string, unknown> }>>
+          }
+          delete d.paths['/v1/sessions']!['get']!.responses['400']
+        },
+      },
+      {
+        what: 'media.type.removed',
+        mutate: (doc) => {
+          const d = doc as unknown as {
+            paths: Record<
+              string,
+              Record<string, { responses: Record<string, { content: Record<string, unknown> }> }>
+            >
+          }
+          delete d.paths['/v1/sessions']!['get']!.responses['200']!.content['application/json']
+        },
+      },
+    ]
+
+    let asserted = 0
+    const missed: string[] = []
+    for (const c of MEMBER_REMOVED) {
+      const after = clone(REAL)
+      c.mutate(after as never)
+      expect(JSON.stringify(after), `${c.what}:变异无效,本条空跑了`).not.toBe(JSON.stringify(REAL))
+      asserted += 1
+      if (codes(REAL, after).length === 0) missed.push(c.what)
+    }
+    expect(asserted).toBe(MEMBER_REMOVED.length)
+    expect(missed, '这些「删一个成员」被放行了 —— 下游正在处理的分支会变成死代码').toEqual([])
+  })
+})
+
+describe('advisory 档不参与破坏性判定', () => {
+  it('★ 约束收紧只进 advisory,不进 breaking —— 它判得出「变了」,判不出「破坏了谁」', () => {
+    const after = clone(REAL) as unknown as { components: { schemas: Record<string, unknown> } }
+    const session = after.components.schemas['Session'] as {
+      properties: { id: { maxLength?: number } }
+    }
+    session.properties.id.maxLength = 10
+
+    const all = diffContract(REAL, after)
+    const advisory = all.filter((c) => c.kind === 'advisory')
+
+    expect(advisory.length, '约束收紧一条 advisory 都没有 —— 这一档空转了').toBeGreaterThan(0)
+    expect(advisory.every((c) => c.code === 'schema.constraint.tightened')).toBe(true)
+    expect(
+      codes(REAL, after),
+      'maxLength 收紧被判成了破坏性 —— 它对只发短串的调用方毫无影响,' +
+        '而误报会训练人跳过整条契约冻结检查',
+    ).toEqual([])
+  })
+})

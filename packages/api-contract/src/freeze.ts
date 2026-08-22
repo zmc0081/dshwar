@@ -13,8 +13,27 @@
 
 /** 一处契约差异。 */
 export interface ContractChange {
-  /** `breaking` 需显式声明并升大版;`additive` 直接放行。 */
-  readonly kind: 'breaking' | 'additive'
+  /**
+   * `breaking` 需显式声明并升大版;`additive` 直接放行;
+   * **`advisory` 打印但不改退出码**。
+   *
+   * ## 为什么需要第三档
+   *
+   * 有一类变更,分类器**判得出「变了」,判不出「破坏了谁」** ——
+   * 典型是约束收紧(`maxLength` 256 → 10):对只发短串的调用方毫无影响,
+   * 对发长串的是硬破坏。**破坏性取决于调用方,而分类器看不到调用方。**
+   *
+   * 把这类判成 `breaking` 的代价很具体:Zod 换一次表示
+   * (`exclusiveMinimum` 从布尔改成数值、给对象补 `propertyNames`、
+   * 改写 `date-time` 的 pattern)就会一次冒出几十条误报 ——
+   * **而那正是第五节要求 48 小时跟上上游的时刻**。
+   * 几十条误报会训练人跳过契约冻结检查,
+   * 而**一条会让人学会忽略它的规则,比一个漏报更贵**。
+   *
+   * 所以 `advisory` 只说话,不拦人:它出现在输出里、写明「需人工判断」,
+   * 但 {@link breakingChanges} 不收它,退出码不受它影响。
+   */
+  readonly kind: 'breaking' | 'additive' | 'advisory'
   /** 机器可读的分类,便于测试与后续统计。 */
   readonly code: ContractChangeCode
   /** 出问题的位置,如 `paths./v1/sessions.get`。 */
@@ -66,6 +85,12 @@ export const CONTRACT_CHANGE_CODES = [
   'response.removed',
   'response.added',
   'operation.security.changed',
+  // ---- V0.8.0 第二轮:第二轮探针实测出的四处漏报。----
+  'media.type.removed',
+  'media.type.added',
+  'parameter.removed',
+  // ---- advisory 档:只打印,不改退出码。见 ContractChange.kind 的说明。----
+  'schema.constraint.tightened',
 ] as const
 
 export type ContractChangeCode = (typeof CONTRACT_CHANGE_CODES)[number]
@@ -222,7 +247,7 @@ function diffPaths(
         const where = `paths.${path}.${method}`
         const beforeOp = beforeOps[method] as Operation
         const afterOp = afterOps[method] as Operation
-        diffParameters(beforeOp, afterOp, where, changes)
+        diffParameters(beforeOp, afterOp, where, ctx, changes)
         diffSecurity(beforeOp, afterOp, where, changes)
         // ⚠️ 下面两行是 V0.8.0 补的。补之前 operation 只比 parameters ——
         // 也就是说**请求体与响应体一个字节都不看**。实测:把 200 响应体
@@ -324,9 +349,16 @@ function diffResponses(
 /**
  * 一个带 `content` 的东西(requestBody 或一条 response)的正文比对。
  *
- * 逐 media type 比。整块 `content` 的出现/消失不单独立码 ——
- * 它在实践中总是伴随 operation 或 response 的增删,那两条已经报了;
- * 单独立一个码会让同一次变更报两遍,而重复的告警会训练人去忽略告警。
+ * 逐 media type 比,并且**媒体类型的增删本身也要报**。
+ *
+ * ⚠️ 本函数第一版写着「整块 `content` 的出现/消失不单独立码 ——
+ * 它总是伴随 operation 或 response 的增删」。**那句话是错的**,
+ * 第二轮探针实测:响应码还在、`content` 整块消失,报 0 处破坏;
+ * 只删掉 `application/json` 这一个媒体类型,同样 0 处。
+ * 两种情况下 `response.removed` 都不会触发,因为响应码根本没动。
+ *
+ * 「整块 content 消失」不需要单独的码 —— 它等价于**每个**媒体类型都被删,
+ * 下面的循环自然会逐个报出来。
  */
 function diffBody(
   before: MediaBearer | undefined,
@@ -339,10 +371,29 @@ function diffBody(
   const afterContent = after?.content ?? {}
 
   for (const media of Object.keys(beforeContent)) {
+    if (!(media in afterContent)) {
+      changes.push({
+        kind: 'breaking',
+        code: 'media.type.removed',
+        where: `${where}.${media}`,
+        detail: '媒体类型被删除 —— 按它协商 Content-Type / Accept 的客户端拿不到可解析的正文',
+      })
+      continue
+    }
     const b = beforeContent[media]?.schema
     const a = afterContent[media]?.schema
     if (b === undefined || a === undefined) continue
     diffSchema(b, a, `${where}.${media}`, ctx, changes)
+  }
+
+  for (const media of Object.keys(afterContent)) {
+    if (media in beforeContent) continue
+    changes.push({
+      kind: 'additive',
+      code: 'media.type.added',
+      where: `${where}.${media}`,
+      detail: '新增媒体类型 —— 老客户端继续用原来那个',
+    })
   }
 }
 
@@ -386,28 +437,67 @@ function diffSecurity(
   })
 }
 
-/** 把一个可选参数改成必填,老客户端的请求立刻全部变成 400。 */
+/**
+ * 参数的三件事:**存在性、必填性、类型**。
+ *
+ * ⚠️ 本函数第一版**只看必填性**。第二轮探针实测:删掉一个查询参数、
+ * 或把 `limit` 从 integer 换成 string,都报 0 处破坏。
+ *
+ * 这是「一个维度有覆盖不等于覆盖完整」的又一个实例:参数这一维在覆盖清单上
+ * 是打了勾的(`parameter.required.added` 有码、有负向验证),
+ * 而它只覆盖了自己的三分之一。
+ *
+ * 类型这一件事**不新立码** —— 直接把参数的 schema 交给 {@link diffSchema},
+ * 于是它自动获得 `$ref` / 可空 / 枚举 / 约束 全套判定,
+ * 报出来的是 `property.type.changed` 之类的既有码,`where` 指到具体那个参数。
+ * 另立一个 `parameter.type.changed` 只会让同一件事有两个名字。
+ */
 function diffParameters(
   before: { parameters?: unknown[] } | undefined,
   after: { parameters?: unknown[] } | undefined,
   where: string,
+  ctx: RefContext,
   changes: ContractChange[],
 ): void {
+  interface Param {
+    readonly name?: string
+    readonly in?: string
+    readonly required?: boolean
+    readonly schema?: JsonSchema
+  }
   const index = (list: unknown[] | undefined) =>
     new Map(
       (list ?? []).map((p) => {
-        const param = p as { name?: string; in?: string; required?: boolean }
-        return [`${param.in ?? '?'}:${param.name ?? '?'}`, param.required === true] as const
+        const param = p as Param
+        return [`${param.in ?? '?'}:${param.name ?? '?'}`, param] as const
       }),
     )
 
   const beforeParams = index(before?.parameters)
   const afterParams = index(after?.parameters)
 
-  for (const [key, required] of afterParams) {
-    if (!required) continue
+  for (const [key, param] of beforeParams) {
+    const now = afterParams.get(key)
+    if (now === undefined) {
+      // 删参数的破坏性不依赖调用方:一直在传它的客户端,那个值从此被忽略 ——
+      // 而「被忽略」比「报错」更坏,它是静默的。分页参数没了 = 每次都取全量。
+      changes.push({
+        kind: 'breaking',
+        code: 'parameter.removed',
+        where: `${where}.parameters.${key}`,
+        detail: '参数被删除 —— 一直在传它的客户端不会报错,那个值只是从此被忽略',
+      })
+      continue
+    }
+    if (param.schema !== undefined && now.schema !== undefined) {
+      diffSchema(param.schema, now.schema, `${where}.parameters.${key}`, ctx, changes)
+    }
+  }
+
+  for (const [key, param] of afterParams) {
+    if (param.required !== true) continue
     // 新增的必填参数与「原本可选、现在必填」都会打断已接入的调用方
-    if (beforeParams.get(key) !== true) {
+    if (beforeParams.get(key)?.required !== true) {
       changes.push({
         kind: 'breaking',
         code: 'parameter.required.added',
@@ -463,6 +553,7 @@ function diffSchema(
   const a = deref(after, ctx.after)
 
   diffUnion(b, a, where, changes)
+  diffConstraints(b, a, where, changes)
 
   if (b.type !== undefined && a.type !== undefined) {
     const beforeType = JSON.stringify(b.type)
@@ -595,6 +686,84 @@ function diffRef(
 
   // 一侧具名、一侧内联 —— 交给调用方解引用后按结构比,这里不下结论。
   return false
+}
+
+/**
+ * 约束收紧 —— **advisory 档:打印,但不改退出码**。
+ *
+ * ## 为什么它不能是 breaking
+ *
+ * 两条理由,第二条更根本:
+ *
+ * 1. **误报会训练人跳过这条门禁。** Zod 换一次表示
+ *    (`exclusiveMinimum` 从布尔改成数值、改写 `date-time` 的 pattern、
+ *    给对象补 `propertyNames`)就会一次冒出几十条 —— 而那正是第五节
+ *    要求 48 小时跟上上游的时刻。人在赶时间时手上有两条更省事的路:
+ *    `--base` 绕过,或写一份笼统的 major changeset 一起吞掉。
+ *    **后者会把这次升级里混着的真实破坏一起放行,而且吞过一次就会一直吞。**
+ *    一条会让人学会忽略它的规则,比一个漏报更贵。
+ *
+ * 2. **它判得出「变了」,判不出「破坏了谁」。** `maxLength` 256 → 10
+ *    对只发短串的调用方毫无影响,对发长串的是硬破坏 ——
+ *    破坏性取决于调用方,而分类器看不到调用方。
+ *    本模块其余的码没有这个性质:删端点、删字段、换响应类型,
+ *    对**所有**调用方都是坏的。
+ *
+ * ⇒ 所以它只说话:出现在输出里、写明「需人工判断」,
+ * `breakingChanges()` 不收它,退出码不受它影响。
+ *
+ * ⚠️ **它的负向验证要验的是「不阻塞」** —— 一个本该不阻塞却把门禁染红的
+ * advisory,与一个漏报同样麻烦。见 `verify-guards.mjs` 里那条。
+ *
+ * 只报**收紧**方向。放宽(上限变大、下限变小)对调用方是纯利好,
+ * 报出来只会稀释这一档本就不多的信噪比。`pattern` 变化无法判方向,
+ * 一并归入本档并在 detail 里说明。
+ */
+function diffConstraints(
+  before: JsonSchema,
+  after: JsonSchema,
+  where: string,
+  changes: ContractChange[],
+): void {
+  /** 数值型约束:方向可判。`tighter` 说的是「新值比旧值更严」怎么算。 */
+  const NUMERIC = [
+    { key: 'maxLength', tighter: (b: number, a: number) => a < b },
+    { key: 'minLength', tighter: (b: number, a: number) => a > b },
+    { key: 'maximum', tighter: (b: number, a: number) => a < b },
+    { key: 'minimum', tighter: (b: number, a: number) => a > b },
+    { key: 'maxItems', tighter: (b: number, a: number) => a < b },
+    { key: 'minItems', tighter: (b: number, a: number) => a > b },
+  ] as const
+
+  const raw = before as unknown as Record<string, unknown>
+  const now = after as unknown as Record<string, unknown>
+
+  for (const { key, tighter } of NUMERIC) {
+    const b = raw[key]
+    const a = now[key]
+    // 从「无约束」变成「有约束」也是收紧 —— 而且是最容易被忽略的一种。
+    if (typeof a !== 'number') continue
+    if (b !== undefined && typeof b !== 'number') continue
+    if (b === undefined || tighter(b, a)) {
+      changes.push({
+        kind: 'advisory',
+        code: 'schema.constraint.tightened',
+        where: `${where}.${key}`,
+        detail:
+          `${key} 由 ${b === undefined ? '(无约束)' : b} 收紧为 ${a} —— ` +
+          '是否破坏取决于调用方实际发送的值,分类器无法确定,需人工判断',
+      })
+    }
+  }
+
+  if (typeof now['pattern'] === 'string' && raw['pattern'] !== now['pattern']) {
+    changes.push({
+      kind: 'advisory',
+      code: 'schema.constraint.tightened',
+      where: `${where}.pattern`,
+      detail: 'pattern 变了 —— 松紧方向无法机械判定(可能只是上游换了正则的写法),' + '需人工判断',
+    })
+  }
 }
 
 /**
