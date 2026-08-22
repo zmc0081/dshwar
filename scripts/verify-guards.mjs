@@ -446,6 +446,10 @@ try {
       },
     ]
 
+    const dropLegal = () => {
+      rmSync(p('packages/__legal_fixture__'), { recursive: true, force: true })
+      rmSync(p('gateway/__legal_fixture__'), { recursive: true, force: true })
+    }
     const dropFixtures = () => {
       rmSync(p('packages/__guard_fixture5__'), { recursive: true, force: true })
       rmSync(p('gateway/__guard_fixture5__'), { recursive: true, force: true })
@@ -469,6 +473,77 @@ try {
       )
     }
     dropFixtures()
+
+    // ★ 反向对照 —— **哪些合法写法一定不能被判成违规**
+    //
+    // ⚠️ 上面那张 HARD_RULE_FIXTURES 是照着「漏了什么」列的,
+    // 它**结构上不可能包含误报**:每一条都在问「这个违规会不会被抓到」,
+    // 没有一条在问「这个合规的写法会不会被冤枉」。
+    //
+    // 而这四条守卫全是 grep,**误报的代价比漏报更直接**:一条会冤枉合法写法
+    // 的守卫,会让人给正确的代码加豁免标记 —— 于是豁免标记开始泛滥,
+    // 而豁免标记泛滥之后,真正的违规也会顺手被标掉。
+    //
+    // 下面每一条都对应一个**真实存在的合法形态**,不是构造出来的边角。
+    /** @type {{ label: string, path: string, body: string, why: string }[]} */
+    const LEGAL_WRITINGS = [
+      {
+        label: '31e 带理由的豁免标记 → 放行(豁免机制得真的能用)',
+        path: 'packages/__legal_fixture__/src/allowed.ts',
+        body:
+          '// dshwar-guard-allow: 这份清单的作用正是**拒绝**密码字段,必须写出这个词\n' +
+          "export const REJECTED_FIELDS = ['passwordHash']",
+        why:
+          '11/12 验的是「豁免不是后门」,但没有一条验「豁免真的能用」—— ' +
+          '两者缺一,规则要么是后门,要么是死路。@dshwar/subject 里就有这个真实形态。',
+      },
+      {
+        label: '31f 网关只取 describe 语义 → 放行(凭据守卫不能连合法用法一起拦)',
+        path: 'gateway/__legal_fixture__/describe.ts',
+        body:
+          '// 硬规则 5 允许的形态:只暴露 configured / source / writable,不取值\n' +
+          'export const ok = (c: { describe(r: string): { configured: boolean } }) =>\n' +
+          '  c.describe("K").configured',
+        why: '守卫的正则是 resolve(...).value —— 它不能把 describe(...).configured 也算进去',
+      },
+      {
+        label: '31g gateway/ 下读 process.env → 放行(该守卫只管 packages/)',
+        path: 'gateway/__legal_fixture__/env.ts',
+        body:
+          '// 范围就是 packages/ —— 网关是组装层,读环境变量是它的活\n' +
+          "export const port = process.env['PORT']",
+        why: 'CLAUDE.md 的原文 grep 是 `packages/`;把网关也拦掉等于禁止组装层读配置',
+      },
+      {
+        label: '31h test/ 里构造 ANONYMOUS → 放行(否则等于禁止验证 fail closed)',
+        path: 'packages/__legal_fixture__/test/anon.test.ts',
+        body:
+          '// 测试必须能构造匿名主体,才能断言 fail closed 真的发生了\n' +
+          "export const subject = 'ANONYMOUS'",
+        why: 'check-guards 那条守卫的注释原文:把测试也拦掉,等于禁止验证这条规则本身',
+      },
+    ]
+
+    for (const c of LEGAL_WRITINGS) {
+      dropLegal()
+      writeFixture(
+        c.path,
+        `// 反向对照夹具:由 scripts/verify-guards.mjs 生成,跑完即删。\n${c.body}\n`,
+      )
+      const r = runGuards()
+      expect(
+        c.label,
+        r.ok,
+        r.ok
+          ? undefined
+          : `守卫冤枉了一个合法写法 —— ${c.why}\n${r.output
+              .split('\n')
+              .filter((l) => /违规|失败/.test(l))
+              .slice(0, 4)
+              .join('\n')}`,
+      )
+    }
+    dropLegal()
 
     // ★ 完备性:check-guards 报出的每一条守卫,要么在上表里,
     //   要么在下面这份「另有专门验证」的登记里。两边都没有 = 没人看着它。
@@ -671,6 +746,112 @@ try {
       )
     }
     rmSync(p('packages/__oss_fixture__'), { recursive: true, force: true })
+
+    // ★ 反向对照 —— **哪些合法引用一定不能被拦**
+    //
+    // ⚠️ 上面 OSS_CASES 那张表照的是「漏了什么」,结构上不含误报。
+    // 而这个脚本的误报代价很具体:它拦的是**发布**,一条误报会让人
+    // 要么去改一个本来正确的 package.json,要么给脚本加豁免 ——
+    // 而这个脚本目前没有豁免机制,所以只剩前一条路。
+    /** @type {{ label: string, files: [string, string][], why: string }[]} */
+    const OSS_LEGAL = [
+      {
+        label: '32d 依赖 @dshwar/billing-stripe → 放行(D4 裁决它开源)',
+        files: [
+          [
+            'packages/__oss_legal__/package.json',
+            JSON.stringify(
+              {
+                name: '@dshwar/__oss_legal__',
+                version: '0.8.0',
+                files: ['dist'],
+                dependencies: { '@dshwar/billing-stripe': 'workspace:*' },
+              },
+              null,
+              2,
+            ) + '\n',
+          ],
+        ],
+        why:
+          'CLOSED_SOURCE 是**显式清单**而不是 billing-* 模式匹配,正因为 D4 把 ' +
+          'billing-stripe 判成了开源。改成模式匹配就会在这里红 —— 那正是这条要拦的。',
+      },
+      {
+        label: '32e 源码 import @dshwar/billing-stripe → 放行',
+        files: [
+          [
+            'packages/__oss_legal__/package.json',
+            JSON.stringify(
+              { name: '@dshwar/__oss_legal__', version: '0.8.0', files: ['dist'] },
+              null,
+              2,
+            ) + '\n',
+          ],
+          [
+            'packages/__oss_legal__/src/index.ts',
+            "// 开源自建者接支付走的就是这条路\nimport type { StripeEvent } from '@dshwar/billing-stripe'\nexport type E = StripeEvent\n",
+          ],
+        ],
+        why: '闭源它等于让自建者收不了钱,直接违背「开源用户拿到可用的完整基座」',
+      },
+      {
+        label: '32f private 包依赖闭源组件 → 放行(它本来就不发布)',
+        files: [
+          [
+            'packages/__oss_legal__/package.json',
+            JSON.stringify(
+              {
+                name: '@dshwar/__oss_legal__',
+                version: '0.8.0',
+                private: true,
+                dependencies: { '@dshwar/billing-hosted': 'workspace:*' },
+              },
+              null,
+              2,
+            ) + '\n',
+          ],
+        ],
+        why:
+          '判据是「将发布的包」。把 private 包也拦掉等于禁止闭源组件存在于本仓 —— ' +
+          '而 open-core 的整个前提就是两者共处一个仓库。',
+      },
+      {
+        label: '32g files 白名单只含构建产物与文档 → 放行',
+        files: [
+          [
+            'packages/__oss_legal__/package.json',
+            JSON.stringify(
+              {
+                name: '@dshwar/__oss_legal__',
+                version: '0.8.0',
+                files: ['dist', 'README.md', 'LICENSE', 'CHANGELOG.md'],
+              },
+              null,
+              2,
+            ) + '\n',
+          ],
+        ],
+        why: 'SUSPICIOUS_FILE_ENTRIES 里有 /private/i —— 别让它把正常条目也吃了',
+      },
+    ]
+
+    for (const c of OSS_LEGAL) {
+      rmSync(p('packages/__oss_legal__'), { recursive: true, force: true })
+      for (const [path, body] of c.files) writeFixture(path, body)
+      const r = runOss()
+      expect(
+        c.label,
+        r.ok,
+        r.ok
+          ? undefined
+          : `开源纯净度检查拦住了一个合法形态 —— ${c.why}\n${r.output
+              .split('\n')
+              .filter((l) => /违规/.test(l))
+              .slice(0, 3)
+              .join('\n')}`,
+      )
+    }
+    rmSync(p('packages/__oss_legal__'), { recursive: true, force: true })
 
     // ★ 完备性:脚本报出的每一条通过项都要有人验。清单从**真实输出**现取。
     {
@@ -1682,6 +1863,29 @@ try {
     // 所以下面两条各压一维、把另一维放到不可能超的高度,
     // 并且**断言另一维确实没出现在失败清单里** —— 那句「没出现」才是
     // 「这一维是被单独验的」的证据。
+    // ★ 反向对照 —— **真实阈值下,正常波动一定不能红**
+    //
+    // ⚠️ 27a/27b/27c/27d 全是「压阈值让它红」,照的是「漏了什么」。
+    // 一条**阈值定得过紧**的门禁会在每次 CI 上随机红一次,而人对
+    // 随机红的反应是重跑,不是修 —— 重跑几次之后,这条门禁就等于没有了。
+    //
+    // 这一条刻意放在压阈值的四条**之前**跑:它同时是那四条的基线,
+    // 基线不绿的话,后面「红了」说明不了任何事情。
+    {
+      writeFileSync(costPath, costSrc, 'utf8')
+      const r = runCost([])
+      expect(
+        '27e 正向对照:真实阈值下不红(阈值不能定得让正常波动就超标)',
+        r.ok,
+        r.ok
+          ? undefined
+          : `本机实测已经超过内置阈值 —— 要么这台机器不适合当基线,要么阈值该重新量:\n${r.output
+              .split('\n')
+              .filter((l) => /超过阈值/.test(l))
+              .join('\n')}`,
+      )
+    }
+
     /** @type {{ label: string, tight: 'coldStartMs' | 'rssMb', expect: string, absent: string }[]} */
     const DIMENSIONS = [
       {

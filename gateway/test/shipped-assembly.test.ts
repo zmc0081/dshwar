@@ -143,6 +143,39 @@ describe('出厂装配 —— startServer 挂了契约承诺的每条路由', ()
     ).toBe(ENDPOINT_NOT_FOUND)
   })
 
+  // ★ 反向对照 —— **哪些合法的 404 / 501 一定不能被判成「端点没挂」**
+  //
+  // ⚠️ 上面那条守卫照的是「漏了什么」(端点没挂却没人发现),
+  // 结构上不含误报。而它的判据是**字符串匹配**,误报的形态很具体:
+  // 判据一旦退化成「看状态码」,每一个合法的资源级 404 都会被报成
+  // 「端点没挂」—— 于是失败清单里全是噪声,而真正没挂的那条被埋在里面。
+  //
+  // ⚠️ 顺带说明范围:**admin 路由在检查范围内**,不是豁免。
+  // 最初的设想是「只查非 admin 路由」(bug 出在那边),但排除 admin
+  // 等于给 `adminRoutes` 漏传留了同一个洞。28 条路由一条不落。
+  it('★ 资源不存在的 404 不算「端点没挂」—— 判据不能退化成看状态码', async () => {
+    // 这条路由挂着,只是那个 id 不存在 —— 合法的资源级 404。
+    const result = await probe('get', '/v1/sessions/zz-nonexistent', 'runtime')
+
+    expect(result.status).toBe(404)
+    expect(result.code).toBe('not_found')
+    expect(
+      result.message,
+      '资源级 404 的文案与端点级一样了 —— 守卫会把每个合法 404 都报成「端点没挂」',
+    ).not.toBe(ENDPOINT_NOT_FOUND)
+  })
+
+  it('★ 可选依赖没配导致的 501 不算「端点没挂」—— 那是本仓明写的惯例', async () => {
+    // `/v1/workspaces/{id}/policy` 是 implemented,但出厂刻意不传 `policies`:
+    // 传了的话策略会被保存、被显示,却从不被查询(createPolicyEnforcer
+    // 在运行时路径上零调用点)。缺席让它回落 501,而 routes.ts 的原话是
+    // 「缺席**不等于放行** —— 它意味着这个部署没接策略层」。
+    const result = await probe('get', '/v1/workspaces/zz-nonexistent/policy', 'runtime')
+
+    expect(result.status, 'implemented 的路由回落 501 是合法的,不该被判成没挂').toBe(501)
+    expect(result.message).not.toBe(ENDPOINT_NOT_FOUND)
+  })
+
   it('★ 契约里每条路由都真的挂在出厂网关上', async () => {
     const failures: string[] = []
     let asserted = 0
