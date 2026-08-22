@@ -456,14 +456,30 @@ try {
   }
 
   // ---------------------------------------------------------------------
-  // 8/9. 契约冻结(Session 6 验收)
+  // 8/9. 契约冻结 —— **逐个分类码各一条,不合并**(V0.8.0 重写)
   //
-  //     单测已经验过 diffContract 的判定,但那只证明**分类器**对。这里验的是
-  //     **整条门禁**:改真实的 openapi.json,跑真实的脚本,看退出码。
-  //     两个方向都要:破坏性必须红,加可选字段必须绿 ——
-  //     只会说红的规则等于禁止一切演进。
+  //     ⚠️ **这一块此前是四条手写的验证,而分类码有十四个。**
+  //     覆盖到的只有 `path.removed` 与 `enum.value.removed`
+  //     (八个 breaking 码里的两个),外加两条相容侧的正向对照。
+  //     它的绿读起来却是「契约冻结检查已验证」。
   //
-  //     基线用 HEAD:工作区被篡改而 HEAD 未变,正好是「本次 PR 改了契约」。
+  //     实测那时的真实覆盖面:把 `GET /v1/sessions` 的 200 响应体换成
+  //     `ErrorResponse` —— 对客户端最大级别的破坏 —— 门禁报「契约未变」、
+  //     退出码 0。逐条植入 15 种破坏性变更,**8 种漏报**。
+  //
+  //     > **新子形状**:一个多维分类器,负向验证只走通其中一维,
+  //     > 那条绿会被读成「整个分类器已验证」。
+  //     >
+  //     > 与「一条探针一个目标」同源而方向相反:那条是**多目标掩盖空跑**,
+  //     > 这条是**单维掩盖未覆盖的维度**。
+  //
+  //     所以改成表驱动:**一个 `ContractChangeCode` 一条**,各自植入一次真实
+  //     变更、跑一次真实门禁、断言退出码与输出里的码。
+  //     每次调用只要 0.16s,十八条也不到 3 秒 —— 手写四条从来不是成本问题。
+  //
+  //     ★ 最要紧的是最后那条**完备性断言**:表里少一个码就红。
+  //       没有它,这张表会重新退化成「写到哪算哪」——
+  //       而那正是它要替换掉的东西。
   // ---------------------------------------------------------------------
   {
     const target = p('packages/api-contract/openapi.json')
@@ -473,63 +489,241 @@ try {
     const runContract = () =>
       run(['--experimental-strip-types', p('scripts', 'check-contract.mjs'), '--base', 'HEAD'])
 
+    /**
+     * 分类码 → 一次能触发它的真实变更。
+     *
+     * `blocked` 是**期望的门禁反应**,不是「这个码是不是 breaking」——
+     * 两者通常一致,但把它写成期望值可以让相容侧的码也进同一张表,
+     * 于是「规则不是禁止一切演进」这条正向对照对**每个** additive 码都成立。
+     */
+    /**
+     * @typedef {Record<string, any>} OpenApiDoc
+     *   解析后的 openapi.json。这里刻意用 any:变异要触到任意深度的嵌套,
+     *   为一张负向验证表描出完整的 OpenAPI 类型,维护成本远超它挡住的错误。
+     *   (`no-explicit-any` 的范围是 packages/gateway/adapters 的 .ts,不含本文件。)
+     *
+     * @type {{ code: string, blocked: boolean, mutate: (doc: OpenApiDoc) => void }[]}
+     */
+    const CONTRACT_CASES = [
+      // ---- 原有的十四个 ----
+      {
+        code: 'path.removed',
+        blocked: true,
+        mutate: (d) => delete d.paths['/v1/sessions/{id}/turns'],
+      },
+      {
+        code: 'path.added',
+        blocked: false,
+        mutate: (d) => {
+          d.paths['/v1/zz-probe'] = { get: { responses: { 200: { description: '探针' } } } }
+        },
+      },
+      {
+        code: 'operation.removed',
+        blocked: true,
+        mutate: (d) => delete d.paths['/v1/sessions'].post,
+      },
+      {
+        code: 'operation.added',
+        blocked: false,
+        mutate: (d) => {
+          d.paths['/v1/sessions'].put = { responses: { 200: { description: '探针' } } }
+        },
+      },
+      {
+        code: 'schema.removed',
+        blocked: true,
+        mutate: (d) => delete d.components.schemas.Capacity,
+      },
+      {
+        code: 'schema.added',
+        blocked: false,
+        mutate: (d) => {
+          d.components.schemas.ZzProbe = { type: 'object', properties: {} }
+        },
+      },
+      {
+        code: 'property.removed',
+        blocked: true,
+        mutate: (d) => delete d.components.schemas.Session.properties.id,
+      },
+      {
+        code: 'property.added',
+        blocked: false,
+        mutate: (d) => {
+          d.components.schemas.Session.properties.zzProbe = { type: 'string' }
+        },
+      },
+      {
+        code: 'property.required.added',
+        blocked: true,
+        mutate: (d) => {
+          d.components.schemas.Session.properties.zzProbe = { type: 'string' }
+          d.components.schemas.Session.required.push('zzProbe')
+        },
+      },
+      {
+        code: 'property.required.relaxed',
+        blocked: true,
+        // 必填改可选:对**响应**是破坏 —— 无条件读它的客户端会拿到 undefined
+        mutate: (d) => {
+          d.components.schemas.Session.required = d.components.schemas.Session.required.filter(
+            (/** @type {string} */ k) => k !== 'id',
+          )
+        },
+      },
+      {
+        code: 'property.type.changed',
+        blocked: true,
+        mutate: (d) => {
+          d.components.schemas.Session.properties.id.type = 'number'
+        },
+      },
+      {
+        code: 'enum.value.removed',
+        blocked: true,
+        // V0.4.6 红线 3:加值放宽了,删值不能跟着放宽 ——
+        // 删值会让下游正在处理的分支变成死代码,而 default 兜不住
+        mutate: (d) =>
+          d.components.schemas.ErrorResponse.properties.error.properties.code.enum.pop(),
+      },
+      {
+        code: 'enum.value.added',
+        blocked: false,
+        // V0.4.6 决策 1:前提是契约规定客户端须有 default 分支
+        mutate: (d) =>
+          d.components.schemas.ErrorResponse.properties.error.properties.code.enum.push('teapot'),
+      },
+      {
+        code: 'parameter.required.added',
+        blocked: true,
+        mutate: (d) => {
+          d.paths['/v1/sessions'].get.parameters = d.paths['/v1/sessions'].get.parameters.map(
+            (/** @type {Record<string, unknown>} */ param) => ({ ...param, required: true }),
+          )
+        },
+      },
+
+      // ---- V0.8.0 补的四个。补之前它们对应的破坏性变更全部漏报。----
+      {
+        code: 'schema.ref.changed',
+        blocked: true,
+        // ⚠️ 这一条在 `components.schemas` **内部** —— 也就是那个大家默认
+        //   「已经覆盖了」的维度。它此前同样漏报。
+        mutate: (d) => {
+          d.components.schemas.ListSessionsResponse.properties.data.items = {
+            $ref: '#/components/schemas/ErrorResponse',
+          }
+        },
+      },
+      {
+        code: 'schema.union.changed',
+        blocked: true,
+        // 本仓用 anyOf 表达可空,所以「把可空字段改成不可空」走这条
+        mutate: (d) => {
+          d.components.schemas.ListSessionsResponse.properties.nextCursor.anyOf = [
+            { type: 'string' },
+          ]
+        },
+      },
+      {
+        code: 'response.removed',
+        blocked: true,
+        mutate: (d) => delete d.paths['/v1/sessions'].get.responses['200'],
+      },
+      {
+        code: 'response.added',
+        blocked: false,
+        mutate: (d) => {
+          d.paths['/v1/sessions'].get.responses['599'] = { description: '探针' }
+        },
+      },
+      {
+        code: 'operation.security.changed',
+        blocked: true,
+        // 把一个终端用户端点改成 Admin Key —— 该端点的全部调用方立刻 401
+        mutate: (d) => {
+          d.paths['/v1/sessions'].get.security = [{ adminApiKey: [] }]
+        },
+      },
+    ]
+
     withRestoredFiles([target], (restore) => {
-      // 8. 破坏性:删掉一个已发布的端点
-      const doc = JSON.parse(readFileSync(target, 'utf8'))
-      delete doc.paths['/v1/sessions/{id}/turns']
-      writeFileSync(target, JSON.stringify(doc, null, 2) + '\n', 'utf8')
+      const pristine = readFileSync(target, 'utf8')
 
-      const breaking = runContract()
-      expect(
-        '8 破坏性契约变更被契约冻结检查拦住',
-        !breaking.ok && /path\.removed/.test(breaking.output),
-        breaking.ok ? '契约冻结检查放行了删端点 —— 已接入的客户端会直接拿到 404' : undefined,
-      )
+      for (const c of CONTRACT_CASES) {
+        restore()
+        const doc = JSON.parse(readFileSync(target, 'utf8'))
+        c.mutate(doc)
+        const mutated = JSON.stringify(doc, null, 2) + '\n'
 
-      // 9b. 枚举**删值**仍是破坏性变更(V0.4.6 红线 3)
-      //     这一条与 9c 成对:加值放宽了,删值不能跟着放宽 ——
-      //     删值会让下游正在处理的分支变成死代码,而 default 兜不住。
+        // ★ 先证明变异真的改到了东西。少了这一条,一个 no-op 的变异会被记成
+        //   「门禁漏报」——而那是本脚本自己的 bug,不是被测工具的。
+        //   锚点失配必须响亮,不能静默(CLAUDE.md 第三节根因 2 的同一条教训)。
+        if (mutated === pristine) {
+          expect(
+            `8/9 [${c.code}] 负向验证`,
+            false,
+            `变异没改动 openapi.json —— 锚点失配,本条结论作废(不是门禁漏报)`,
+          )
+          continue
+        }
+
+        writeFileSync(target, mutated, 'utf8')
+        const r = runContract()
+        const mentions = r.output.includes(c.code)
+        const reactedRight = c.blocked ? !r.ok : r.ok
+
+        expect(
+          `8/9 [${c.code}] ${c.blocked ? '被拦住' : '被放行'}`,
+          reactedRight && mentions,
+          !reactedRight
+            ? c.blocked
+              ? `契约冻结检查**放行**了这种破坏性变更 —— 门禁输出的「破坏性 0 处」对它不成立`
+              : `契约冻结检查**拦住**了相容变更 —— 规则变成了「禁止一切演进」:\n${r.output.slice(0, 300)}`
+            : `门禁反应对了,但输出里没有 ${c.code} —— 分类打到了别的码上,诊断会指错方向`,
+        )
+      }
+
       restore()
-      const shrunk = JSON.parse(readFileSync(target, 'utf8'))
-      shrunk.components.schemas.ErrorResponse.properties.error.properties.code.enum.pop()
-      writeFileSync(target, JSON.stringify(shrunk, null, 2) + '\n', 'utf8')
-
-      const removed = runContract()
-      expect(
-        '9b 枚举删值仍被拦住(V0.4.6 只放宽了加值)',
-        !removed.ok && /enum.value.removed/.test(removed.output),
-        removed.ok ? '契约冻结检查放行了删枚举值 —— 下游的分支会变成死代码' : undefined,
-      )
-
-      // 9c. 枚举**加值**被放行(V0.4.6 决策 1)
-      restore()
-      const grown = JSON.parse(readFileSync(target, 'utf8'))
-      grown.components.schemas.ErrorResponse.properties.error.properties.code.enum.push('teapot')
-      writeFileSync(target, JSON.stringify(grown, null, 2) + '\n', 'utf8')
-
-      const added = runContract()
-      expect(
-        '9c 枚举加值被放行(前提:契约规定客户端须有 default 分支)',
-        added.ok && /enum.value.added/.test(added.output),
-        added.ok
-          ? undefined
-          : `契约冻结检查仍在拦枚举加值:
-${added.output.slice(0, 400)}`,
-      )
-
-      // 9. 相容:加一个可选字段
-      restore()
-      const additive = JSON.parse(readFileSync(target, 'utf8'))
-      additive.components.schemas.Session.properties.label = { type: 'string' }
-      writeFileSync(target, JSON.stringify(additive, null, 2) + '\n', 'utf8')
-
-      const relaxed = runContract()
-      expect(
-        '9 加一个可选字段被放行(证明规则不是「禁止一切演进」)',
-        relaxed.ok && /property\.added/.test(relaxed.output),
-        relaxed.ok ? undefined : `契约冻结检查误伤了相容变更:\n${relaxed.output.slice(0, 400)}`,
-      )
     })
+
+    // ★ 完备性:每个 ContractChangeCode 都必须在上表里。
+    //
+    //   这一条是整块的关键。没有它,上面那张表就只是「写到哪算哪」——
+    //   而「写到哪算哪」正是它要替换掉的东西:分类码从 14 个长到 18 个的过程中,
+    //   负向验证一条都没跟着长,却始终显示为绿。
+    //
+    //   码表从 TS 源里现取(子进程带 strip-types),不抄一份到这里 ——
+    //   抄一份就等于给自己留了「两边不同步而没人知道」的第二个洞。
+    {
+      const listed = run([
+        '--experimental-strip-types',
+        '-e',
+        `import(${JSON.stringify(
+          `file:///${p('packages/api-contract/src/freeze.ts').replace(/\\/g, '/')}`,
+        )}).then((m) => console.log(m.CONTRACT_CHANGE_CODES.join('\\n')))`,
+      ])
+      const all = listed.output
+        .split('\n')
+        .map((s) => s.trim())
+        .filter(Boolean)
+      const covered = new Set(CONTRACT_CASES.map((c) => c.code))
+      const missing = all.filter((code) => !covered.has(code))
+      const stale = [...covered].filter((code) => !all.includes(code))
+
+      expect(
+        '8/9 每个 ContractChangeCode 都有一条负向验证(完备性)',
+        listed.ok && all.length > 0 && missing.length === 0 && stale.length === 0,
+        !listed.ok || all.length === 0
+          ? `取不到 CONTRACT_CHANGE_CODES —— 完备性无从判定,不许当成通过:\n${listed.output.slice(0, 300)}`
+          : missing.length > 0
+            ? `这些分类码没有负向验证:${missing.join(', ')}\n` +
+              '⚠️ 加一个分类码就要在 CONTRACT_CASES 里加一条 —— 否则它会像 V0.8.0 之前那样,' +
+              '悄悄成为「门禁声称覆盖、实际从未验证」的那一部分。'
+            : `CONTRACT_CASES 里有已经不存在的码:${stale.join(', ')}(码改名或删除了?)`,
+      )
+    }
   }
 
   // ---------------------------------------------------------------------

@@ -85,7 +85,7 @@ export { extractModels, objectSchemaNames, UnsupportedSchemaError } from './mode
 export type { IrField, IrModel, IrType } from './model-ir.ts'
 export type { OpenApiDocument } from './openapi.ts'
 
-export { breakingChanges, diffContract } from './freeze.ts'
+export { CONTRACT_CHANGE_CODES, breakingChanges, diffContract } from './freeze.ts'
 export type { ContractChange, ContractChangeCode } from './freeze.ts'
 
 // ---- 工作台契约(V0.5.5)----
