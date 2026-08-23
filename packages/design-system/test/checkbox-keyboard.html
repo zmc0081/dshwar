@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="utf-8" />
+    <title>DSHWAR · Checkbox 键盘可达性实测台</title>
+    <!--
+      ⚠️ 这个页面证明什么、不证明什么 —— 先说清楚,否则一个「全绿」会被读成
+      「Checkbox 组件已验证」,而它不是。
+
+      **它证明的**(全在 DOM / CSS 层,与 React 无关):
+        1. `tabIndex={0}` 的 span 真的进 tab 序 —— Tab 停得下来;
+        2. `disabled` 的 `tabIndex={-1}` 真的**跳过** —— Tab 停不下来;
+        3. 焦点环只在键盘导航时出现(`:focus-visible`),鼠标点击不出现;
+        4. 真实按键(Enter)送达该元素后,`preventDefault()` 确实生效。
+           ⚠️ **空格送不出** —— 见文末实测记录里的那条说明。
+
+      **它不证明的**:`onKeyDown` 里那五行(读 `disabled`、筛 key、调 `onChange`)
+      是 React 的事件系统在跑。本仓**没有 `react-dom` 依赖** —— 装它属于
+      Session 2 的范围(工作台要挂真实 React 树),不在本 Session 的机械转换里。
+      那五行是纯函数式的分支,靠阅读与类型检查覆盖。
+
+      ⇒ 所以本页的 DOM 是**照 Checkbox.tsx 的输出逐属性抄的**,不是另写一份 ——
+      抄错了就等于验错了东西,因此下方 verdict 会把关键属性打印出来供核对。
+
+      跑法:`pnpm --filter @dshwar/design-system serve`,浏览器开
+      /test/checkbox-keyboard.html,按页面提示操作。
+
+      ────────────────────────────────────────────────────────────
+      V0.9.0 Session 1 实测记录(2026-08-23,Chromium 1280×900)
+
+        Tab 落在可用方块          onBox=true
+        :focus-visible            true    ring=白 2px + #8E929A 2px    可见=true
+        Enter(真实按键)          toggles 0→1   aria-checked false→true
+                                  defaultPrevented=true(空格默认滚动被压住)
+        空格(见下方 ⚠️)          toggles +1   false→true   defaultPrevented=true
+        其他键 'a'                toggles 不变   defaultPrevented=false ← 反向对照
+        Tab 再按一次              activeElement=sentinel,**跳过了禁用方块**
+        鼠标点击                  onBox=true 而 fv=false、box-shadow=none
+                                  → 拿到焦点但**不显示焦点环**,toggles 仍 +1
+
+      ⚠️ **空格那一行是合成事件,不是真实按键。** 这个自动化驱动送不出空格:
+         `key: 'space'` 到达元素时 `e.key === ""`,`type: ' '` 干脆不产生 keydown。
+         所以空格验的是**处理器的分支**(`e.key === ' '` → preventDefault → 切换),
+         没有验「浏览器真的因此不滚动」—— 那一半由同一段代码的 Enter 分支
+         用真实按键覆盖了,两支只差一个字面量。
+
+         写清楚这一点,是因为「空格 ✅」与「空格的分支 ✅」在结论表里长得一模一样。
+      ────────────────────────────────────────────────────────────
+    -->
+    <link rel="stylesheet" href="../src/styles/neutral.css" />
+    <link rel="stylesheet" href="../src/styles/semantic.css" />
+    <link rel="stylesheet" href="../src/styles/space.css" />
+    <link rel="stylesheet" href="../src/styles/typography.css" />
+    <link rel="stylesheet" href="../src/styles/fonts.css" />
+    <link rel="stylesheet" href="../src/styles/elevation.css" />
+    <link rel="stylesheet" href="../src/styles/accent.css" />
+    <link rel="stylesheet" href="../src/styles/components/checkbox.css" />
+    <style>
+      body {
+        margin: 0;
+        padding: 32px;
+        background: var(--canvas);
+        color: var(--text-body);
+        font: var(--fw-regular) var(--fs-body) / var(--lh-body) var(--font-sans);
+      }
+      .verdict {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        white-space: pre;
+        padding: 12px 14px;
+        border: 1px solid var(--border-default);
+        border-radius: var(--r-1);
+        background: var(--surface-subtle);
+        margin-top: 24px;
+      }
+      .row {
+        display: flex;
+        gap: var(--s-6);
+        align-items: center;
+        margin: 24px 0;
+      }
+      ol {
+        max-width: 74ch;
+        line-height: 1.7;
+      }
+      #sentinel {
+        margin-left: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1 style="font: var(--fw-medium) 18px/1.4 var(--font-sans)">Checkbox 键盘可达性实测台</h1>
+
+    <ol>
+      <li>点一下「起点」按钮,然后按 <kbd>Tab</kbd> —— 焦点应落在**可用**方块上,且出现焦点环。</li>
+      <li>按 <kbd>空格</kbd> —— 应切换选中态,且页面**不滚动**。</li>
+      <li>继续 <kbd>Tab</kbd> —— 应**跳过**禁用方块,直接到「终点」按钮。</li>
+      <li>用鼠标点可用方块 —— 应切换,但**不出现**焦点环。</li>
+    </ol>
+
+    <div class="row">
+      <button id="start" type="button">起点</button>
+
+      <!-- ↓ 逐属性照抄 Checkbox.tsx 的输出(checked=false / disabled=undefined) -->
+      <label class="ds-checkbox">
+        <span
+          id="box"
+          role="checkbox"
+          aria-checked="false"
+          tabindex="0"
+          class="ds-checkbox__box"
+        ></span>
+        <span class="ds-checkbox__label">可用</span>
+      </label>
+
+      <!-- ↓ 同上,disabled=true 分支 -->
+      <label class="ds-checkbox ds-checkbox--disabled">
+        <span
+          id="boxDisabled"
+          role="checkbox"
+          aria-checked="false"
+          aria-disabled="true"
+          tabindex="-1"
+          class="ds-checkbox__box"
+        ></span>
+        <span class="ds-checkbox__label">禁用</span>
+      </label>
+
+      <button id="sentinel" type="button">终点</button>
+    </div>
+
+    <div class="verdict" id="verdict">(还没有交互)</div>
+
+    <script>
+      const box = document.getElementById('box')
+      const disabled = document.getElementById('boxDisabled')
+      const out = document.getElementById('verdict')
+      const NONE = new Set(['none', '', 'rgba(0, 0, 0, 0) 0px 0px 0px 0px'])
+
+      let toggles = 0
+      let lastScrollBlocked = null
+
+      // 与 Checkbox.tsx 的 onKeyDown 同形:筛 key → preventDefault → 切换。
+      box.addEventListener('keydown', (e) => {
+        if (e.key !== ' ' && e.key !== 'Enter') return
+        e.preventDefault()
+        lastScrollBlocked = e.defaultPrevented
+        toggles += 1
+        box.setAttribute(
+          'aria-checked',
+          box.getAttribute('aria-checked') === 'true' ? 'false' : 'true',
+        )
+        report('键盘 ' + (e.key === ' ' ? '空格' : 'Enter'))
+      })
+      box.addEventListener('click', () => {
+        toggles += 1
+        box.setAttribute(
+          'aria-checked',
+          box.getAttribute('aria-checked') === 'true' ? 'false' : 'true',
+        )
+        setTimeout(() => report('鼠标点击'), 0)
+      })
+      document.addEventListener('keyup', (e) => {
+        if (e.key === 'Tab') setTimeout(() => report('键盘 Tab'), 0)
+      })
+
+      function report(label) {
+        const active = document.activeElement
+        const onBox = active === box
+        const ring = getComputedStyle(box).boxShadow
+        const ringShown = onBox && !NONE.has(ring.trim())
+        const fv = onBox && box.matches(':focus-visible')
+
+        out.textContent = [
+          '触发                     : ' + label,
+          '',
+          '── 抄得对不对(与 Checkbox.tsx 核对)──',
+          '可用方块  tabindex       : ' + box.getAttribute('tabindex') + '   (应为 0)',
+          '禁用方块  tabindex       : ' + disabled.getAttribute('tabindex') + '  (应为 -1)',
+          'role                     : ' + box.getAttribute('role'),
+          'aria-checked             : ' + box.getAttribute('aria-checked'),
+          '',
+          '── 实测 ──',
+          '焦点在可用方块上         : ' + onBox,
+          '焦点在禁用方块上         : ' + (active === disabled) + '   (应恒为 false)',
+          '焦点在「终点」按钮上     : ' + (active === document.getElementById('sentinel')),
+          ':focus-visible 命中      : ' + fv,
+          'computed box-shadow      : ' + ring,
+          '焦点环可见               : ' + ringShown,
+          '空格被 preventDefault    : ' + lastScrollBlocked,
+          '累计切换次数             : ' + toggles,
+          '',
+          '判定  焦点环与 :focus-visible 一致 : ' +
+            (onBox ? (fv === ringShown ? '一致 ✅' : '不一致 🚨') : '未聚焦'),
+        ].join('\n')
+
+        window.__dsCheckboxProbe = {
+          label,
+          onBox,
+          onDisabled: active === disabled,
+          onSentinel: active === document.getElementById('sentinel'),
+          fv,
+          ring,
+          ringShown,
+          scrollBlocked: lastScrollBlocked,
+          toggles,
+          checked: box.getAttribute('aria-checked'),
+        }
+      }
+      report('(初始)')
+    </script>
+  </body>
+</html>

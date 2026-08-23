@@ -44,8 +44,15 @@ export function LogoSlot({
   context = 'slot',
   ...rest
 }: LogoSlotProps): React.JSX.Element {
-  // 原版就是 `||` 而不是 `??` —— 空串与缺失同样回落到 logoLight。原样保留。
-  const url = theme === 'dark' ? srcDark || src : src
+  // ★ V0.9.0 改:`||` → `??`,跟随契约侧 `console-contract/src/branding.ts` 的
+  //   `logoFor()`。两者对**空串**的处理不同 —— `||` 把 `''` 也当缺失而回落到亮色徽标,
+  //   `??` 不会。契约里 `AssetRef.path` 是显式配置的路径,**空串是配置错误,不是缺失**;
+  //   把它悄悄回落成另一张图,等于替客户把一个错配当成了没配。
+  //
+  //   ⚠️ 这是两处副本对同一件事给出不同答案的又一例(与 design-system-sync.md
+  //   记的那一族同形):`LogoSlot.prompt.md` 的文字描述写的也是 `logoDark ?? logoLight`,
+  //   只有 `.jsx` 的代码是 `||`。文档与契约一致,实现落单。
+  const url = theme === 'dark' ? (srcDark ?? src) : src
 
   return (
     <span className="ds-logoslot" {...rest}>

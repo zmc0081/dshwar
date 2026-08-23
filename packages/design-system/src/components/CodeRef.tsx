@@ -7,8 +7,23 @@
  * `styles/components/coderef.css` —— 理由见
  * `docs/DECISIONS/design-kit-adoption.md`(内联样式写不了伪类,也写不了媒体查询)。
  *
- * ⚠️ **`done` 这个 state 留着**:它是复制成功的短暂回执(1200ms 后自己退回),
+ * ⚠️ **`state` 留着**:它是复制的短暂回执(1200ms 后自己退回),
  * 不是 hover / active / focus 那类 CSS 伪类本来就能表达的交互态 —— 伪类换不掉它。
+ *
+ * ## 🚨 V0.9.0 修:kit 原版会给出**假的成功回执**
+ *
+ * 原版是 `try { void navigator.clipboard.writeText(text) } catch {} setDone(true)` ——
+ * 两处都错:
+ *
+ * 1. `setDone(true)` 在 try **之外**,失败时照样翻成 check、aria-label 照样变「已复制」;
+ * 2. 更隐蔽的一处:`writeText` 返回 **Promise**,而 `try/catch` **捕不到 Promise 的拒绝** ——
+ *    真实的失败形态(用户拒绝剪贴板权限、非安全上下文)恰恰是拒绝而不是同步抛出,
+ *    所以那个 catch 块在最常见的失败路径上**从来不会执行**。
+ *
+ * 合起来的后果:**复制没成功,而界面说成功了**。用户以为串在剪贴板里,
+ * 粘贴出来是上一次的内容 —— 而他不会怀疑这个按钮,只会怀疑自己。
+ *
+ * 现在:等 Promise 落定,成功 → `copied`,失败 → `failed`(可见的失败反馈)。
  *
  * @module @dshwar/design-system/components/CodeRef
  */
@@ -31,7 +46,8 @@ export function CodeRef({
   tone = 'default',
   ...rest
 }: CodeRefProps): React.JSX.Element {
-  const [done, setDone] = useState(false)
+  /** `idle` → 点击 → `copied` | `failed`,1200ms 后退回 `idle`。 */
+  const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle')
   const text = String(children ?? '')
 
   const classes = ['ds-coderef']
@@ -43,22 +59,36 @@ export function CodeRef({
       {copyable === true ? (
         <button
           type="button"
-          aria-label={done ? '已复制' : '复制'}
-          title={done ? '已复制' : '复制'}
-          className="ds-coderef__copy"
+          aria-label={state === 'copied' ? '已复制' : state === 'failed' ? '复制失败' : '复制'}
+          title={state === 'copied' ? '已复制' : state === 'failed' ? '复制失败' : '复制'}
+          className={
+            state === 'failed' ? 'ds-coderef__copy ds-coderef__copy--failed' : 'ds-coderef__copy'
+          }
           onClick={() => {
-            try {
-              void navigator.clipboard.writeText(text)
-            } catch {
-              // 与原版一致:复制失败静默。
-              // ⚠️ 注意 `setDone(true)` 在 try **之外** —— 失败时图标同样翻成 check,
-              // 即"复制成功"的回执照给。这是 kit 原版的行为,移植时原样保留。
+            // ★ 回执只在**真的成功之后**给。
+            //   `writeText` 是异步的,所以必须等它落定 —— 同步的 try/catch
+            //   捕不到它的拒绝,而拒绝才是最常见的失败形态(权限、非安全上下文)。
+            //   `navigator.clipboard` 本身可能是 undefined(旧浏览器 / 非安全上下文),
+            //   那是同步抛出,所以外面仍要包一层。
+            const settle = (next: 'copied' | 'failed'): void => {
+              setState(next)
+              setTimeout(() => setState('idle'), 1200)
             }
-            setDone(true)
-            setTimeout(() => setDone(false), 1200)
+            try {
+              navigator.clipboard.writeText(text).then(
+                () => settle('copied'),
+                () => settle('failed'),
+              )
+            } catch {
+              settle('failed')
+            }
           }}
         >
-          <Icon name={done ? 'check' : 'copy'} size={13} />
+          <Icon
+            name={state === 'copied' ? 'check' : state === 'failed' ? 'x' : 'copy'}
+            size={13}
+            tone="inherit"
+          />
         </button>
       ) : null}
     </span>

@@ -12,9 +12,14 @@
  * `.ds-iconbutton:hover .ds-icon` 覆盖 —— 于是 `tone` 恒为 `default`,
  * 不再是一个随鼠标变的属性。
  *
- * ⚠️ kit 的 IconButton **没有焦点态**(它既没设 `outline: none`,也没有焦点环)。
- * 这里补上与 Button 同款的 `:focus-visible` 焦点环 —— 设计语言明写焦点环是
- * 键盘可达性通道,而一个能 tab 到、却没有规范焦点指示的按钮是那条规则的漏洞。
+ * ⚠️ kit 的 IconButton **没有焦点态**(它既没设 `outline: none`,也没有焦点环),
+ * 这里**原样保留**:靠浏览器默认 outline。
+ *
+ * 移植期一度补过一条与 Button 同款的 `:focus-visible`,V0.9.0 裁决删掉 ——
+ * 理由不是「kit 没有」,是**本 Session 的纪律是机械转换**:
+ * 给一个 kit 里不存在的控件加视觉决定,超出了那条纪律。要不要补是设计侧的事。
+ *
+ * (删掉不等于失去焦点指示 —— 没有 `outline: none`,浏览器默认环就在。)
  *
  * @module @dshwar/design-system/components/IconButton
  */

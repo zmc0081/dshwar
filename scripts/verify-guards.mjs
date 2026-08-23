@@ -543,6 +543,66 @@ try {
           )
         },
       },
+      {
+        label: '33g 成功回执写在 catch 之外 → 守卫变红',
+        blocked: true,
+        hint: '操作没成功而界面说成功了 —— 用户不会怀疑这个按钮,只会怀疑自己',
+        write: () => {
+          writeFixture('packages/__fe_fixture__/package.json', pkgJson('__fe_fixture__', true))
+          writeFixture(
+            'packages/__fe_fixture__/src/Copy.tsx',
+            'export function copy(t: string, setDone: (v: boolean) => void): void {\n' +
+              '  try {\n' +
+              '    void navigator.clipboard.writeText(t)\n' +
+              '  } catch {\n' +
+              '    // 吞掉\n' +
+              '  }\n' +
+              '  setDone(true)\n' +
+              '}\n',
+          )
+        },
+      },
+      {
+        label: '33h 正向对照:回执写在 try 内 → 放行(规则不是「见到 setDone 就红」)',
+        blocked: false,
+        hint: '',
+        write: () => {
+          writeFixture('packages/__fe_fixture__/package.json', pkgJson('__fe_fixture__', true))
+          writeFixture(
+            'packages/__fe_fixture__/src/Copy.tsx',
+            'export function copy(run: () => void, setDone: (v: boolean) => void): void {\n' +
+              '  try {\n' +
+              '    run()\n' +
+              '    setDone(true)\n' +
+              '  } catch {\n' +
+              '    setDone(false)\n' +
+              '  }\n' +
+              '}\n',
+          )
+        },
+      },
+      {
+        label: '33i 正向对照:注释里描述这个反面写法 → 放行(拦住解释比拦住 bug 更贵)',
+        blocked: false,
+        hint: '',
+        write: () => {
+          // ⚠️ 这个形态**真实存在**:`CodeRef.tsx` 顶部那段 JSDoc 就在讲原版为什么错,
+          //   而本条守卫第一版正是被它误报的。夹具摆在这里是为了让对照独立于那个文件 ——
+          //   哪天 CodeRef 的注释改了措辞,这条对照仍然守着同一件事。
+          writeFixture('packages/__fe_fixture__/package.json', pkgJson('__fe_fixture__', true))
+          writeFixture(
+            'packages/__fe_fixture__/src/Doc.tsx',
+            'export function ok(run: () => void): void {\n' +
+              '  try {\n' +
+              '    run()\n' +
+              '  } catch {\n' +
+              '    return\n' +
+              '  }\n' +
+              '}\n' +
+              '// 反例(勿照抄):setDone(true) 写在 catch 之外,失败时照样报成功。\n',
+          )
+        },
+      },
     ]
 
     for (const c of FE_CASES) {
@@ -553,7 +613,10 @@ try {
       //   夹具包没有 tsconfig.json,会撞上「有包整个在类型检查之外」那条无关守卫 ——
       //   拿 r.ok 当判据的话,正向对照会因为一条不相干的守卫而失败,
       //   而那是夹具的问题不是被测守卫的问题。
-      const hit = /\[(约束[123]|范围)/.test(r.output) || /JS 承载 hover/.test(r.output)
+      const hit =
+        /\[(约束[123]|范围)/.test(r.output) ||
+        /JS 承载 hover/.test(r.output) ||
+        /回执在 catch 之外/.test(r.output)
       const passed = c.blocked ? hit : !hit
       expect(
         c.label,
@@ -875,6 +938,7 @@ try {
         'CI job 都做实质检查且已登记(没有恒绿的绿勾)', // 26a–26c
         'CI 只调 check:all 一个入口,没有第二份门禁清单', // 21a–21c
         '前端交互态样式走 CSS 伪类,不用 JS 承载', // 33e / 33f
+        '成功回执不在 catch 之外(没有假的成功回执)', // 33g–33i
         'Session 标 ✅ 的交付产物都真的存在(任务书自身的诚实性)', // 34a–34c
       ]
 

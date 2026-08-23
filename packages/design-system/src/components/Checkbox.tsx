@@ -52,6 +52,23 @@ export function Checkbox({
         role="checkbox"
         aria-checked={checked === true}
         aria-disabled={disabled === true ? 'true' : undefined}
+        // ⚠️ **kit 原版没有 tabIndex 也没有 onKeyDown —— 键盘完全够不到它。**
+        //
+        // 一个 `role="checkbox"` 的 span 对读屏是复选框,对键盘是一段死文字:
+        // Tab 停不下来,空格与回车不做任何事。而设计语言明写
+        // 「键盘可达性不依赖颜色差异」—— 这里根本不是「依赖颜色」的问题,
+        // 是**那条通道整个不存在**。
+        //
+        // ARIA 的 checkbox 角色规定键盘契约是**空格**切换;回车不是必须的,
+        // 但很多人会按,所以一并收下 —— 多收一个键不会让任何人更难用。
+        // `preventDefault` 是必需的:空格在页面上默认滚动。
+        tabIndex={disabled === true ? -1 : 0}
+        onKeyDown={(e) => {
+          if (disabled === true) return
+          if (e.key !== ' ' && e.key !== 'Enter') return
+          e.preventDefault()
+          onChange?.(checked !== true)
+        }}
         onClick={() => {
           if (disabled === true) return
           onChange?.(checked !== true)

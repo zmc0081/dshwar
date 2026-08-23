@@ -34,3 +34,11 @@
   border-radius: var(--r-1);
   cursor: pointer;
 }
+
+/* ---- 复制失败的可见反馈(V0.9.0 补)----
+   kit 原版复制失败静默(而且因为 setDone 在 try 外,还会给出**假的成功回执**)。
+   现在失败会翻成 x 图标并转成 danger 色 —— 一个说不出「没成功」的按钮,
+   会让用户去怀疑自己的粘贴,而不是怀疑这个按钮。 */
+.ds-coderef__copy--failed {
+  color: var(--danger);
+}

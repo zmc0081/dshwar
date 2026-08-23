@@ -635,6 +635,126 @@ function frontendPackages() {
 }
 
 /**
+ * ★ **成功回执必须在成功之后给。**
+ *
+ * ## 它守的是「假成功回执」—— 本仓最贵的那一族
+ *
+ * V0.9.0 移植设计 kit 时抓到的原型(`CodeRef.jsx`):
+ *
+ * ```js
+ * try { void navigator.clipboard.writeText(text) } catch {}
+ * setDone(true)                 // ← 在 try **之外**
+ * ```
+ *
+ * 两处错叠在一起:
+ *
+ * 1. `setDone(true)` 在 try 之外 —— 同步抛出时照样翻成「已复制」;
+ * 2. 更隐蔽的一处:`writeText` 返回 **Promise**,而同步 `try/catch`
+ *    **捕不到 Promise 的拒绝**。而真实的失败形态(权限被拒、非安全上下文)
+ *    恰恰是拒绝 —— 所以那个 catch 块**在最常见的失败路径上从来不会执行**。
+ *
+ * 后果不是「少一条日志」:**操作没成功,而界面说成功了。**
+ * 用户以为串进了剪贴板,粘贴出来是上一次的内容 —— 而他不会怀疑这个按钮,
+ * 只会怀疑自己。这与 V0.8.0 的 `markPaid` 审计承诺、`memberCount ?? 0`
+ * 是同一族:**系统给出的回执与它实际做到的事不一致。**
+ *
+ * ## 判据
+ *
+ * 前端源码里,把状态设成「完成/已复制/已保存/成功」这一类值的赋值,
+ * **不得出现在 `try` 块之外的同一个函数体里** —— 更准确地说:
+ * 一个文件里若同时出现
+ *
+ * - 一个 `try {` … `catch`,**且**
+ * - 一处「回执赋值」出现在 `catch` 块**结束之后**、仍在同一层
+ *
+ * 就报出来。这是**形状**判据,不做数据流分析 —— 它抓的是那个具体的坏形状,
+ * 不是「所有可能的假回执」。抓不全,但抓得准。
+ *
+ * ## ⚠️ 它抓不到什么(明写)
+ *
+ * - Promise 的拒绝路径本身:`p.then(ok)` 少写一个 `onRejected`,本条看不见。
+ *   那要数据流分析,而一条看不懂的守卫会被绕过。
+ * - 回执写在别的函数里、由回调调用的情形。
+ *
+ * ⇒ **它守的是「已经发生过的那个形状」,不是这一族的全部。**
+ * 这句话写在这里,是为了让下一个撞见漏网之鱼的人知道那不是 bug,是边界。
+ *
+ * @returns {{file: string, line: number, text: string}[]}
+ */
+function checkNoReceiptOutsideTry() {
+  const pkgs = frontendPackages()
+  /** @type {{file: string, line: number, text: string}[]} */
+  const out = []
+
+  if (pkgs.length === 0) {
+    return [
+      {
+        file: 'package.json',
+        line: 0,
+        text: '全仓找不到任何前端包 —— 本条会退化成空集扫描,永远绿',
+      },
+    ]
+  }
+
+  /** 「设成完成态」的赋值:`setXxx(true)` / `setState('copied')` 这一类。 */
+  const RECEIPT =
+    /\bset[A-Z]\w*\(\s*(true|['"](?:done|copied|saved|success|succeeded|ok|complete[d]?)['"])\s*\)/
+
+  let scanned = 0
+  for (const pkg of pkgs) {
+    const files = collectFiles(pkg.dir, (/** @type {string} */ f) => /\.tsx?$/.test(f))
+    scanned += files.length
+    for (const file of files) {
+      let lines
+      try {
+        lines = readFileSync(file, 'utf8').split(/\r?\n/)
+      } catch {
+        continue
+      }
+      // 只在**出现过 try/catch 的文件**里找 —— 没有 try 的文件里,
+      // 一处 setDone(true) 就是普通的状态更新,不是回执问题。
+      if (!lines.some((l) => /\btry\s*\{/.test(l))) continue
+
+      let depth = 0
+      let afterCatch = false
+      lines.forEach((line, i) => {
+        // ⚠️ 跳过注释行。**记录反面写法的注释正是好代码该有的东西** ——
+        //   本条第一次跑就误报了 CodeRef 顶部那段「原版为什么错」的 JSDoc。
+        //   一条会拦住「解释这个 bug」的守卫,会让人把解释删掉 —— 而那比 bug 本身更贵。
+        const trimmed = line.trim()
+        if (trimmed.startsWith('*') || trimmed.startsWith('//') || trimmed.startsWith('/*')) return
+        if (/\bcatch\b[^{]*\{/.test(line)) {
+          afterCatch = true
+          depth = 0
+        }
+        if (afterCatch) {
+          depth += (line.match(/\{/g) ?? []).length - (line.match(/\}/g) ?? []).length
+          // catch 块闭合之后,同一层里再出现回执赋值 —— 就是那个形状。
+          if (depth <= 0 && !/\bcatch\b/.test(line) && RECEIPT.test(line)) {
+            out.push({
+              file: repoPath(REPO, file),
+              line: i + 1,
+              text: `${line.trim().slice(0, 80)} —— 回执在 catch 之外,失败时照样报成功`,
+            })
+            afterCatch = false
+          }
+        }
+      })
+    }
+  }
+
+  if (scanned === 0) {
+    out.push({
+      file: 'package.json',
+      line: 0,
+      text: '前端包里一个 .ts/.tsx 都没有 —— 本条退化成空集扫描,永远绿',
+    })
+  }
+
+  return out
+}
+
+/**
  * ★ **前端不得用 JS 承载 hover / active / focus 的样式。**
  *
  * ## 它守的是一条会在移植时被原样带进来的写法
@@ -1495,6 +1615,18 @@ if (unregistered.length === 0 && stale.length === 0) {
   console.log('        登记处见 scripts/check-guards.mjs 的 PRINCIPAL_CONSUMERS,')
   console.log('        背景见 docs/DECISIONS/principal-scope-binding.md')
   for (const h of [...unregistered, ...stale]) console.log(`        ${h.text}`)
+}
+
+const fakeReceipt = checkNoReceiptOutsideTry()
+if (fakeReceipt.length === 0) {
+  console.log('  通过  成功回执不在 catch 之外(没有假的成功回执)')
+} else {
+  failed += 1
+  console.log(`  违规  成功回执在 catch 之外  (${fakeReceipt.length} 处)`)
+  console.log('        操作没成功而界面说成功了 —— 用户不会怀疑这个按钮,只会怀疑自己')
+  for (const h of fakeReceipt.slice(0, 10)) {
+    console.log(`        ${h.file}:${h.line}  ${h.text}`)
+  }
 }
 
 const jsInteraction = checkNoJsInteractionStyles()

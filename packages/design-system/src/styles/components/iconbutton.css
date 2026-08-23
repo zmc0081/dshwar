@@ -13,7 +13,6 @@
   border: 1px solid transparent;
   border-radius: var(--r-2);
   cursor: pointer;
-  outline: none;
   transition: background-color 120ms linear;
 }
 
@@ -33,7 +32,8 @@
   cursor: not-allowed;
 }
 
-/* ---- 焦点环 = accent.border 2px + 2px offset,≥3:1 于画布 ---- */
-.ds-iconbutton:focus-visible {
-  box-shadow: var(--focus-ring);
-}
+/* ⚠️ **刻意没有焦点环** —— 与 kit 一致,靠浏览器默认 outline。
+   移植期一度补过一条 :focus-visible(与 Button 同款),V0.9.0 裁决删掉:
+   本 Session 的纪律是**机械转换**,给一个 kit 里不存在的控件加视觉决定
+   超出了那条纪律。要不要补是设计侧的事,单独走。
+   ⚠️ 删掉不等于没有焦点指示:浏览器默认 outline 会回来。 */

@@ -67,8 +67,8 @@ function cellStyle(col: TableColumn): React.CSSProperties {
 }
 
 export function Table({
-  columns = [],
-  rows = [],
+  columns,
+  rows,
   density = 'compact',
   selectedIndex = -1,
   selectionTone = 'accent',

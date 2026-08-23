@@ -50,7 +50,21 @@
   --lh-wordmark: 1; /* @kind other */
   --fw-wordmark: 600; /* @kind other */
   --ls-wordmark: 0.14em; /* @kind other */ /* 拉丁全大写 */
-  --ls-wordmark-cjk: 0.06em; /* @kind other */ /* 含 CJK 时，且字号降至 16px */
+  --ls-wordmark-cjk: 0.06em; /* @kind other */ /* 含 CJK 时 */
+
+  /* ⚠️ 下面两档是 V0.9.0 Session 1 补的令牌。
+     补之前 wordmark 的字号阶梯是 17(令牌)/ 16(字面)/ 15(字面)——
+     **一条阶梯劈在两个来源上**,改 --fs-wordmark 只动得了第一档。
+     而 --ls-wordmark-cjk 的原注释里就写着「字号降至 16px」:
+     那个数一直是规范的一部分,只是没有名字。 */
+  --fs-wordmark-cjk: 16px; /* CJK 字形方而密,基准低一档 */
+  --fs-wordmark-shrink: 15px; /* 阶梯末档。两种字集同值 —— 都验过,结论一致 */
+
+  /* Metric 数值阶梯的末档。收紧行高与字距是**刻意的**:
+     那一档是「数字长到撑不下」时才用的,行距按 --lh-body-lg(1.6)排会更挤不下。
+     不复用 --lh-body-lg,因为两者不是同一个值的两种写法。 */
+  --lh-metric-tight: 1.25; /* @kind other */
+  --ls-metric-tight: 0; /* @kind other */
   --wordmark-slot-h: 28px;
   --wordmark-min-w: 64px;
   --wordmark-max-w: 168px;

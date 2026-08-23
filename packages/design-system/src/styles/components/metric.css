@@ -58,8 +58,8 @@
    与 --ls-* —— 原样保留,没有改成 token。 */
 .ds-metric__value--s3 {
   font-size: var(--fs-body-lg);
-  line-height: 1.25;
-  letter-spacing: 0;
+  line-height: var(--lh-metric-tight);
+  letter-spacing: var(--ls-metric-tight);
 }
 
 .ds-metric__sub {

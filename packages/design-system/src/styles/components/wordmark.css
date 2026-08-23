@@ -36,25 +36,28 @@
   white-space: nowrap;
   font-family: var(--font-sans);
   font-weight: var(--fw-bold);
-  line-height: 1;
-  font-size: 17px;
-  letter-spacing: 0.14em;
+  line-height: var(--lh-wordmark);
+  font-size: var(--fs-wordmark);
+  letter-spacing: var(--ls-wordmark);
 }
 
 /* ---- 第 2 条:cjk。CJK 字形方而密,基准就低一档、字距也窄 ---- */
 .ds-wordmark__text--cjk {
-  font-size: 16px;
-  letter-spacing: 0.06em;
+  font-size: var(--fs-wordmark-cjk);
+  letter-spacing: var(--ls-wordmark-cjk);
 }
 
 /* ---- 第 3 条:tighten。阶梯第一档,只收字距 ---- */
 .ds-wordmark__text--tighten {
-  letter-spacing: 0.06em;
+  letter-spacing: var(--ls-wordmark-cjk);
 }
 
-/* ---- 第 4 条:shrink。降字号;两种字集同为 15px ---- */
+/* ---- 第 4 条:shrink。降字号。
+   ⚠️ kit 那处写的是 `size = cjk ? 15 : 15` —— **三元两支同值**。
+   V0.9.0 裁决落成单一值:**两种字集都验过,结论一致**。
+   留着三元会让下一个人以为其中一支该改。 ---- */
 .ds-wordmark__text--shrink {
-  font-size: 15px;
+  font-size: var(--fs-wordmark-shrink);
 }
 
 /* ---- 颜色。组件按 kit 那个三元恰好选一个类,因此不依赖上面的源码顺序 ---- */

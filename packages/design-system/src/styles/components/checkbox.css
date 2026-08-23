@@ -49,3 +49,12 @@
 .ds-checkbox--disabled .ds-checkbox__label {
   color: var(--text-disabled);
 }
+
+/* ---- 焦点环(V0.9.0 补)----
+   kit 原版键盘够不到这个方块,自然也不需要焦点环。补上 tabIndex 之后
+   它成了 tab 序里的一站 —— 而一站看不出「我在这儿」的控件,
+   对键盘用户等于没有。与 Button 同款:accent.border 2px + 2px offset。 */
+.ds-checkbox__box:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
