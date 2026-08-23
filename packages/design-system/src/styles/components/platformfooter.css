@@ -1,0 +1,53 @@
+/* 平台声明带 —— 由 src/components/PlatformFooter.tsx 使用。
+   n-025 底、n-100 上边线、caption 11px、n-600 色、r-0 直角、贯穿整幅宽度
+   —— 与所有卡片(r-3 圆角)形态相反,位置恒定在文档流末端。
+   零 accent:这一带是平台自述,不随租户品牌变色。 */
+
+.ds-platform-footer {
+  background: var(--surface-subtle);
+  border-top: 1px solid var(--border-hairline);
+  border-radius: var(--r-0);
+  padding: var(--s-5) var(--s-8);
+  display: grid;
+  gap: var(--s-4);
+  font: var(--fw-regular) var(--fs-caption) / var(--lh-caption) var(--font-sans);
+}
+
+/* 隐私政策 / 服务条款。带里只有这两条链接,选择器落在 footer 后代上即可。 */
+.ds-platform-footer a {
+  color: var(--text-secondary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* 第一行:客户版权(客户内容)。 */
+.ds-platform-footer__customer {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  color: var(--text-secondary);
+  flex-wrap: wrap;
+}
+
+/* 版权与链接之间的竖分隔线。 */
+.ds-platform-footer__sep {
+  width: 1px;
+  height: 11px;
+  background: var(--n-300);
+}
+
+/* 客户行与平台自述行之间的细线。 */
+.ds-platform-footer__rule {
+  height: 1px;
+  background: var(--border-hairline);
+}
+
+/* 第二行:平台自述。 */
+.ds-platform-footer__platform {
+  color: var(--text-tertiary);
+}
+
+/* 许可路径与许可证名走等宽 —— 它们是可照抄的标识符,不是行文。 */
+.ds-platform-footer__mono {
+  font-family: var(--font-mono);
+}

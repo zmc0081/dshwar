@@ -1,0 +1,45 @@
+/* 运营后台外壳的左侧导航项 —— 由 src/screens/console/Shell.tsx 使用。
+
+   ⚠️ 屏幕层的一次性布局一律留在内联 style;这里只收**交互态**,
+   以及那条交互态绕不开的同组属性。
+
+   kit 原版的 NavItem 用 `useState(false)` + onMouseEnter/onMouseLeave
+   三元判断底色:`active ? accent.surface : hover ? surface-hover : transparent`。
+   底色进了 CSS,另外两种取值就不能再留在内联 style ——
+   内联优先级高于类,留下来会把 :hover 压掉。于是整块一起搬过来。
+
+   ⚠️ 刻意**不**加 :focus-visible 焦点环:kit 的 NavItem 没有 outline: none,
+   走的是浏览器原生焦点环。这里保持一致,不补一个 kit 没有的样式。 */
+
+.ds-shell-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  width: 100%;
+  height: 30px;
+  padding: 0 var(--s-4);
+  text-align: left;
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: var(--r-2);
+  background: transparent;
+  color: var(--text-secondary);
+  font: var(--fw-regular) var(--fs-body) / 1 var(--font-sans);
+  transition: background-color 120ms linear;
+}
+
+.ds-shell-nav:hover {
+  background: var(--surface-hover);
+}
+
+/* 选中态。字重由 font 简写之后的这条覆盖 —— 源码顺序在后,同特指度胜出。 */
+.ds-shell-nav--active {
+  background: var(--accent-surface);
+  color: var(--accent-text-strong);
+  font-weight: var(--fw-medium);
+}
+
+/* kit 的三元里 active 排在 hover 之前:选中行 hover 不换底。 */
+.ds-shell-nav--active:hover {
+  background: var(--accent-surface);
+}

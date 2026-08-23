@@ -1,0 +1,14 @@
+/* 工具调用折叠组 —— 由 src/screens/workbench/ToolCalls.tsx 使用。
+   这里只放交互态:屏幕层其余的一次性布局仍留在内联 style 上。
+
+   kit 原版是 `background: hover ? 'var(--surface-hover)' : 'transparent'`
+   加 `onMouseEnter/onMouseLeave` 两个 useState 写法,取值与结果不变。 */
+
+.ds-toolgroup__summary {
+  background: transparent;
+  transition: background-color 120ms linear;
+}
+
+.ds-toolgroup__summary:hover {
+  background: var(--surface-hover);
+}

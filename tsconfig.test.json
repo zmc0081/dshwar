@@ -20,6 +20,7 @@
     { "path": "./packages/auth-static/tsconfig.test.json" },
     { "path": "./packages/billing-local/tsconfig.test.json" },
     { "path": "./packages/billing-stripe/tsconfig.test.json" },
+    { "path": "./packages/design-system/tsconfig.test.json" },
     { "path": "./console-web/tsconfig.test.json" },
     { "path": "./packages/console-contract/tsconfig.test.json" },
     { "path": "./packages/credentials-multiuser/tsconfig.test.json" },

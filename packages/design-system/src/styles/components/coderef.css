@@ -1,0 +1,36 @@
+/* 机器串 —— 由 src/components/CodeRef.tsx 使用。
+   06 · 错误码 / requestId / 审计动作词同一排版类别:mono + n-600 + 可选中。
+   禁止本地化、禁止改写大小写、禁止放进 accent 色的徽章里 ——
+   mono + n-600 + 可选中天然读作机器串,这本身就是防误认的手段。 */
+
+.ds-coderef {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-3);
+  font: var(--fw-regular) var(--fs-mono) / var(--lh-mono) var(--font-mono);
+  color: var(--text-tertiary);
+  /* ⚠️ 必须写在 font 之后 —— font 简写会把 font-variant 重置回 normal。
+     原版内联对象里也是这个先后顺序。 */
+  font-variant-numeric: tabular-nums;
+  user-select: all;
+  /* 随机串禁止折行 */
+  word-break: keep-all;
+}
+
+/* 错误上下文里用 danger 上色;其余保持 n-600 */
+.ds-coderef--danger {
+  color: var(--danger);
+}
+
+/* 复制按钮。图标颜色由 Icon 的默认 tone 给 n-500,这里不上色。 */
+.ds-coderef__copy {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--r-1);
+  cursor: pointer;
+}

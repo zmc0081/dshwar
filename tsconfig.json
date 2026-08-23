@@ -11,6 +11,7 @@
     { "path": "./packages/principal" },
     { "path": "./packages/auth" },
     { "path": "./packages/auth-static" },
+    { "path": "./packages/design-system" },
     { "path": "./console-web" },
     { "path": "./packages/console-contract" },
     { "path": "./packages/credentials-multiuser" },

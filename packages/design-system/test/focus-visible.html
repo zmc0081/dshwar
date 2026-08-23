@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="utf-8" />
+    <title>DSHWAR · focus-visible 实测台</title>
+    <!--
+      ⚠️ 为什么这条验收必须用真实浏览器,不能写成 vitest:
+
+      **jsdom 不实现 `:focus-visible`。** 在 jsdom 里 `:focus` 与 `:focus-visible`
+      的行为无法区分,于是一个用错伪类的实现照样全绿 —— 那正是这条验收要拦的东西。
+      「用了 :focus-visible 所以对」不是证据,浏览器里 Tab 一次、点一次才是。
+
+      跑法:用浏览器打开本文件,按下方三步操作,读页面上的判定。
+      也可以由自动化驱动(V0.9.0 Session 1 就是这么验的)。
+    -->
+    <link rel="stylesheet" href="../src/styles/neutral.css" />
+    <link rel="stylesheet" href="../src/styles/semantic.css" />
+    <link rel="stylesheet" href="../src/styles/space.css" />
+    <link rel="stylesheet" href="../src/styles/typography.css" />
+    <link rel="stylesheet" href="../src/styles/fonts.css" />
+    <link rel="stylesheet" href="../src/styles/elevation.css" />
+    <link rel="stylesheet" href="../src/styles/accent.css" />
+    <link rel="stylesheet" href="../src/styles/components/button.css" />
+    <style>
+      body {
+        margin: 0;
+        padding: 32px;
+        background: var(--canvas);
+        color: var(--text-body);
+        font: var(--fw-regular) var(--fs-body) / var(--lh-body) var(--font-sans);
+      }
+      .row {
+        display: flex;
+        gap: var(--s-5);
+        margin: 24px 0;
+      }
+      .verdict {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        white-space: pre;
+        padding: 12px 14px;
+        border: 1px solid var(--border-default);
+        border-radius: var(--r-1);
+        background: var(--surface-subtle);
+      }
+      ol {
+        max-width: 70ch;
+        line-height: 1.7;
+      }
+    </style>
+  </head>
+  <body>
+    <h1 style="font: var(--fw-medium) 18px/1.4 var(--font-sans)">focus-visible 实测台</h1>
+
+    <ol>
+      <li>
+        <strong>键盘</strong>:点一下页面空白,再按 <kbd>Tab</kbd> 聚焦到按钮 ——
+        焦点环<strong>应当出现</strong>。
+      </li>
+      <li>
+        <strong>鼠标</strong>:直接点击按钮 —— 焦点环<strong>不应出现</strong>(按钮确实拿到了焦点)。
+      </li>
+      <li>
+        下方 verdict 实时显示:当前是否聚焦、<code>:focus-visible</code> 是否命中、计算出的
+        box-shadow。
+      </li>
+    </ol>
+
+    <div class="row">
+      <button id="target" class="ds-button ds-button--primary" type="button">主操作</button>
+      <button class="ds-button" type="button">次要</button>
+      <button class="ds-button ds-button--ghost" type="button">幽灵</button>
+    </div>
+
+    <div class="verdict" id="verdict">(还没有交互)</div>
+
+    <script>
+      const el = document.getElementById('target')
+      const out = document.getElementById('verdict')
+      const NONE = new Set(['none', '', 'rgba(0, 0, 0, 0) 0px 0px 0px 0px'])
+
+      function read(label) {
+        const focused = document.activeElement === el
+        // `:focus-visible` 命不命中,由浏览器按「上一次交互是不是键盘」决定 ——
+        // 这正是 jsdom 复现不了的那一半。
+        const fv = el.matches(':focus-visible')
+        const shadow = getComputedStyle(el).boxShadow
+        const ringShown = !NONE.has(shadow.trim())
+        out.textContent = [
+          '触发           : ' + label,
+          'document.activeElement === 按钮 : ' + focused,
+          ':focus-visible 命中            : ' + fv,
+          'computed box-shadow            : ' + shadow,
+          '焦点环可见                     : ' + ringShown,
+          '',
+          '判定           : ' + (focused ? (fv === ringShown ? '一致 ✅' : '不一致 🚨') : '未聚焦'),
+        ].join('\n')
+        // 供自动化读取
+        window.__dsFocusProbe = { label, focused, fv, shadow, ringShown }
+      }
+
+      el.addEventListener('focus', () => read('focus 事件'))
+      el.addEventListener('blur', () => read('blur 事件'))
+      el.addEventListener('mousedown', () => setTimeout(() => read('鼠标点击'), 0))
+      document.addEventListener('keyup', (e) => {
+        if (e.key === 'Tab') setTimeout(() => read('键盘 Tab'), 0)
+      })
+    </script>
+  </body>
+</html>

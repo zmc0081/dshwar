@@ -1,0 +1,8 @@
+/* 阴影只有两级。列表与卡片不用阴影，用 1px 描边 —— 高密度界面里阴影会糊。 */
+:root {
+  --shadow-1: 0 1px 2px rgba(12, 15, 23, 0.06); /* 悬浮控件 */
+  --shadow-2: 0 8px 24px rgba(12, 15, 23, 0.12); /* 浮层 */
+  --hairline: 1px solid var(--border-hairline);
+  --stroke: 1px solid var(--border-default);
+  --stroke-control: 1px solid var(--border-control);
+}

@@ -1,0 +1,25 @@
+/* 语义四色 — 不参与主色派生。客户主色若为红，danger 仍是 danger。
+   恒定的是色相（绿/琥珀/红/灰），不是 hex：暗主题必须整组提亮。 */
+:root {
+  --success: #0f7b46; /* 5.03:1 于 #FFFFFF */
+  --warn: #8a5a00; /* 4.98:1 */
+  --danger: #b3261e; /* 6.14:1 */
+  --neutral: #565b64; /* 6.83:1 */
+
+  --success-surface: #e6f4ec;
+  --warn-surface: #f7f0df;
+  --danger-surface: #fbeae9;
+  --neutral-surface: var(--n-100);
+}
+[data-theme='dark'] {
+  --success: #3dbf7e; /* 8.17:1 于 n-950 */
+  --warn: #e0a62e; /* 8.81:1 */
+  --danger: #f2726a; /* 6.74:1 */
+  --neutral: #9ca1aa; /* 7.38:1 */
+
+  /* 同色相 L≈0.22 的 tint，对画布 1.1–1.3:1；四色文字在其上实测 6.1–7.8:1 */
+  --success-surface: #14251c;
+  --warn-surface: #231b0e;
+  --danger-surface: #2a1416;
+  --neutral-surface: #171a22;
+}

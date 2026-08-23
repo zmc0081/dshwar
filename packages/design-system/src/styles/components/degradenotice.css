@@ -1,0 +1,27 @@
+/* 模型降级提示 —— 由 src/components/DegradeNotice.tsx 使用。
+   06 · 句式固定为"由 X 降级至 Y",不带任何劝导语气。模型名一律 mono。 */
+
+.ds-degradenotice {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  flex-wrap: wrap;
+  padding: var(--s-4) var(--s-5);
+  border-radius: var(--r-1);
+  background: var(--warn-surface);
+  border: 1px solid var(--warn);
+  /* 原版把 color 单挂在图标的内联 style 上;这里由容器给 currentColor,
+     图标 tone="inherit" 接住 —— 同一个结果,少一处内联样式。 */
+  color: var(--warn);
+}
+
+.ds-degradenotice__text {
+  font: var(--fw-regular) var(--fs-body) / var(--lh-body) var(--font-sans);
+  color: var(--warn);
+}
+
+/* 模型名一律 mono */
+.ds-degradenotice__model {
+  font: var(--fw-regular) var(--fs-mono) / 1 var(--font-mono);
+  color: var(--warn);
+}

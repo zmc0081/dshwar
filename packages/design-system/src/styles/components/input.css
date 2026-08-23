@@ -1,0 +1,88 @@
+/* 文本输入 —— 由 src/components/Input.tsx 使用。
+   高 34px · r-2 · 聚焦:描边 accent.border + 3px accent.surface 光圈
+   错误态用描边 + 文案,不改背景色。
+
+   ⚠️ 交互态一律走伪类,不走 JS。聚焦用 :focus-visible ——
+   :focus 会在鼠标点击时也命中,那样焦点环对所有人常亮,
+   而它是设计语言里明写的**键盘**可达性通道。
+
+   ⚠️ 右侧 padding 由组件按 suffix 的字符数内联算出(mono 11px ≈ 6.6px/字符
+   + 左右各 8px),这里只给无后缀时的基线值。 */
+
+.ds-input {
+  display: grid;
+  gap: var(--s-3);
+}
+
+.ds-input__label {
+  font: var(--fw-medium) var(--fs-label) / var(--lh-label) var(--font-sans);
+  color: var(--text-secondary);
+}
+
+.ds-input__field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.ds-input__control {
+  width: 100%;
+  height: var(--h-input);
+  box-sizing: border-box;
+  padding: 0 var(--s-4);
+  font: var(--fw-regular) var(--fs-body) / var(--lh-body) var(--font-sans);
+  color: var(--text-body);
+  background: var(--surface-card);
+  border: 1px solid var(--border-control);
+  border-radius: var(--r-2);
+  outline: none;
+  transition: border-color 120ms linear;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ⚠️ `font` 简写会把 font-variant-numeric 复位成 normal,所以这里必须再写一次 ——
+   kit 的内联版靠 style 对象的键序拿到同样的结果(font 在前,fontVariantNumeric 在后)。 */
+.ds-input__control--mono {
+  font: var(--fw-regular) var(--fs-mono) / var(--lh-mono) var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- 错误态:只换描边,背景不动 ---- */
+.ds-input__control--error {
+  border-color: var(--danger);
+}
+
+/* ---- 聚焦 = accent.border 描边 + 3px accent.surface 光圈 ---- */
+.ds-input__control:focus-visible {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 3px var(--accent-surface);
+}
+
+/* 错误态聚焦**不出光圈**(kit: `focus && !error`),描边保持 danger */
+.ds-input__control--error:focus-visible {
+  border-color: var(--danger);
+  box-shadow: none;
+}
+
+.ds-input__control:disabled {
+  color: var(--text-disabled);
+  background: var(--surface-disabled);
+}
+
+.ds-input__suffix {
+  position: absolute;
+  right: var(--s-4);
+  pointer-events: none;
+  white-space: nowrap;
+  font: var(--fw-regular) var(--fs-caption) / 1 var(--font-mono);
+  color: var(--text-tertiary);
+}
+
+.ds-input__message {
+  font: var(--fw-regular) var(--fs-caption) / var(--lh-caption) var(--font-sans);
+  color: var(--text-tertiary);
+}
+
+.ds-input__message--error {
+  color: var(--danger);
+}

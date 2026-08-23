@@ -1,0 +1,21 @@
+/* 工作台外壳 —— 由 src/screens/workbench/WorkbenchShell.tsx 使用。
+   这里只放交互态:屏幕层其余的一次性布局仍留在内联 style 上。 */
+
+/* 侧栏 Agent 项。kit 原版是
+     background: active ? 'var(--accent-surface)' : hover ? 'var(--surface-hover)' : 'transparent'
+   加 onMouseEnter/onMouseLeave 两个 useState。取值不变,优先级链
+   (选中 > hover > 透明)改由**源码顺序**表达:active 的规则写在 hover 之后。 */
+.ds-side-item {
+  background: transparent;
+  transition: background-color 120ms linear;
+}
+
+.ds-side-item:hover {
+  background: var(--surface-hover);
+}
+
+/* active 压过 hover —— 与三元里 active 排在最前一致。 */
+.ds-side-item--active,
+.ds-side-item--active:hover {
+  background: var(--accent-surface);
+}

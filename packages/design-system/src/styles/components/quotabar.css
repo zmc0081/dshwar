@@ -1,0 +1,62 @@
+/* 容量 / 配额条 —— 由 src/components/QuotaBar.tsx 使用。
+
+   06 · 容量数字:进度条填充**不用 accent** —— accent 会被读成"客户承诺的额度"。
+   填充取 --text-secondary(亮主题 = n-700,暗主题 = n-400),轨道取 --surface-disabled,
+   两者随主题翻转:06 的规则是"填充不得是 accent",不是"必须是 n-700 字面值"。
+   只有客户自设的配额目标线可用 accent。
+
+   ⚠️ 填充宽度与目标线位置按数据算,留在组件的内联 style 里,这里不出现。 */
+
+.ds-quotabar {
+  display: grid;
+  gap: var(--s-3);
+}
+
+.ds-quotabar__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-5);
+}
+
+.ds-quotabar__amount {
+  font: var(--fw-regular) var(--fs-mono) / var(--lh-mono) var(--font-mono);
+  color: var(--text-body);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ⚠️ 行高是字面 1,不是 --lh-caption / --lh-mono —— kit 里就是这么写的,原样保留。 */
+.ds-quotabar__pct {
+  font: var(--fw-regular) var(--fs-caption) / 1 var(--font-mono);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ⚠️ overflow: visible 是 kit 里显式写下的(虽与初始值同名),原样保留。 */
+.ds-quotabar__track {
+  position: relative;
+  height: 6px;
+  border-radius: var(--r-1);
+  background: var(--surface-disabled);
+  overflow: visible;
+}
+
+.ds-quotabar__fill {
+  height: 100%;
+  border-radius: var(--r-1);
+  background: var(--text-secondary);
+}
+
+/* 条上唯一允许用 accent 的元素:客户自设的配额目标线。 */
+.ds-quotabar__target {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 12px;
+  background: var(--accent-solid);
+}
+
+.ds-quotabar__note {
+  font: var(--fw-regular) var(--fs-caption) / var(--lh-caption) var(--font-sans);
+  color: var(--text-tertiary);
+}

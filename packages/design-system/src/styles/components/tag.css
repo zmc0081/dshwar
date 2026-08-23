@@ -1,0 +1,56 @@
+/* 状态标签 —— 由 src/components/Tag.tsx 使用。
+   语义四色恒定,不随客户主色变化。
+   只有"当前 / 选中"这类与品牌相关的标签取 accent。 */
+
+.ds-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-3);
+  height: 20px;
+  padding: 0 var(--s-4);
+  border-radius: var(--r-1);
+  /* 中性档的两个颜色写在基类上 —— 这是 kit 里 `TONES[tone] || TONES.neutral`
+     那条兜底的等价写法:tone 传了表外的值时退回中性档,而不是没有颜色。 */
+  background: var(--neutral-surface);
+  color: var(--text-secondary);
+  font: var(--fw-medium) var(--fs-caption) / 1 var(--font-sans);
+  white-space: nowrap;
+}
+
+/* ---- 五档配色,与 kit 的 TONES 表逐条对应 ---- */
+
+.ds-tag--success {
+  background: var(--success-surface);
+  color: var(--success);
+}
+
+.ds-tag--warn {
+  background: var(--warn-surface);
+  color: var(--warn);
+}
+
+.ds-tag--danger {
+  background: var(--danger-surface);
+  color: var(--danger);
+}
+
+.ds-tag--neutral {
+  background: var(--neutral-surface);
+  color: var(--text-secondary);
+}
+
+.ds-tag--accent {
+  background: var(--accent-surface);
+  color: var(--accent-text-strong);
+}
+
+.ds-tag--mono {
+  font: var(--fw-regular) var(--fs-caption) / 1 var(--font-mono);
+}
+
+.ds-tag__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--r-full);
+  background: currentColor;
+}

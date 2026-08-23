@@ -1,0 +1,70 @@
+/* 指标数字 —— 由 src/components/Metric.tsx 使用。
+   caption 标签 + title-1 数值(tabular-nums)+ mono 附注。
+
+   字号阶梯 --s0…--s3 对应 kit 的 SIZES 表,一一对应、顺序不变。
+   **为什么是「缩字号」而不是截断或撑开容器,写在 Metric.tsx 的 SIZES 注释里** ——
+   那段裁决原文随算法一起留在组件侧,这里只放数值。 */
+
+.ds-metric {
+  display: grid;
+  gap: var(--s-3);
+  min-width: 0;
+}
+
+.ds-metric__label {
+  font: var(--fw-regular) var(--fs-caption) / var(--lh-caption) var(--font-sans);
+  color: var(--text-tertiary);
+}
+
+.ds-metric__value {
+  font-family: var(--font-sans);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-body);
+  white-space: nowrap;
+  /* 最小一级仍放不下时横向可滚动 —— 仍然不截断。滚动条不显示。 */
+  overflow-x: auto;
+  overflow-y: hidden;
+  min-width: 0;
+  scrollbar-width: none;
+}
+
+/* muted 用于平台容量等非承诺值 */
+.ds-metric__value--muted {
+  color: var(--text-secondary);
+}
+
+/* ---- 字号阶梯:26 → 21 → 17 → 15 ---- */
+
+.ds-metric__value--s0 {
+  font-size: var(--fs-title-1);
+  line-height: var(--lh-title-1);
+  letter-spacing: var(--ls-title-1);
+}
+
+.ds-metric__value--s1 {
+  font-size: var(--fs-title-2);
+  line-height: var(--lh-title-2);
+  letter-spacing: var(--ls-title-2);
+}
+
+.ds-metric__value--s2 {
+  font-size: var(--fs-title-3);
+  line-height: var(--lh-title-3);
+  letter-spacing: var(--ls-title-3);
+}
+
+/* ⚠️ 末级的行高与字距在 kit 里是**字面值** 1.25 / 0,不是 --lh-body-lg(1.6)
+   与 --ls-* —— 原样保留,没有改成 token。 */
+.ds-metric__value--s3 {
+  font-size: var(--fs-body-lg);
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+.ds-metric__sub {
+  font: var(--fw-regular) var(--fs-caption) / var(--lh-caption) var(--font-mono);
+  /* ⚠️ 必须写在 `font` 简写之后 —— 简写会把 font-variant-numeric 复位成 normal。 */
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+}

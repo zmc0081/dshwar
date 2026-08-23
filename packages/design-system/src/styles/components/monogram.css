@@ -1,0 +1,25 @@
+/* 缩写块 —— 由 src/components/Monogram.tsx 使用。
+   28×28 · r-1 · 底 n-900 · 字 n-050 · 12px · +0.02em。
+
+   ⚠️ 这里**没有** width / height,也没有 favicon 的字号:那三个值按入参 size 算,
+   留在组件的内联 style 里。内联只承担「按数据算出来的一次性尺寸」,
+   静态样式一律在这个文件。 */
+
+.ds-monogram {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  background: var(--n-900);
+  color: var(--n-050);
+  border-radius: var(--r-1);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: var(--fw-bold);
+  line-height: 1;
+  letter-spacing: 0.02em;
+}
+
+/* favicon 变体:无圆角 —— 浏览器标签自身会裁圆。 */
+.ds-monogram--favicon {
+  border-radius: var(--r-0);
+}

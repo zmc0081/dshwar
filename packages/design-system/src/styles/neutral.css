@@ -1,0 +1,56 @@
+/* 01 中性态色板 — 14 档，H=264 恒定，C 0→0.017 随 L 递减而升。
+   生成式：n-k = oklch(L_k C_k 264)。此处为 8bit 量化后的规范值，实现不得手改。
+   界面 90% 面积只用 000/025/050/100/200 + 700/900。 */
+:root {
+  --n-000: #ffffff; /* canvas / 卡片底 */
+  --n-025: #f9fafd; /* 表头 / 斑马行 */
+  --n-050: #f4f6f9; /* 应用背景 */
+  --n-100: #edeff3; /* 内分隔线 / hover 底 */
+  --n-150: #e5e8ed; /* 禁用底 / 轨道 */
+  --n-200: #dbdee3; /* 默认描边 1.35:1 */
+  --n-300: #c9ccd2; /* 控件描边 1.61:1 */
+  --n-400: #adb1b8; /* 禁用文字 2.15:1 */
+  --n-500: #8e929a; /* 图标 / 占位 3.12:1 */
+  --n-600: #757981; /* 三级文字 4.37:1 */
+  --n-700: #565b64; /* 次要文字 6.83:1 */
+  --n-800: #393d46; /* 中性实心底 */
+  --n-900: #1c2029; /* 正文墨色 16.3:1 */
+  --n-950: #0c0f17; /* 暗色底 */
+
+  /* 语义别名 — 组件只用这一层，不直接引 n-* */
+  --canvas: var(--n-000);
+  --surface-app: var(--n-050);
+  --surface-card: var(--n-000);
+  --surface-subtle: var(--n-025);
+  --surface-hover: var(--n-100);
+  --surface-disabled: var(--n-150);
+  --surface-solid: var(--n-800);
+  --border-hairline: var(--n-100);
+  --border-default: var(--n-200);
+  --border-control: var(--n-300);
+  --text-body: var(--n-900);
+  --text-secondary: var(--n-700);
+  --text-tertiary: var(--n-600);
+  --text-disabled: var(--n-400);
+  --text-on-solid: var(--n-000);
+  --icon-default: var(--n-500);
+}
+/* 暗主题不新增色板，直接反序取用（画布 n-950，正文 n-050）。 */
+[data-theme='dark'] {
+  --canvas: var(--n-950);
+  --surface-app: var(--n-950);
+  --surface-card: #131721;
+  --surface-subtle: #101420;
+  --surface-hover: #1c2029;
+  --surface-disabled: #1c2029;
+  --surface-solid: var(--n-150);
+  --border-hairline: #232833;
+  --border-default: #2e333e;
+  --border-control: #3d434f;
+  --text-body: var(--n-050);
+  --text-secondary: var(--n-400);
+  --text-tertiary: var(--n-500);
+  --text-disabled: var(--n-700);
+  --text-on-solid: var(--n-950);
+  --icon-default: var(--n-500);
+}

@@ -1,0 +1,51 @@
+/* 复选框 —— 由 src/components/Checkbox.tsx 使用。
+   ⚠️ 三态的**优先级靠书写顺序**:禁用那条写在勾选之后,于是
+   「禁用压过勾选」—— 与 kit 里 `disabled ? … : checked ? … : …` 的短路顺序等价。
+   两条选择器特指度相同(0,2,0),改动顺序就会改变结果,不要重排。 */
+
+.ds-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-4);
+  cursor: pointer;
+}
+
+.ds-checkbox--disabled {
+  cursor: not-allowed;
+}
+
+.ds-checkbox__box {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-1);
+  background: var(--surface-card);
+  border: 1px solid var(--border-control);
+  transition:
+    background-color 120ms linear,
+    border-color 120ms linear;
+}
+
+/* 勾选态 = accent.solid。`color` 供勾号继承(Icon 用 tone="inherit")。 */
+.ds-checkbox__box[aria-checked='true'] {
+  background: var(--accent-solid);
+  border-color: var(--accent-solid);
+  color: var(--accent-on);
+}
+
+/* 禁用态只换底与描边,**不动 color** —— 禁用且勾选时勾号仍是 accent.on,与 kit 一致。 */
+.ds-checkbox__box[aria-disabled='true'] {
+  background: var(--surface-disabled);
+  border-color: var(--border-default);
+}
+
+.ds-checkbox__label {
+  font: var(--fw-regular) var(--fs-body) / var(--lh-body) var(--font-sans);
+  color: var(--text-body);
+}
+
+.ds-checkbox--disabled .ds-checkbox__label {
+  color: var(--text-disabled);
+}

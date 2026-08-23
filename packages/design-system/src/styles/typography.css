@@ -1,0 +1,59 @@
+/* 03 字型 — 仅系统字体栈，零 webfont。字重只用 400/500/560/600。 */
+:root {
+  /* ⚠ 字体不开放替换 —— 《白牌品牌变量清单》§五 裁决 4（2026-08-18，所有者）。
+     第一位理由是法律：多数商用字体禁止再分发，而分发的是我们的产品；客户上传的
+     授权通常不覆盖"作为产品的一部分分发给他的每一个终端用户"，违约方看起来是客户
+     而实际执行分发的是我们。体积是次要理由。
+     因此本栈**没有** --brand-font 钩子：字体名不是租户可配置项，
+     TenantBranding 里也没有字体字段（那是决策，不是疏忽）。
+     ⚠ 栈里的 "PingFang SC" / "Microsoft YaHei" / "Noto Sans CJK SC" 等是
+     **各平台自带或随容器镜像安装的系统字体，不是本项目分发的 webfont** ——
+     本设计系统刻意不含任何 @font-face（零 webfont 是 03 节的硬规则）。
+     若工具链提示"缺少字体文件"，那是预期状态：不要为它们补 @font-face，
+     也不要替换成其他字族；缺失时由栈内后续字体逐字符回落。 */
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', 'Helvetica Neue', 'PingFang SC',
+    'Microsoft YaHei', 'Noto Sans CJK SC', 'Noto Sans SC', 'Source Han Sans SC',
+    'WenQuanYi Micro Hei', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+
+  --fs-display: 32px;
+  --lh-display: 1.15; /* @kind other */
+  --ls-display: -0.02em; /* @kind other */
+  --fs-title-1: 26px;
+  --lh-title-1: 1.2; /* @kind other */
+  --ls-title-1: -0.02em; /* @kind other */
+  --fs-title-2: 21px;
+  --lh-title-2: 1.3; /* @kind other */
+  --ls-title-2: -0.01em; /* @kind other */
+  --fs-title-3: 17px;
+  --lh-title-3: 1.35; /* @kind other */
+  --ls-title-3: 0; /* @kind other */
+  --fs-body-lg: 15px;
+  --lh-body-lg: 1.6; /* @kind other */
+  --fs-body: 13px;
+  --lh-body: 1.6; /* @kind other */
+  --fs-label: 12px;
+  --lh-label: 1.45; /* @kind other */
+  --fs-caption: 11px;
+  --lh-caption: 1.5; /* @kind other */
+  --fs-mono: 12px;
+  --lh-mono: 1.55; /* @kind other */
+
+  --fw-regular: 400; /* @kind other */
+  --fw-medium: 500; /* @kind other */
+  --fw-semi: 560; /* @kind other */ /* 仅可变字重系统生效，其余回落 500/600 */
+  --fw-bold: 600; /* @kind other */ /* 上限。不用 700 以上：系统栈在 Windows 上会跳伪粗体 */
+
+  /* wordmark — 唯一允许把字距开到 0.14em 的地方。不参与正文阶梯。 */
+  --fs-wordmark: 17px;
+  --lh-wordmark: 1; /* @kind other */
+  --fw-wordmark: 600; /* @kind other */
+  --ls-wordmark: 0.14em; /* @kind other */ /* 拉丁全大写 */
+  --ls-wordmark-cjk: 0.06em; /* @kind other */ /* 含 CJK 时，且字号降至 16px */
+  --wordmark-slot-h: 28px;
+  --wordmark-min-w: 64px;
+  --wordmark-max-w: 168px;
+
+  --numeric-tabular: tabular-nums; /* @kind other */ /* 所有数字列必须启用 */
+}

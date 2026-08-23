@@ -1,0 +1,86 @@
+/* 按钮 —— 由 src/components/Button.tsx 使用。
+   ⚠️ 交互态一律走伪类,不走 JS。焦点环用 :focus-visible ——
+   :focus 会在鼠标点击时也命中,那样焦点环对所有人常亮,
+   而它是设计语言里明写的**键盘**可达性通道。 */
+
+.ds-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-3);
+  height: var(--h-control);
+  padding: 0 var(--s-5);
+  font: var(--fw-medium) var(--fs-label) / var(--lh-label) var(--font-sans);
+  border: 1px solid var(--border-control);
+  border-radius: var(--r-2);
+  background: var(--surface-card);
+  color: var(--text-body);
+  cursor: pointer;
+  white-space: nowrap;
+  outline: none;
+  transition:
+    background-color 120ms linear,
+    border-color 120ms linear;
+}
+
+.ds-button--compact {
+  height: var(--h-control-sm);
+  padding: 0 10px;
+}
+
+/* ---- 变体。四组颜色与 kit 的 VARIANTS 表逐条对应 ---- */
+
+.ds-button--primary {
+  background: var(--accent-solid);
+  color: var(--accent-on);
+  border-color: var(--accent-solid);
+}
+.ds-button--primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+.ds-button--primary:active:not(:disabled) {
+  background: var(--accent-active);
+}
+
+.ds-button--secondary:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+.ds-button--secondary:active:not(:disabled) {
+  background: var(--n-150);
+}
+
+.ds-button--ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  border-color: transparent;
+}
+.ds-button--ghost:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+.ds-button--ghost:active:not(:disabled) {
+  background: var(--n-150);
+}
+
+.ds-button--danger {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.ds-button--danger:hover:not(:disabled) {
+  background: var(--danger-surface);
+}
+.ds-button--danger:active:not(:disabled) {
+  background: var(--danger-surface);
+}
+
+/* ---- 禁用态。底 n-150 / 字 n-400(2.15:1,**刻意 < 3.0**)---- */
+.ds-button:disabled {
+  background: var(--surface-disabled);
+  color: var(--text-disabled);
+  border-color: var(--border-default);
+  cursor: not-allowed;
+}
+
+/* ---- 焦点环 = accent.border 2px + 2px offset,≥3:1 于画布 ---- */
+.ds-button:focus-visible {
+  box-shadow: var(--focus-ring);
+}

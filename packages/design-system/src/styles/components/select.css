@@ -1,0 +1,63 @@
+/* 下拉选择 —— 由 src/components/Select.tsx 使用。
+   与 Input 同高(34px)、同圆角、同聚焦规则。
+
+   ⚠️ 交互态一律走伪类,不走 JS。聚焦用 :focus-visible ——
+   :focus 会在鼠标点击时也命中,那样焦点环对所有人常亮,
+   而它是设计语言里明写的**键盘**可达性通道。 */
+
+.ds-select {
+  display: grid;
+  gap: var(--s-3);
+}
+
+.ds-select__label {
+  font: var(--fw-medium) var(--fs-label) / var(--lh-label) var(--font-sans);
+  color: var(--text-secondary);
+}
+
+.ds-select__field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.ds-select__control {
+  width: 100%;
+  height: var(--h-input);
+  box-sizing: border-box;
+  /* 右侧 30px 给 chevron 留位。kit 里就是这个字面值,不是 token —— 原样保留。 */
+  padding: 0 30px 0 var(--s-4);
+  appearance: none;
+  font: var(--fw-regular) var(--fs-body) / var(--lh-body) var(--font-sans);
+  color: var(--text-body);
+  background: var(--surface-card);
+  border: 1px solid var(--border-control);
+  border-radius: var(--r-2);
+  outline: none;
+  cursor: pointer;
+}
+
+.ds-select__control--mono {
+  font: var(--fw-regular) var(--fs-mono) / var(--lh-mono) var(--font-mono);
+}
+
+/* ---- 聚焦 = accent.border 描边 + 3px accent.surface 光圈,与 Input 同 ---- */
+.ds-select__control:focus-visible {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 3px var(--accent-surface);
+}
+
+.ds-select__control:disabled {
+  color: var(--text-disabled);
+  background: var(--surface-disabled);
+  cursor: not-allowed;
+}
+
+/* chevron 的定位。pointer-events: none —— 点在图标上要落到 select 上。 */
+.ds-select__chevron {
+  position: absolute;
+  right: var(--s-4);
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+}

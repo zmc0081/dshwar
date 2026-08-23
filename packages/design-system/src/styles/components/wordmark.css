@@ -1,0 +1,70 @@
+/* Wordmark —— 由 src/components/Wordmark.tsx 使用。
+   LOGO 三级回落的第三级。字号锁死、行高锁 1、字距加大、只有两种颜色。
+   唯一允许把字距开到 0.14em 的地方。永不用 … 截断品牌名。
+
+   ⚠️ **下面四条规则的源码顺序就是 kit 里那串 if 的赋值顺序,不要重排。**
+   kit 原文:
+
+       let size = cjk ? 16 : 17
+       let ls   = cjk ? '0.06em' : '0.14em'
+       if (active.includes('tighten')) ls   = '0.06em'
+       if (active.includes('shrink'))  size = cjk ? 15 : 15
+
+   四条规则同为单类选择器、优先级相等,于是由**源码顺序**决胜 —— 这与顺序赋值
+   一一对应:base(拉丁基准)→ cjk → tighten → shrink。调换顺序就换了结果。
+
+   ⚠️ shrink 那一档 kit 写的是 `cjk ? 15 : 15` —— 两支同值。原样保留成一条
+   `font-size: 15px`;那个三元不是笔误,它记着「两种字集都在这一档收到 15px」
+   是想过的,不是漏写。 */
+
+.ds-wordmark {
+  display: inline-flex;
+  align-items: center;
+  /* ★ 槽位不可被 flex 压缩。阶梯必须由**声明的槽位上限 168px**驱动,
+     而不是由「这一行还剩多少空间」驱动 —— 否则同一个品牌名在拥挤的顶栏里
+     会静默降级成 monogram,在宽松的顶栏里正常,品牌的呈现取决于旁边放了
+     几个按钮。行挤了就该让它溢出(看得见、能修)。 */
+  flex: 0 0 auto;
+  height: var(--wordmark-slot-h);
+  min-width: var(--wordmark-min-w);
+  max-width: var(--wordmark-max-w);
+  overflow: hidden;
+}
+
+/* ---- 第 1 条:base(拉丁基准)---- */
+.ds-wordmark__text {
+  white-space: nowrap;
+  font-family: var(--font-sans);
+  font-weight: var(--fw-bold);
+  line-height: 1;
+  font-size: 17px;
+  letter-spacing: 0.14em;
+}
+
+/* ---- 第 2 条:cjk。CJK 字形方而密,基准就低一档、字距也窄 ---- */
+.ds-wordmark__text--cjk {
+  font-size: 16px;
+  letter-spacing: 0.06em;
+}
+
+/* ---- 第 3 条:tighten。阶梯第一档,只收字距 ---- */
+.ds-wordmark__text--tighten {
+  letter-spacing: 0.06em;
+}
+
+/* ---- 第 4 条:shrink。降字号;两种字集同为 15px ---- */
+.ds-wordmark__text--shrink {
+  font-size: 15px;
+}
+
+/* ---- 颜色。组件按 kit 那个三元恰好选一个类,因此不依赖上面的源码顺序 ---- */
+.ds-wordmark__text--light {
+  color: var(--n-900);
+}
+.ds-wordmark__text--dark {
+  color: var(--n-050);
+}
+/* 默认不开 —— 不与主操作抢签名。客户显式要求时才允许。 */
+.ds-wordmark__text--accent {
+  color: var(--accent-text-strong);
+}

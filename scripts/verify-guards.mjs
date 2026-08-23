@@ -36,6 +36,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 import { runTestsUnderMutation, withRestoredFiles } from './lib/mutate.mjs'
+import { collectFiles, isPackageJson } from './lib/scan.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 /** @param {...string} seg */
@@ -1800,14 +1801,45 @@ try {
     //   V0.9.0 把扫描范围从写死目录改成「按包发现」之后,把 src 挪到同包的
     //   别处**文件仍在包里**,守卫照样扫得到 —— 那时这条负向验证会失败,
     //   而失败的是夹具不是守卫。挪走整个包才对应「前端代码全没了」。
-    const src = p('console-web')
+    // ⚠️ 而且要挪走**全部**前端包,不是某一个写死的。
+    //   V0.9.0 移植设计 kit 之后前端包从 1 个变成 2 个,只挪 console-web 时
+    //   design-system 还在 —— 空集条件本来就不该满足,于是这条负向验证失败,
+    //   **失败的是夹具不是守卫**。写死一个包名的夹具,会被「加了第二个包」打偏。
+    //
+    //   所以按守卫自己的判据(package.json 依赖里有 react)动态找,
+    //   找到几个挪几个。加第三个前端包时这条不用再改。
+    const frontendDirs = collectFiles(REPO, isPackageJson)
+      .filter((f) => {
+        try {
+          const json = JSON.parse(readFileSync(f, 'utf8'))
+          const deps = { ...(json.dependencies ?? {}), ...(json.devDependencies ?? {}) }
+          return deps['react'] !== undefined
+        } catch {
+          return false
+        }
+      })
+      .map((f) => dirname(f))
+
     // ⚠️ 挪去 node_modules —— 它在 collectFiles 的 SKIP_DIRS 里。
     //   挪到仓库内的**别的名字**是不够的:package.json 还在,扫描照样发现它。
     //   同卷 rename,还原安全。
-    const stash = p('node_modules', '__console_web_stash__')
-    renameSync(src, stash)
+    /** @type {[string, string][]} */
+    const stashes = frontendDirs.map((/** @type {string} */ dir, /** @type {number} */ i) => [
+      dir,
+      p('node_modules', `__fe_stash_${i}__`),
+    ])
+    for (const [dir, stash] of stashes) renameSync(dir, stash)
     const r = runGuards()
-    renameSync(stash, src)
+    for (const [dir, stash] of stashes) renameSync(stash, dir)
+
+    // ★ 出口计数:一个前端包都没找到时,上面的循环一次都不跑,
+    //   而 runGuards() 照样会因为「找不到任何前端包」而红 —— 那条红说明不了
+    //   「挪走它们会红」。所以先确认真的挪走过东西。
+    expect(
+      '24d 前置:真的找到了前端包(否则本条空跑)',
+      frontendDirs.length > 0,
+      frontendDirs.length > 0 ? undefined : '一个前端包都没找到 —— 24d 本条作废',
+    )
     expect(
       '24d ★ 前端包整个消失 → 守卫变红(而不是空集扫描静默通过)',
       !r.ok && /空集扫描/.test(r.output),

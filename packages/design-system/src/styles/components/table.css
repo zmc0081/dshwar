@@ -1,0 +1,111 @@
+/* 数据表 —— 由 src/components/Table.tsx 使用。
+   ⚠️ 交互态一律走伪类,不走 JS:kit 原版用 `useState(-1)` 记住 hover 的行号,
+   这里换成 `:hover`。
+
+   紧凑行 36px(运营后台默认)/ 44px。无外阴影、无斑马纹(斑马纹在 8 列以上才启用 n-025)。
+   数字右对齐 + tabular-nums。选中行用 accent.surface —— 审计表例外,用 selectionTone="neutral"。 */
+
+.ds-table {
+  /* 选中底色。审计表必须传 selectionTone="neutral" —— 06 硬规则:审计表禁用 accent 选中行。
+     走自定义属性而不是再加一条选择器:否则 neutral 要同时压过「斑马 + 选中」两组权重。 */
+  --ds-table-selected-bg: var(--accent-surface);
+
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-3);
+  overflow: hidden;
+  background: var(--surface-card);
+}
+
+.ds-table--selection-neutral {
+  --ds-table-selected-bg: var(--surface-hover);
+}
+
+.ds-table__grid {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: auto;
+}
+
+.ds-table__head-row {
+  height: 32px;
+  background: var(--surface-subtle);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.ds-table__row {
+  height: var(--row-compact);
+  background: transparent;
+  border-bottom: 1px solid var(--border-hairline);
+  cursor: default;
+  transition: background-color 120ms linear;
+}
+
+.ds-table__row:last-child {
+  border-bottom: none;
+}
+
+/* 行高:compact 是运营后台默认,所以变体类只加在 density="default" 上,与 Button 的 --compact 同款。 */
+.ds-table--density-default .ds-table__row {
+  height: var(--row-default);
+}
+
+.ds-table--clickable .ds-table__row {
+  cursor: pointer;
+}
+
+/* ---- 底色优先级链:选中 > hover > 斑马 > 透明,与 kit 的三元式逐条对应。
+   ⚠️ 斑马那条把父类包进 `:where()` 把它的权重清零,好让后两条按**源码顺序**盖住它 ——
+   否则 `.ds-table--zebra .ds-table__row:nth-child(even)`(0,3,0)比
+   `.ds-table__row:hover`(0,2,0)更特化,斑马行 hover 就不变色了。
+
+   `nth-child(even)` 对应 kit 的 `i % 2`:i 从 0 起、nth-child 从 1 起,i=1 正是第 2 行。 ---- */
+
+:where(.ds-table--zebra) .ds-table__row:nth-child(even) {
+  background: var(--surface-subtle);
+}
+
+.ds-table__row:hover {
+  background: var(--surface-hover);
+}
+
+.ds-table__row[aria-selected='true'] {
+  background: var(--ds-table-selected-bg);
+}
+
+/* ---- 单元格 ---- */
+
+.ds-table__head-cell {
+  padding: 0 var(--s-5);
+  text-align: left;
+  font: var(--fw-regular) var(--fs-caption) / var(--lh-caption) var(--font-sans);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  border-radius: var(--r-0);
+}
+
+.ds-table__head-cell--right {
+  text-align: right;
+}
+
+.ds-table__cell {
+  padding: 0 var(--s-5);
+  text-align: left;
+  font: var(--fw-regular) var(--fs-body) / var(--lh-body) var(--font-sans);
+  color: var(--text-body);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  border-radius: var(--r-0);
+}
+
+.ds-table__cell--right {
+  text-align: right;
+}
+
+/* ⚠️ `font` 是简写,会把 font-variant-numeric 重置回 normal ——
+   所以 tabular-nums 必须在这里再写一遍。kit 里两者同在一个 style 对象、
+   按声明顺序不打架;拆成两条 CSS 规则后就会。 */
+.ds-table__cell--mono {
+  font: var(--fw-regular) var(--fs-mono) / var(--lh-mono) var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}

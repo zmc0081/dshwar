@@ -1,0 +1,30 @@
+/* 隔离档警告条 —— 由 src/components/QuarantineBanner.tsx 使用。
+   danger 语义色 + r-1 通栏条,固定在内容区顶端、与页头之间留 s-6,
+   永不进入卡片内部。零 accent:这是平台自述,不随租户品牌变色。 */
+
+.ds-quarantine-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  padding: var(--s-4) var(--s-5);
+  border-radius: var(--r-1);
+  background: var(--danger-surface);
+  border: 1px solid var(--danger);
+  margin-bottom: var(--s-6);
+  /* 图标走 tone="inherit"(= currentColor)。kit 里这份 var(--danger) 写在
+     图标自己的内联 style 上,这里改由条出色 —— 图标取到的仍是同一个值。 */
+  color: var(--danger);
+}
+
+.ds-quarantine-banner__message {
+  font: var(--fw-medium) var(--fs-body) / var(--lh-body) var(--font-sans);
+  color: var(--danger);
+}
+
+/* 档位码。推到行尾,等宽,整段可选中 —— 用户要把它原样贴进工单。 */
+.ds-quarantine-banner__code {
+  margin-left: auto;
+  font: var(--fw-regular) var(--fs-caption) / 1 var(--font-mono);
+  color: var(--danger);
+  user-select: all;
+}

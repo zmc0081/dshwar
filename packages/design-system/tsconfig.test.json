@@ -1,0 +1,16 @@
+// 测试文件的类型检查项目 —— 与 packages/metering 同款,理由见那个文件的注释:
+// 产品项目是 composite + rootDir: "./src",把 test/ 并进去会把 rootDir 抬到包根,
+// dist/ 里凭空多出两层。所以另起一个 noEmit 项目,references 指向产品项目,
+// 测试里的 `../src/xxx.ts` 由 tsc --build 重定向到已构建的 .d.ts。
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rewriteRelativeImportExtensions": false,
+    "rootDir": ".",
+    "tsBuildInfoFile": "./dist/.tsbuildinfo.test"
+  },
+  "include": ["test/**/*.ts", "test/**/*.tsx"],
+  "exclude": ["dist", "node_modules"],
+  "references": [{ "path": "./tsconfig.json" }]
+}

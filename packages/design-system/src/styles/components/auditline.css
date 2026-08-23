@@ -1,0 +1,15 @@
+/* 审计一行 —— 由 src/components/AuditLine.tsx 使用。
+   06 · 动作词一律 mono 小写下划线原样输出,不本地化、不换成自然语言。
+   mono 排版由 CodeRef 自己负责,这里只管三段之间的排列。 */
+
+.ds-auditline {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  flex-wrap: wrap;
+}
+
+/* ⚠️ 分隔点用的是 --n-300 字面色阶,不是语义 token —— kit 里就是这么写的,原样保留。 */
+.ds-auditline__sep {
+  color: var(--n-300);
+}

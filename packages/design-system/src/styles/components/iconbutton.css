@@ -1,0 +1,39 @@
+/* 仅图标按钮 —— 由 src/components/IconButton.tsx 使用。
+   ⚠️ 交互态一律走伪类,不走 JS。焦点环用 :focus-visible ——
+   :focus 会在鼠标点击时也命中,那样焦点环对所有人常亮,
+   而它是设计语言里明写的**键盘**可达性通道。
+
+   边长(width / height)由组件按 `size` 内联给出,不在这里。 */
+
+.ds-iconbutton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-2);
+  cursor: pointer;
+  outline: none;
+  transition: background-color 120ms linear;
+}
+
+/* hover 底用 n-100,**没有 accent 底** —— 行内操作不放主色。 */
+.ds-iconbutton:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+/* kit 里 hover 时把 Icon 的 tone 从 default 换成 strong;这里由 CSS 直接覆盖图标色。
+   特指度 (0,4,0) > .ds-icon--default 的 (0,1,0),所以不需要 !important。 */
+.ds-iconbutton:hover:not(:disabled) .ds-icon {
+  color: var(--text-secondary);
+}
+
+/* 禁用态只改指针 —— kit 里底色本就是 transparent,图标仍是 n-500。 */
+.ds-iconbutton:disabled {
+  cursor: not-allowed;
+}
+
+/* ---- 焦点环 = accent.border 2px + 2px offset,≥3:1 于画布 ---- */
+.ds-iconbutton:focus-visible {
+  box-shadow: var(--focus-ring);
+}

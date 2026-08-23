@@ -1,0 +1,25 @@
+/* 图标 —— 由 src/components/Icon.tsx 使用。
+   ⚠️ 三档 tone **全是中性色,没有 accent 档,这是设计约束不是遗漏**
+   (复制 / 操作图标一律 n-500)。加一档彩色等于把 accent 撒进表格行尾。 */
+
+.ds-icon {
+  display: block;
+  flex: 0 0 auto;
+}
+
+/* ---- tone 三档。色值与 kit 的 TONES 表逐条对应 ---- */
+
+/* n-500 · 3.12:1 */
+.ds-icon--default {
+  color: var(--icon-default);
+}
+
+/* n-700 */
+.ds-icon--strong {
+  color: var(--text-secondary);
+}
+
+/* 继承上下文色。未配置态(无彩)下继承的是 n-800/n-900 而不是彩色 —— 这是预期行为。 */
+.ds-icon--inherit {
+  color: currentColor;
+}

@@ -1,0 +1,31 @@
+/* 卡片 / 面板 —— 由 src/components/Card.tsx 使用。
+   ⚠️ **不加阴影**:分层靠 1px 描边与 n-025 底。高密度界面里阴影会糊。
+
+   `--ds-card-pad` 由 Card.tsx 按 `pad` 属性写入(默认 var(--s-6) = 16px)。
+   这里的兜底值是给「不经组件、直接用类」的场合准备的,默认值的权威源是 Card.tsx。 */
+
+.ds-card {
+  background: var(--surface-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-3);
+  overflow: hidden;
+}
+
+.ds-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-5);
+  padding: var(--s-5) var(--ds-card-pad, var(--s-6));
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.ds-card__title {
+  margin: 0;
+  font: var(--fw-bold) var(--fs-title-3) / var(--lh-title-3) var(--font-sans);
+  color: var(--text-body);
+}
+
+.ds-card__body {
+  padding: var(--ds-card-pad, var(--s-6));
+}

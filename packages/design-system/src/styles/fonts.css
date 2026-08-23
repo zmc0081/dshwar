@@ -1,0 +1,86 @@
+/* 03 字型 · 系统字体声明 —— **本文件不分发任何字体文件。**
+   每条规则的 src 只有 local()：它声明的是"这台机器上如果装了这个字体就用它"，
+   没有 url()，因此没有任何字节随产品分发。这与裁决 4「字体不开放」一致：
+   禁止的是再分发客户上传的商用字体，而不是引用平台自带的系统字体。
+   零 webfont 因此仍然成立（无 url()、无网络请求、无首屏字体闪烁）。
+
+   为什么要写这些规则：让工具链能确认栈里的 CJK 字族是有意声明的系统字体，
+   而不是漏传的 webfont。缺失时行为不变 —— 由栈内后续字体逐字符回落
+   （macOS PingFang SC / Windows Microsoft YaHei / Linux Noto Sans CJK SC）。 */
+@font-face {
+  font-family: 'PingFang SC';
+  src: local('PingFang SC'), local('PingFangSC-Regular');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'PingFang SC';
+  src: local('PingFang SC Medium'), local('PingFangSC-Medium');
+  font-weight: 500 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Microsoft YaHei';
+  src: local('Microsoft YaHei'), local('MicrosoftYaHei');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Microsoft YaHei';
+  src: local('Microsoft YaHei Bold'), local('MicrosoftYaHei-Bold');
+  font-weight: 500 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Noto Sans CJK SC';
+  src: local('Noto Sans CJK SC'), local('NotoSansCJKsc-Regular');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Noto Sans CJK SC';
+  src: local('Noto Sans CJK SC Medium'), local('NotoSansCJKsc-Medium');
+  font-weight: 500 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Noto Sans SC';
+  src: local('Noto Sans SC');
+  font-weight: 400 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Source Han Sans SC';
+  src: local('Source Han Sans SC');
+  font-weight: 400 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'WenQuanYi Micro Hei';
+  src: local('WenQuanYi Micro Hei');
+  font-weight: 400 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Segoe UI';
+  src: local('Segoe UI');
+  font-weight: 400 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Helvetica Neue';
+  src: local('Helvetica Neue');
+  font-weight: 400 600;
+  font-style: normal;
+  font-display: swap;
+}

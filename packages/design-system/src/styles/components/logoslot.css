@@ -1,0 +1,19 @@
+/* 顶栏 Logo 槽位 —— 由 src/components/LogoSlot.tsx 使用。
+   G1 · 槽位 28px 高 × 64–168px 宽。object-fit: contain,最大绘制高 20px。
+   ⚠️ 禁止圆角、描边、阴影、背景板 —— 客户 logo 自带留白,加任何容器都会二次裁切。
+   深浅切换 logoDark ?? logoLight,不做自动反色。 */
+
+.ds-logoslot {
+  display: inline-flex;
+  align-items: center;
+  height: var(--wordmark-slot-h);
+  min-width: var(--wordmark-min-w);
+  max-width: var(--wordmark-max-w);
+}
+
+.ds-logoslot__img {
+  max-height: 20px;
+  max-width: var(--wordmark-max-w);
+  object-fit: contain;
+  display: block;
+}

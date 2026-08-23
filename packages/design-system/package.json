@@ -1,0 +1,24 @@
+{
+  "name": "@dshwar/design-system",
+  "version": "0.9.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./styles/*": "./src/styles/*"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "serve": "node scripts/serve.mjs"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.2",
+    "react": "19.2.0"
+  }
+}
