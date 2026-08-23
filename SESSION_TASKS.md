@@ -374,7 +374,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 | ------- | ---------------------------------------------------- | ---- |
 | 0       | 设计交付物可用性裁决 + console-web 现状核查          | ✅   |
 | 1       | 移植设计 kit → `packages/design-system` + 守卫扩范围 | ✅   |
-| 2       | Web 工作台(workbench kit)                            | ⬜   |
+| 2       | Web 工作台(workbench kit)                            | ✅   |
 | 3       | 运营后台(console kit)                                | ⬜   |
 | 4       | 认证:系统浏览器 + PKCE + loopback + 钥匙串           | ⬜   |
 | 5       | Tauri 壳:一份 React 三宿主 + 运行期主题 + updater    | ⬜   |
@@ -491,11 +491,36 @@ Session 1 交付的是手抄 DOM 的 `.html` 版,Session 2 装上 react-dom 后
 
 ### Session 2 · Web 工作台
 
-**交付**:workbench kit 8 屏接进真实 API(会话 / 运行 / 产物 / 作业 /
-工作区设置 / 离线态 / 工具调用)。
+**交付**:`workbench-web/`(根级前端包,`@dshwar/workbench-web`)、
+`workbench-web/src/api.ts`(唯一网络出口,运行时 Bearer + 501 提成一等公民)、
+`workbench-web/src/router.ts`(hash 路由,工作区放 query 跨屏不变)、
+`workbench-web/src/App.tsx`(八屏接线 + 四态 loading/ok/failed/not-implemented)、
+`workbench-web/src/format.ts`(展示格式化,纯函数)、
+`workbench-web/src/view/`(转换层:API 形状 → 表现层 props,三个模块)、
+`workbench-web/src/main.tsx`(运行期配置注入,缺 baseUrl/token 拒绝启动)、
+`workbench-web/test/`(format 与 router 的 19 条断言)、
+`packages/design-system/src/screens/workbench/`(八屏从夹具写死改为受控 props)、
+`sdk/typescript/src/client.ts`(补七条 `/v1/workspaces*` + 204 无正文通路 +
+`workspaceId` + **`globalThis.fetch` 的 bind 修复**)、
+`sdk/typescript/test/browser-fetch.test.ts`(浏览器语义的回归断言)、
+`sdk/typescript/src/generated/schema.ts`(从 `.d.ts` 改名 ——
+声明文件输入永远不会被 tsc 产出到构建目录,消费者一直拿着悬空的类型引用)、
+`scripts/lib/scan.mjs`(文本形状守卫统一跳过整行注释:守卫不能惩罚记录)、
+`scripts/check-guards.mjs`(两条新守卫:包根 `.ts` 的类型检查覆盖 + eslint 分域规则覆盖每个前端包)、
+`scripts/verify-guards.mjs`(负向验证 35a–38b,共 9 条)。
 
-**验收**:三条既定约束在界面上成立 —— 工具调用只显示工具名与路径(约束 1)、
-无审批弹窗(约束 2)、工作区设置页按 501 如实呈现(约束 3)。
+**验收**:三条既定约束在界面上成立 —— **真实浏览器 + 真实网关实测**:
+
+| 约束                       | 判据                              | 实测                                                                                                                                     |
+| -------------------------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 工具调用只到工具名与路径 | `ToolCall` 类型里**没有命令字段** | ✅ 传不进去;界面另有一条说明「命令原文记在服务端审计里」                                                                                 |
+| 2 无审批弹窗               | `dialog` / `role=dialog` 计数     | ✅ **0 个**;设置页是替代品                                                                                                               |
+| 3 设置页按 501 如实呈现    | 证据行是**真值**不是写死的        | ✅ `PATCH /v1/workspaces/{id}/policy · 501 · 计划 V0.5.5 · 205e126e-…`(真 `x-dshwar-planned-version` + 真 requestId);10/20 控件 disabled |
+
+作业屏同样如实:`GET /v1/jobs · 501 NOT_IMPLEMENTED` + 「刻意不画一张空表:
+空表说的是『你没有作业』,而真实情况是服务端还答不了这个问题」。
+
+> 实现细节与三处真缺陷见 `SESSION_TASKS_HISTORY.md`(收官时归档)。
 
 ---
 

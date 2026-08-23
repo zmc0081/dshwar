@@ -7,7 +7,7 @@
  *
  * @module @dshwar/sdk/errors
  */
-import type { components } from './generated/schema.d.ts'
+import type { components } from './generated/schema.ts'
 
 /**
  * 闭集错误码,直接来自生成的类型。

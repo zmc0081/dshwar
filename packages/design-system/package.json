@@ -10,7 +10,11 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
-    "./styles/*": "./src/styles/*"
+    "./styles/*": "./src/styles/*",
+    "./screens/*": {
+      "types": "./dist/screens/*.d.ts",
+      "default": "./dist/screens/*.js"
+    }
   },
   "scripts": {
     "build": "tsc -b",

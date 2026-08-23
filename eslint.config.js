@@ -126,7 +126,25 @@ export default tseslint.config(
   // CLAUDE.md 第六节:禁止 any
   // ---------------------------------------------------------------
   {
-    files: ['packages/**/*.ts', 'gateway/**/*.ts', 'adapters/**/*.ts'],
+    // ⚠️ **含 `.tsx`,含两个根级前端。** 原先只写 `packages/**/*.ts`,
+    //   于是 `argsIgnorePattern: '^_'` 在三处不生效:design-system 的 46 个
+    //   `.tsx`、`console-web/`、`workbench-web/` —— 而 `_` 前缀是全仓的约定。
+    //
+    //   实测撞上的形态:`view/artifacts.ts` 里两个刻意不用的参数
+    //   (`_d`,签名要留着但今天没有数据源)在根级包里报 no-unused-vars,
+    //   在 `packages/` 下同样的写法却合法。**同一个约定在两处不同的效力**,
+    //   而差别的原因藏在一行 glob 里。
+    //
+    //   ⚠️ `no-explicit-any` 不受这条影响 —— 它在 tseslint.recommended 里
+    //   本来就是全仓生效的(实测:根级前端与 .tsx 里的 `any` 都会红)。
+    //   这里重复声明只是为了让「禁 any」在配置里显式可见。
+    files: [
+      'packages/**/*.{ts,tsx}',
+      'gateway/**/*.{ts,tsx}',
+      'adapters/**/*.{ts,tsx}',
+      'console-web/**/*.{ts,tsx}',
+      'workbench-web/**/*.{ts,tsx}',
+    ],
     rules: {
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/consistent-type-imports': 'error',

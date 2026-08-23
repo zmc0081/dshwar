@@ -13,7 +13,7 @@ import { renderSchema } from './render.ts'
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 const contractPath = join(packageRoot, '..', '..', 'packages', 'api-contract', 'openapi.json')
-const target = join(packageRoot, 'src', 'generated', 'schema.d.ts')
+const target = join(packageRoot, 'src', 'generated', 'schema.ts')
 
 const document = JSON.parse(readFileSync(contractPath, 'utf8')) as Record<string, unknown>
 const rendered = await renderSchema(document)

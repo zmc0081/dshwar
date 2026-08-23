@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DSHWAR 工作台</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <!--
+      ⚠️ 运行期配置。**宿主注入,不编译进产物。**
+
+      这一段在真实部署里由服务端模板渲染、或由 Tauri 壳在加载前写入。
+      开发时用下面这份占位值,指向本地网关。
+
+      为什么不放 .env:.env 会在构建时被内联进 bundle,而那就等于
+      「一个二进制服务所有租户」这条不成立了 —— token 与 baseUrl 都是
+      每个部署各不相同的东西。
+    -->
+    <script>
+      window.__DSHWAR_CONFIG__ = {
+        // 开发期指向 dev server 自己 —— vite 把 /v1 代理到本地网关,于是浏览器看到的是同源。
+        baseUrl: 'http://localhost:4322',
+        token: 'dev-alice',
+        productName: 'DSHWAR',
+        legalEntityName: '',
+      }
+    </script>
+    <script type="module" src="./src/main.tsx"></script>
+  </body>
+</html>

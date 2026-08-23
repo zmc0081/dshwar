@@ -13,6 +13,7 @@
     { "path": "./packages/auth-static" },
     { "path": "./packages/design-system" },
     { "path": "./console-web" },
+    { "path": "./workbench-web" },
     { "path": "./packages/console-contract" },
     { "path": "./packages/credentials-multiuser" },
     { "path": "./packages/fs-tenant" },

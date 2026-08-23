@@ -37,7 +37,7 @@ import { Select } from '../../components/Select.tsx'
 import { Table } from '../../components/Table.tsx'
 import { Tag } from '../../components/Tag.tsx'
 
-function NotWiredNotice(): React.JSX.Element {
+function NotWiredNotice({ evidence }: { evidence: PolicyEvidence }): React.JSX.Element {
   return (
     <div
       style={{
@@ -70,7 +70,7 @@ function NotWiredNotice(): React.JSX.Element {
           策略端点回落 <CodeRef tone="danger">501 NOT_IMPLEMENTED</CodeRef>
           。接上执行层之前先开放保存,会让策略被保存、被显示、却从不被查询——那比 501 危险得多。
         </span>
-        <CodeRef copyable>PUT /v1/workspaces/{'{id}'}/policy · 501 · req_2b88af51c3</CodeRef>
+        <CodeRef copyable>{evidenceLine(evidence)}</CodeRef>
       </div>
     </div>
   )
@@ -199,13 +199,48 @@ function PolicyTable(): React.JSX.Element {
   )
 }
 
+/**
+ * 策略端点**真实返回的那个 501** 的证据。
+ *
+ * ⚠️ 这三样必须是**从响应里拿到的**,不能写死。
+ * kit 原版那一行是常量 `req_2b88af51c3` —— 在设计稿里没问题,
+ * 接了真实 API 之后就是一条**假证据**:用户拿它去开工单,
+ * 而服务端日志里根本没有这个 id。
+ *
+ * 与「假成功回执」同族:界面给出的凭据,与它实际拿到的不一致。
+ */
+export interface PolicyEvidence {
+  /** 被拒的那个端点,如 `PATCH /v1/workspaces/{id}/policy`。 */
+  readonly endpoint: string
+  /** 计划在哪个版本实现。取自 `x-dshwar-planned-version` 头;缺失时 `null`。 */
+  readonly plannedVersion: string | null
+  /** 这次调用的 requestId。取不到时 `null` —— **不要编一个**。 */
+  readonly requestId: string | null
+}
+
+/**
+ * 把证据拼成一行可复制的串。
+ *
+ * ⚠️ 取不到的部分**显式写出来**,不留空也不省略:
+ * 一个少了 requestId 的串与一个完整的串,在界面上要一眼可分,
+ * 否则用户会把「(无 requestId)」当成「我没看清」。
+ */
+export function evidenceLine(e: PolicyEvidence): string {
+  const version = e.plannedVersion === null ? '(计划版本未知)' : `计划 ${e.plannedVersion}`
+  const req = e.requestId === null ? '(无 requestId)' : e.requestId
+  return `${e.endpoint} · 501 · ${version} · ${req}`
+}
+
 export interface WorkspaceSettingsScreenProps {
   /** 当前工作区名,进标题 */
   workspace: string
+  /** 策略端点那个 501 的**真实**证据。 */
+  evidence: PolicyEvidence
 }
 
 export function WorkspaceSettingsScreen({
   workspace,
+  evidence,
 }: WorkspaceSettingsScreenProps): React.JSX.Element {
   return (
     <>
@@ -249,7 +284,7 @@ export function WorkspaceSettingsScreen({
           </Button>
         </div>
       </div>
-      <NotWiredNotice />
+      <NotWiredNotice evidence={evidence} />
       <UndecidedNotice />
 
       <div style={{ display: 'grid', gap: 'var(--s-5)' }}>

@@ -290,7 +290,74 @@ function checkScriptsTsconfigReferences() {
  * `checkMissingTsconfig` 查的是「有 `src/*.ts` 却没有 tsconfig.json」——
  * 它假设一个包的 TS 都在 `src/` 下。而工具类配置(`vite.config.ts`、
  * `tailwind.config.ts`、`playwright.config.ts`)按惯例放在**包根**,
- * 那里既不在产品项目的 `include: ["src/**"]` 里,也不在 `test/**` 里。
+ * 那里既不在产品项目的 `include: ["src/**"]` 里,也不在 `test/**
+ * ★ **eslint 的分域规则必须覆盖每一个前端包。**
+ *
+ * ## 它守的是「范围写成手写清单」这一族的第四次
+ *
+ * 前三次都在本版本内:
+ *
+ * | # | 哪张清单 | 谁逃出去了 |
+ * | --- | --- | --- |
+ * | 1 | 前端三条约束的 `p('console-web','src')` | design-system 与将来的每个前端包 |
+ * | 2 | `checkPrimaryColorHasNoFallback` 的 `roots` 数组 | 根级的 workbench-web |
+ * | 3 | `checkSdkHasSyncAssertion` 的「sdk/ 下任何目录」 | 反过来:把 docs 目录**误当成** SDK |
+ * | 4 | **本条** —— `eslint.config.js` 的分域 glob | 两个根级前端 + 全部 `.tsx` |
+ *
+ * 第 4 次的具体后果:`argsIgnorePattern: '^_'` 在 `packages/**` 下生效,
+ * 在 `console-web/` 与 `workbench-web/` 下不生效。于是**同一个约定
+ * 在两处有不同的效力**,而差别的原因藏在一行 glob 里 ——
+ * 撞上的人只会觉得「这个 lint 规则怎么时灵时不灵」。
+ *
+ * ## 判据
+ *
+ * 前端包按形状发现(依赖里有 `react`)。对每一个,断言它的路径前缀
+ * 出现在 `eslint.config.js` 的某条 `files:` 里。
+ *
+ * ⚠️ **不解析 eslint 配置,只做文本包含判断。** 解析要跑 eslint 自己的
+ * 配置加载器,而那会把守卫变成「eslint 能不能启动」的测试。
+ * 文本判断会有假阴性(比如用了一个更宽的 glob 却没写包名)——
+ * 那种情况**报出来让人看一眼**,比放过去好:多报的成本是读一行,
+ * 漏报的成本是一个包悄悄少了几条规则。
+ *
+ * @returns {{file: string, line: number, text: string}[]}
+ */
+function checkEslintCoversFrontendPackages() {
+  /** @type {{file: string, line: number, text: string}[]} */
+  const out = []
+  const configPath = p('eslint.config.js')
+  if (!existsSync(configPath)) {
+    return [{ file: 'eslint.config.js', line: 0, text: 'eslint.config.js 不存在 —— 本条无从检查' }]
+  }
+  const config = readFileSync(configPath, 'utf8')
+
+  const pkgs = frontendPackages()
+  if (pkgs.length === 0) {
+    return [
+      {
+        file: 'package.json',
+        line: 0,
+        text: '全仓找不到任何前端包 —— 本条会退化成空集扫描,永远绿',
+      },
+    ]
+  }
+
+  for (const pkg of pkgs) {
+    // `packages/design-system` → 前缀 `packages/`;`workbench-web` → `workbench-web`
+    const segments = pkg.rel.split('/')
+    const prefix = segments.length > 1 ? `${segments[0] ?? ''}/**` : `${pkg.rel}/**`
+    if (!config.includes(prefix)) {
+      out.push({
+        file: 'eslint.config.js',
+        line: 0,
+        text: `前端包 ${pkg.rel} 的路径前缀 ${prefix} 不在任何 files: glob 里 —— 它少了分域规则`,
+      })
+    }
+  }
+  return out
+}
+
+/**` 里。
  *
  * 后果不是「少查一个文件」:
  *
@@ -613,10 +680,22 @@ function checkSessionStatusHasArtifacts() {
 
       const lineNo = block.start + i + 1
       /** 反引号里像仓库路径的:带 `/`、不含空格、不是 URL。 */
+      // ⚠️ **不是每个带斜杠的反引号都是仓库路径。** 交付行里最常见的三种非路径:
+      //   · API 端点 `/v1/workspaces*` —— 以 `/` 开头(仓库相对路径不会)
+      //   · npm 包名 `@dshwar/sdk` —— 以 `@` 开头
+      //   · URL —— 以 `http` 开头
+      //
+      //   V0.9.0 Session 2 的交付行同时踩到前两种,守卫报「`/v1/workspaces*` 不存在」——
+      //   **那是误报**,而按它去改会把一行准确的描述改坏。
+      //   (顺带:`dist/` 这种「像路径但不是仓库里的路径」的写法仍会被报出来,
+      //    那是对的 —— 它确实读起来像一个交付物,该换个说法。)
       const pathsIn = (/** @type {string} */ text) =>
         [...text.matchAll(/`([^`\s]+)`/g)]
           .map((m) => m[1] ?? '')
-          .filter((s) => s.includes('/') && !s.startsWith('http') && !s.startsWith('@'))
+          .filter(
+            (s) =>
+              s.includes('/') && !s.startsWith('http') && !s.startsWith('@') && !s.startsWith('/'),
+          )
 
       // ---- 判据 1:**每一条列举项**都要能指向一个路径 ----
       //
@@ -1759,6 +1838,17 @@ if (noTsconfig.length === 0) {
   console.log('        上面两条守卫都从「有 tsconfig 的目录」出发遍历,')
   console.log('        所以一个根本没有 tsconfig 的包对它们不可见 —— 这条堵那个洞。')
   for (const h of noTsconfig) console.log(`        ${h.text}`)
+}
+
+const eslintScope = checkEslintCoversFrontendPackages()
+if (eslintScope.length === 0) {
+  console.log('  通过  eslint 的分域规则覆盖了每一个前端包')
+} else {
+  failed += 1
+  console.log(`  违规  有前端包不在 eslint 分域规则的 glob 里  (${eslintScope.length} 处)`)
+  console.log('        分域规则是一张**手写清单**,而前端包是按形状发现的 ——')
+  console.log('        新建一个包不会让任何东西变红,它只是悄悄少了几条规则。')
+  for (const h of eslintScope) console.log(`        ${h.text}`)
 }
 
 const rootTs = checkRootLevelTsIsChecked()

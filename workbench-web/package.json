@@ -1,0 +1,24 @@
+{
+  "name": "@dshwar/workbench-web",
+  "version": "0.9.0",
+  "description": "Web 工作台。设计 kit 的 workbench 八屏接进真实 /v1 API。",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "dev": "vite"
+  },
+  "dependencies": {
+    "@dshwar/design-system": "workspace:*",
+    "@dshwar/sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.2",
+    "@types/react-dom": "19.2.2",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "vite": "8.2.1"
+  }
+}

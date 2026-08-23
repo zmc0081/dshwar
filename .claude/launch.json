@@ -6,6 +6,12 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter", "@dshwar/design-system", "dev"],
       "port": 4321
+    },
+    {
+      "name": "workbench",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@dshwar/workbench-web", "dev"],
+      "port": 4322
     }
   ]
 }

@@ -788,6 +788,61 @@ try {
         }
       }
 
+      // 34e —— ★ 正向对照:交付行里的 **API 端点**不是仓库路径
+      //
+      //         V0.9.0 Session 2 的交付行写了 `` `/v1/workspaces*` ``,
+      //         守卫报「这个路径不存在」—— **那是误报**,而按它去改会把
+      //         一行准确的描述改坏。判据补了「仓库相对路径不以 / 开头」。
+      //
+      //         ⚠️ 夹具必须在场:真实任务书里今天有这个写法,但对照不该依赖它。
+      {
+        restore()
+        const before = readFileSync(tasks, 'utf8')
+        const anchor = '**交付**:`packages/design-system/src/components/`'
+        if (!before.includes(anchor)) {
+          expect('34e 正向对照:交付行里的 API 端点不算仓库路径', false, '锚点失配,本条作废')
+        } else {
+          writeFileSync(
+            tasks,
+            before.replace(anchor, `${anchor}(补齐了 \`/v1/workspaces*\` 与 \`@dshwar/sdk\`)`),
+            'utf8',
+          )
+          const r = runDocsGuard()
+          const misfired = /\/v1\/workspaces\*|@dshwar\/sdk/.test(r.output)
+          expect(
+            '34e ★ 正向对照:交付行里的 API 端点 / 包名不当成仓库路径',
+            !misfired,
+            misfired
+              ? '守卫把 `/v1/workspaces*` 或 `@dshwar/sdk` 当成了仓库路径 —— 按它去改会把准确的描述改坏'
+              : undefined,
+          )
+        }
+      }
+
+      // 34f —— 反向:**看起来像仓库路径**的写法仍然要被查
+      //         少了它,34e 的放宽会滑成「带斜杠的都不查」。
+      {
+        restore()
+        const before = readFileSync(tasks, 'utf8')
+        const anchor = '**交付**:`packages/design-system/src/components/`'
+        if (!before.includes(anchor)) {
+          expect('34f 交付点名一个不存在的相对路径 → 仍然红', false, '锚点失配,本条作废')
+        } else {
+          writeFileSync(
+            tasks,
+            before.replace(anchor, `${anchor}(还有 \`packages/根本不存在/\`)`),
+            'utf8',
+          )
+          const r = runDocsGuard()
+          const caught = /根本不存在/.test(r.output)
+          expect(
+            '34f 交付点名一个不存在的相对路径 → 仍然红(放宽没把真判据一起放掉)',
+            caught,
+            caught ? undefined : '守卫放过了一个不存在的交付路径 —— 判据退化成「带斜杠就不查」',
+          )
+        }
+      }
+
       // 34c —— 正向对照:原样的任务书必须通过
       {
         restore()
@@ -799,6 +854,159 @@ try {
         )
       }
     })
+  }
+
+  // ---------------------------------------------------------------------
+  // 38. eslint 分域规则覆盖每个前端包:两向(V0.9.0 Session 2)
+  //
+  //     「范围写成手写清单」这一族在本版本内的第四次。前三次:
+  //     前端三条约束写死 console-web/src · primaryColor 守卫的 roots 数组 ·
+  //     SDK 守卫把 sdk/ 下任何目录都当 SDK。
+  // ---------------------------------------------------------------------
+  {
+    const dropEs = () => rmSync(p('packages/__eslint_fixture__'), { recursive: true, force: true })
+    const mkPkg = (/** @type {string} */ dir) => {
+      writeFixture(
+        `${dir}/package.json`,
+        JSON.stringify(
+          {
+            name: '@dshwar/eslint-fixture',
+            version: '0.9.0',
+            private: true,
+            devDependencies: { react: '19.2.0' },
+          },
+          null,
+          2,
+        ) + '\n',
+      )
+      writeFixture(`${dir}/src/x.tsx`, 'export const x = 1\n')
+    }
+
+    // 38a 新建一个**根级**前端包(不在任何 glob 里)→ 变红
+    //     ⚠️ 夹具必须放**根级**:放 packages/ 下会被 `packages/**` 这条既有
+    //        glob 盖住,于是这条验证退化成恒绿 —— 而它看起来与「验过了」一样。
+    {
+      const rootFixture = p('__eslint_fixture__')
+      rmSync(rootFixture, { recursive: true, force: true })
+      mkPkg('__eslint_fixture__')
+      const r = runGuards()
+      const hit = /不在任何 files: glob 里/.test(r.output) && /__eslint_fixture__/.test(r.output)
+      expect(
+        '38a 新建的根级前端包不在 eslint glob 里 → 守卫变红',
+        hit,
+        hit ? undefined : '守卫放过了一个少了分域规则的前端包 —— 而那不会让任何别的东西红',
+      )
+      rmSync(rootFixture, { recursive: true, force: true })
+    }
+
+    // 38b 正向对照:packages/ 下的前端包被 `packages/**` 盖住 → 放行
+    {
+      dropEs()
+      mkPkg('packages/__eslint_fixture__')
+      const r = runGuards()
+      const hit = /不在任何 files: glob 里/.test(r.output)
+      expect(
+        '38b 正向对照:packages/ 下的前端包被既有 glob 覆盖 → 放行',
+        !hit,
+        hit ? '守卫把一个已经被 packages/** 覆盖的包也报了 —— 判据不是「逐包点名」' : undefined,
+      )
+      dropEs()
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // 37. grepFiles 跳过整行注释:三向(V0.9.0 Session 2)
+  //
+  //     CLAUDE.md「守卫不能惩罚记录」落到共用扫描层。这一族在本轮**实测命中两次**:
+  //     回执守卫报了 CodeRef.tsx 里讲「原版为什么错」的 JSDoc;
+  //     约束 1 的路由守卫报了 App.tsx 里讲「为什么不用 history.pushState」的注释。
+  //
+  //     ⚠️ 放宽一条扫描规则必须验三向,少一向都会退化:
+  //       a 真违规仍然红        —— 否则整条守卫失效
+  //       b 整行注释放行        —— 这是本次改动要的效果
+  //       c **行尾注释仍然红**  —— 判据是「这一行是注释」而不是「含注释标记」;
+  //                              退化成后者,一个 `code() // TODO` 就绕过去了,
+  //                              **把一个记录问题的修复变成一个真实的漏报**
+  // ---------------------------------------------------------------------
+  {
+    const dropCmt = () => {
+      rmSync(p('packages/__cmt_fixture__'), { recursive: true, force: true })
+    }
+    const fixture = (/** @type {string} */ body) => {
+      writeFixture(
+        'packages/__cmt_fixture__/package.json',
+        JSON.stringify(
+          {
+            name: '@dshwar/cmt-fixture',
+            version: '0.9.0',
+            private: true,
+            // 声明 react 才算前端包 —— 前端守卫按这个形状发现扫描范围。
+            devDependencies: { react: '19.2.0' },
+          },
+          null,
+          2,
+        ) + '\n',
+      )
+      writeFixture('packages/__cmt_fixture__/src/Nav.tsx', body)
+    }
+    // 用约束 1 的路由禁令当被测规则:它走 grepFiles,且违规形态很短。
+    const VIOLATION = "history.pushState({}, '', '/x')"
+
+    // 37a 真违规 → 仍然红
+    {
+      dropCmt()
+      fixture(`export function go(): void {\n  ${VIOLATION}\n}\n`)
+      const r = runGuards()
+      const hit = /\[约束1 路由\]/.test(r.output) && /__cmt_fixture__/.test(r.output)
+      expect(
+        '37a 真的写了 history.pushState → 守卫变红(跳过注释没把真判据放掉)',
+        hit,
+        hit ? undefined : '守卫放行了一处真违规 —— 放宽扫描时把规则本身也一起放掉了',
+      )
+      dropCmt()
+    }
+
+    // 37b 整行注释 → 放行
+    {
+      dropCmt()
+      fixture(
+        `export function go(): void {\n` +
+          `  // ⚠️ 这里刻意不用 ${VIOLATION} —— Tauri 里没有服务端回落\n` +
+          `  window.location.hash = '#/x'\n` +
+          `}\n`,
+      )
+      const r = runGuards()
+      // ⚠️ 判据打在**约束 1 自己的标记**上,不是「夹具名出现在输出里」。
+      //   夹具包没有 tsconfig.json,会撞上「有包整个在类型检查之外」那条
+      //   **无关**守卫 —— 按包名判的话,这条正向对照会因为一条不相干的红而失败,
+      //   而那是夹具的问题不是被测规则的问题。
+      //   (33d 踩过同一个坑,判据写成 `r.ok` 时同样是错的。)
+      const hit = /\[约束1 路由\][^\n]*__cmt_fixture__|__cmt_fixture__[^\n]*\[约束1 路由\]/.test(
+        r.output,
+      )
+      expect(
+        '37b 正向对照:整行注释里讲这个反面写法 → 放行(守卫不能惩罚记录)',
+        !hit,
+        hit ? '守卫把一段「解释为什么不这么写」的注释判成了违规' : undefined,
+      )
+      dropCmt()
+    }
+
+    // 37c ★ 行尾注释 → **仍然红**
+    {
+      dropCmt()
+      fixture(`export function go(): void {\n  ${VIOLATION} // TODO 改成 hash\n}\n`)
+      const r = runGuards()
+      const hit = /\[约束1 路由\]/.test(r.output) && /__cmt_fixture__/.test(r.output)
+      expect(
+        '37c ★ 代码后面跟一段注释 → 仍然红(判据是「整行是注释」,不是「含注释标记」)',
+        hit,
+        hit
+          ? undefined
+          : '判据退化成「含 // 就跳过」—— 一个 code() // TODO 就能绕过全部文本形状守卫',
+      )
+      dropCmt()
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -1127,6 +1335,7 @@ try {
         '前端交互态样式走 CSS 伪类,不用 JS 承载', // 33e / 33f
         '成功回执不在 catch 之外(没有假的成功回执)', // 33g–33i
         '包根的 .ts 都在某份 tsconfig 的 include 里', // 36a / 36b
+        'eslint 的分域规则覆盖了每一个前端包', // 38a / 38b
         'Session 标 ✅ 的交付产物都真的存在(任务书自身的诚实性)', // 34a–34c
       ]
 

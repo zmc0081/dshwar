@@ -1,0 +1,18 @@
+// 测试文件的类型检查项目 —— 与 console-web / design-system 同款:
+// 产品项目是 composite + rootDir "./src",把 test/ 并进去会把 rootDir 抬到包根。
+//
+// ⚠️ `vite.config.ts` 也在这里 —— 它在包根,不属于产品项目的 include。
+// 不并进任何项目的话它整个不被类型检查,而守卫扫得到它:
+// 见 check-guards.mjs 的「包根的 .ts 都在某份 tsconfig 的 include 里」。
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rewriteRelativeImportExtensions": false,
+    "rootDir": ".",
+    "tsBuildInfoFile": "./dist/.tsbuildinfo.test"
+  },
+  "include": ["test/**/*.ts", "test/**/*.tsx", "vite.config.ts"],
+  "exclude": ["dist", "node_modules"],
+  "references": [{ "path": "./tsconfig.json" }]
+}

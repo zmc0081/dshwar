@@ -122,9 +122,46 @@ function linesOf(file) {
 }
 
 /**
+ * 这一行**整行是注释**吗。
+ *
+ * ## 为什么所有文本形状守卫都要跳过它 —— CLAUDE.md「守卫不能惩罚记录」
+ *
+ * 一条守卫要拦的形状,恰恰是最值得在注释里**写下来**的那个。
+ * 两者在文本上一模一样,语义相反:一处是在犯,一处是在讲这是错的。
+ *
+ * 而这一族误报的代价比普通误报更贵:**人不会绕过它,人会照它说的改** ——
+ * 而唯一能改的就是把那段解释删掉。于是守卫成功地让仓库变得更难懂,
+ * 并且全程显示为绿。
+ *
+ * ### 实测(V0.9.0 Session 2,两次)
+ *
+ * 1. 回执守卫第一次跑就报了 `CodeRef.tsx:18` —— 一段讲「原版为什么错」的 JSDoc;
+ * 2. 约束 1 的路由守卫报了 `App.tsx:102` ——
+ *    `// ⚠️ 赋值给 location.hash 而不是 history.pushState ——`
+ *    那一行**正是在解释为什么遵守这条约束**。
+ *
+ * ## ⚠️ 判据是「这一行**是**注释」,不是「这一行**含**注释标记」
+ *
+ * 后者会放过 `import x from '@deepseek-ai/dsh-fs/lib/x.js' // TODO` ——
+ * 把一个记录问题的修复,变成一个真实的漏报。
+ *
+ * 而「整行是注释」的代码**不执行**,所以跳过它不可能藏住真违规:
+ * 注释掉的深链 import 不会 import 任何东西。
+ *
+ * @param {string} line
+ */
+export function isWholeLineComment(line) {
+  const t = line.trim()
+  return t.startsWith('//') || t.startsWith('*') || t.startsWith('/*')
+}
+
+/**
  * 在若干文件中查找匹配行。
  *
- * 带 `dshwar-guard-allow: <理由>` 标记的行会被跳过,理由为空则**不算豁免**。
+ * 两类行会被跳过:
+ *
+ * 1. **整行是注释**的 —— 见 {@link isWholeLineComment}。守卫不能惩罚记录。
+ * 2. 带 `dshwar-guard-allow: <理由>` 标记的,理由为空则**不算豁免**。
  *
  * @param {string[]} files 绝对路径
  * @param {RegExp} pattern 需带 g 标志的正则
@@ -141,6 +178,7 @@ export function grepFiles(files, pattern, repoRoot) {
       const text = lines[i] ?? ''
       pattern.lastIndex = 0
       if (!pattern.test(text)) continue
+      if (isWholeLineComment(text)) continue
       if (ALLOW_MARKER.test(text) || ALLOW_MARKER.test(lines[i - 1] ?? '')) continue
       hits.push({ file: repoPath(repoRoot, file), line: i + 1, text: text.trim() })
     }

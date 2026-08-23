@@ -6,7 +6,7 @@ import { renderSchema } from '../scripts/render.ts'
 import type { DshwarErrorCode } from '../src/index.ts'
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
-const generated = join(packageRoot, 'src', 'generated', 'schema.d.ts')
+const generated = join(packageRoot, 'src', 'generated', 'schema.ts')
 const contract = join(packageRoot, '..', '..', 'packages', 'api-contract', 'openapi.json')
 
 describe('SDK 类型与契约同步', () => {
