@@ -1,6 +1,6 @@
 {
   "name": "@dshwar/billing-local",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "计费契约的本地实现:只记账不收款。从 @dshwar/metering 的用量出账,金额全程整数。",
   "license": "MIT",
   "type": "module",

@@ -1,6 +1,6 @@
 {
   "name": "@dshwar/scim-server",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "SCIM 2.0 服务端子集:User + Group,PUT 与 PATCH 两条路径都能落停用。供给方推,DSHWAR 收。",
   "license": "MIT",
   "type": "module",

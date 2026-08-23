@@ -1,6 +1,6 @@
 {
   "name": "@dshwar/sdk-swift",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "private": false,
   "description": "Swift SDK —— 由 OpenAPI 契约生成,不手写。",
   "license": "MIT",

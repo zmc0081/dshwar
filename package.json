@@ -1,6 +1,6 @@
 {
   "name": "dshwar",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "private": true,
   "type": "module",
   "description": "DeepSeek Harness 之上的 ToB 产品基座。上游做能力,DSHWAR 做归属、隔离、配额、计费、审计。",

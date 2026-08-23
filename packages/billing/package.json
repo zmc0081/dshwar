@@ -1,6 +1,6 @@
 {
   "name": "@dshwar/billing",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "计费契约:计量 → 计费 → 出账。钱一律最小货币单位整数,契约里不出现浮点。",
   "license": "MIT",
   "type": "module",
