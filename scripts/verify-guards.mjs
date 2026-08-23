@@ -632,6 +632,35 @@ try {
         }
       }
 
+      // 34d —— ★ 判据 1 **收紧**之后才拦得住的形态:
+      //         交付里有路径,但**另一条列举项**是纯散文。
+      //
+      //         放宽版(「有任一路径即可」)会整条放行 —— V0.8.0 的
+      //         「同步断言 + 覆盖断言」当年正是这么溜过去的。
+      //         这一条与 34b 的分工:34b 验「一个路径都没有」,
+      //         34d 验「有路径但不是每项都有」。少了 34d,收紧就没人验。
+      {
+        restore()
+        const before = readFileSync(tasks, 'utf8')
+        const mutated = before.replace(
+          '`scripts/check-guards.mjs` 的「Session 标 ✅ 的交付产物都真的存在」守卫。',
+          '那条盯任务书的守卫。',
+        )
+        if (mutated === before) {
+          expect('34d 交付里有路径但另一项是纯散文 → 守卫变红', false, '锚点失配,本条作废')
+        } else {
+          writeFileSync(tasks, mutated, 'utf8')
+          const r = runDocsGuard()
+          expect(
+            '34d 交付里有路径但另一项是纯散文 → 守卫变红',
+            !r.ok && /说不出一个可核对的路径/.test(r.output),
+            !r.ok
+              ? undefined
+              : '★ 判据 1 还停在「有任一路径即可」—— 那正是「客户端」当年溜掉的那条缝',
+          )
+        }
+      }
+
       // 34c —— 正向对照:原样的任务书必须通过
       {
         restore()

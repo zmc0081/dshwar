@@ -415,15 +415,29 @@ function checkStalePrincipalConsumers() {
  * 那里没有 `**交付**` 行,自然不参与。这不是漏检:那些版本的产物
  * 早已被后续版本的测试与守卫持续使用着,缺了会以别的方式红。
  *
- * ## ⚠️ 明写的局限:它查的是**路径**,不是散文
+ * ## ⚠️ 明写的局限:**括号里的第二个产物仍然逃得掉**
  *
- * `**交付**:`sdk/kotlin`(生成的模型 + 客户端)` —— 反引号里是 `sdk/kotlin`,
- * 它存在,于是通过;而「客户端」三个字是散文,**这条守卫看不见**。
- * 实测就是这样:V0.8.0 缺的四处产物里,它只抓得到两处(两个示例目录),
- * 抓不到两个客户端。
+ * 判据 1 收紧成「每条列举项都要有路径」之后,纯散文的列举项被堵住了。
+ * 但**同一个列举项内部**仍有一条缝:
  *
- * ⇒ **推论:交付要写成路径,不要写成散文。** 判据 1 正是为了逼出这个习惯 ——
- * 写不出路径的交付,本来就没法核对。
+ * ```
+ * `sdk/kotlin`(生成的模型 + 客户端)      ← 括号里是**第二个产物**
+ * `design-kit-adoption.md`(两条裁决与实测判据) ← 括号里是**对这个产物的说明**
+ * ```
+ *
+ * **两者结构完全一样**,而语义相反。任何解析器都分不出来 ——
+ * 这不是实现偷懒,是这条缝在文本层面不可判定。
+ *
+ * 实测后果:V0.8.0 缺的四处产物里,收紧后的判据抓得到两个示例目录
+ * (它们本来就写成了独立的列举项),**抓不到两个「客户端」** ——
+ * 它们藏在 `` `sdk/kotlin`(生成的模型 + 客户端) `` 的括号里。
+ *
+ * ⇒ **唯一的真修法是写法约定,不是判据**:
+ * **一个产物一个列举项,不要把第二个产物塞进括号。**
+ * 括号里只写「这个产物是什么」,不写「另外还交付了什么」。
+ *
+ * 这条约定本身没有守卫盯着(盯不了,理由同上)——
+ * 所以它写在这里,而不是写在只有人会读的地方。
  *
  * @returns {{file: string, line: number, text: string}[]}
  */
@@ -483,19 +497,50 @@ function checkSessionStatusHasArtifacts() {
       if (delivery === '') continue
 
       const lineNo = block.start + i + 1
-      // 反引号里像仓库路径的:带 `/`、不含空格、不是 URL
-      const paths = [...delivery.matchAll(/`([^`\s]+)`/g)]
-        .map((m) => m[1] ?? '')
-        .filter((s) => s.includes('/') && !s.startsWith('http') && !s.startsWith('@'))
+      /** 反引号里像仓库路径的:带 `/`、不含空格、不是 URL。 */
+      const pathsIn = (/** @type {string} */ text) =>
+        [...text.matchAll(/`([^`\s]+)`/g)]
+          .map((m) => m[1] ?? '')
+          .filter((s) => s.includes('/') && !s.startsWith('http') && !s.startsWith('@'))
 
-      if (paths.length === 0) {
+      // ---- 判据 1:**每一条列举项**都要能指向一个路径 ----
+      //
+      // ⚠️ 这一条 2026-08-22 从「该 Session 有**任一**路径即可」收紧。
+      // 放宽版漏掉的形态很具体:V0.8.0 的 Session 1 交付写的是
+      // 「`sdk/kotlin`(生成的模型 + 客户端)、`examples/kotlin-session`、
+      // 同步断言 + 覆盖断言」——只要有一个路径就整条放行,
+      // 于是「同步断言 + 覆盖断言」这类**纯散文列举项**一路溜过去。
+      // 收紧当天的代价实测为 **0 处**(主文件里标 ✅ 的 Session 全部合规)。
+      const items = delivery
+        .replace(/^\*\*交付\*\*[::]/, '')
+        .replace(/\s+/g, ' ')
+        .replace(/[。\s]+$/, '')
+        .split(/[、;;]/)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0)
+
+      if (items.length === 0) {
         out.push({
           file: 'SESSION_TASKS.md',
           line: lineNo,
-          text: `${block.title.replace(/<[^>]+>/g, '').trim()} 的 Session ${n} 标 ✅,但交付里没有任何反引号路径 —— 「做完了」说不出一个可核对的产物`,
+          text: `${block.title.replace(/<[^>]+>/g, '').trim()} 的 Session ${n} 标 ✅,而交付行是空的`,
         })
         continue
       }
+
+      let anyProse = false
+      for (const item of items) {
+        if (pathsIn(item).length > 0) continue
+        anyProse = true
+        out.push({
+          file: 'SESSION_TASKS.md',
+          line: lineNo,
+          text: `Session ${n} 标 ✅,但交付项「${item.slice(0, 30)}」说不出一个可核对的路径`,
+        })
+      }
+      if (anyProse) continue
+
+      const paths = pathsIn(delivery)
 
       for (const rel of paths) {
         checked += 1
