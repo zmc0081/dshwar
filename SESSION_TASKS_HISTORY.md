@@ -1,3 +1,55 @@
+# M0.8.0 —— 实现细节归档
+
+---
+
+### Session 0 · 生成器选型裁决 + 「谁会红」的四象限
+
+**起手式按 CLAUDE.md 的设计准则**:第一问不是「生成器跑没跑」,
+而是**「生成器坏掉时谁会红」**。先把坏法穷举出来,再决定要几道防线。
+
+| 生成器的坏法              | 谁会红                                      |
+| ------------------------- | ------------------------------------------- |
+| 改了契约**没重新生成**    | 同步断言(重渲染 vs 已提交),**三语言各一条** |
+| 生成器**悄悄漏掉** schema | 覆盖断言(逐 schema 数出口,不是数入口)       |
+| 生成器把**类型映射错**    | 映射断言(契约类型 → 目标语言类型,逐条)      |
+| 生成器输出**语法不合法**  | ⚠️ 需要编译器 —— 见裁决                     |
+
+**交付**:`docs/DECISIONS/mobile-sdk-generation.md`,含工具链实测与四象限。
+
+---
+
+### Session 1 · Kotlin SDK 模型
+
+**交付**:`sdk/kotlin/src/generated/Models.kt`(42 个模型)、
+`sdk/kotlin/scripts/render.ts`(纯渲染函数,与校验测试共用)、
+`sdk/kotlin/test/generated.test.ts`(同步 + 覆盖 + 映射三道断言)。
+
+⚠️ **范围已在 2026-08-22 收窄:不含客户端与可运行示例。**
+原文写的是「生成的模型 + 客户端」与 `examples/kotlin-session`,
+两者**都没有交付**,而 Session 一度标着 ✅ —— 见块首的范围更正。
+
+---
+
+### Session 2 · Swift SDK 模型
+
+**交付**:`sdk/swift/src/generated/Models.swift`(42 个模型)、
+`sdk/swift/src/Support.swift`(手写的 `AnyCodable`,与生成目录分开)、
+`sdk/swift/scripts/render.ts`、`sdk/swift/test/generated.test.ts`。
+
+⚠️ 同 Session 1:**不含客户端与可运行示例**。
+
+---
+
+### Session 3 · 三语言守卫统一 + 收口
+
+**交付**:`scripts/check-guards.mjs` 的「每个 SDK 都有同步断言」守卫、
+`scripts/verify-assertions.mjs` 的探针 16/17/18(**一语言一条,不合并**)、
+`scripts/verify-guards.mjs` 的 29a/29b/29c(含正向对照)。
+
+**验收**:改契约不重新生成 → 三语言的断言**各自**变红(已逐条实测)。
+
+---
+
 # M0.6.5 · 本地模型 + 离线能力 —— 实现细节归档
 
 ---

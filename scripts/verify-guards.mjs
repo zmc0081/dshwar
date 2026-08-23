@@ -442,6 +442,210 @@ try {
   }
 
   // ---------------------------------------------------------------------
+  // 33. 前端三条约束**按形状发现**之后的新形态(V0.9.0)
+  //
+  //     扫描范围从写死的 `console-web/src` 改成「依赖里有 react 的包」,
+  //     约束 3 的豁免从写死的单个文件改成「每个前端包恰好一个 api 出口」。
+  //     判据从「哪个文件」变成「什么形状」—— 于是**坏法也变了形状**,
+  //     旧的 24a–24e 覆盖不到新的那几种。
+  //
+  //     ⚠️ 这一组必须在**移植之前**就位。移植会带进来三千多行前端代码,
+  //     先写代码再扩守卫的话,那三千行是在没有守卫的情况下写的。
+  // ---------------------------------------------------------------------
+  {
+    const drop = () => {
+      rmSync(p('packages/__fe_fixture__'), { recursive: true, force: true })
+      rmSync(p('packages/__fe_fixture2__'), { recursive: true, force: true })
+    }
+    const pkgJson = (/** @type {string} */ name, /** @type {boolean} */ withReact) =>
+      JSON.stringify(
+        {
+          name: `@dshwar/${name}`,
+          version: '0.9.0',
+          private: true,
+          ...(withReact ? { devDependencies: { react: '19.2.0' } } : {}),
+        },
+        null,
+        2,
+      ) + '\n'
+
+    /** @type {{ label: string, blocked: boolean, hint: string, write: () => void }[]} */
+    const FE_CASES = [
+      {
+        label: '33a 新建前端包写了 .tsx 却不声明 react → 守卫变红(它逃出了扫描)',
+        blocked: true,
+        hint: '认不出的前端包比违规的前端包更危险 —— 后者会被报出来,前者悄无声息',
+        write: () => {
+          writeFixture('packages/__fe_fixture__/package.json', pkgJson('__fe_fixture__', false))
+          writeFixture('packages/__fe_fixture__/src/Page.tsx', 'export const Page = () => null\n')
+        },
+      },
+      {
+        label: '33b 一个前端包有两个 api 出口 → 守卫变红',
+        blocked: true,
+        hint: '「唯一出口」不再唯一,三个宿主注入 baseURL 时会漏掉一个',
+        write: () => {
+          writeFixture('packages/__fe_fixture__/package.json', pkgJson('__fe_fixture__', true))
+          writeFixture('packages/__fe_fixture__/src/api.ts', 'export const a = 1\n')
+          // 同一个包里 api.ts 与 api.tsx 并存 —— 改扩展名时忘了删旧的,真会发生
+          writeFixture('packages/__fe_fixture__/src/api.tsx', 'export const b = 1\n')
+        },
+      },
+      {
+        label: '33c 前端包零个 api 出口而代码里有 fetch → 守卫变红',
+        blocked: true,
+        hint: '请求散落之后,三个宿主换 baseURL 时改不动 —— 那正是 D7 说的「事后补是重构」',
+        write: () => {
+          writeFixture('packages/__fe_fixture__/package.json', pkgJson('__fe_fixture__', true))
+          writeFixture(
+            'packages/__fe_fixture__/src/Page.tsx',
+            "export const load = () => fetch('/v1/sessions')\n",
+          )
+        },
+      },
+      {
+        label: '33d 正向对照:合法的单出口前端包 → 放行(规则不是「见到前端包就红」)',
+        blocked: false,
+        hint: '',
+        write: () => {
+          writeFixture('packages/__fe_fixture__/package.json', pkgJson('__fe_fixture__', true))
+          writeFixture(
+            'packages/__fe_fixture__/src/api.ts',
+            'export const load = (base: string) => fetch(`${base}/v1/sessions`)\n',
+          )
+          writeFixture('packages/__fe_fixture__/src/Page.tsx', 'export const Page = () => null\n')
+        },
+      },
+      {
+        label: '33e 前端里用 onMouseEnter 承载 hover → 守卫变红',
+        blocked: true,
+        hint: 'hover 态走 CSS :hover —— 否则移植完了,下一个人会照着旧 kit 的写法加组件',
+        write: () => {
+          writeFixture('packages/__fe_fixture__/package.json', pkgJson('__fe_fixture__', true))
+          writeFixture(
+            'packages/__fe_fixture__/src/Hover.tsx',
+            'export const H = (p: { on: () => void }) => <div onMouseEnter={p.on} />\n',
+          )
+        },
+      },
+      {
+        label: '33f 前端里直接改 .style.X → 守卫变红(焦点环该走 :focus-visible)',
+        blocked: true,
+        hint: 'onFocus 对鼠标点击也触发,焦点环因此常亮 —— 键盘可达性通道名存实亡',
+        write: () => {
+          writeFixture('packages/__fe_fixture__/package.json', pkgJson('__fe_fixture__', true))
+          writeFixture(
+            'packages/__fe_fixture__/src/Focus.tsx',
+            'export const F = (e: { currentTarget: HTMLElement }) => {\n' +
+              "  e.currentTarget.style.boxShadow = 'var(--focus-ring)'\n" +
+              '}\n',
+          )
+        },
+      },
+    ]
+
+    for (const c of FE_CASES) {
+      drop()
+      c.write()
+      const r = runGuards()
+      // ⚠️ 判据打在**前端守卫自己的标记**上,不是全局退出码。
+      //   夹具包没有 tsconfig.json,会撞上「有包整个在类型检查之外」那条无关守卫 ——
+      //   拿 r.ok 当判据的话,正向对照会因为一条不相干的守卫而失败,
+      //   而那是夹具的问题不是被测守卫的问题。
+      const hit = /\[(约束[123]|范围)/.test(r.output) || /JS 承载 hover/.test(r.output)
+      const passed = c.blocked ? hit : !hit
+      expect(
+        c.label,
+        passed,
+        passed
+          ? undefined
+          : c.blocked
+            ? `守卫放行了这种形态 —— ${c.hint}`
+            : `守卫冤枉了一个合法的前端包:\n${r.output
+                .split('\n')
+                .filter((l) => /违规|约束|范围/.test(l))
+                .slice(0, 4)
+                .join('\n')}`,
+      )
+    }
+    drop()
+  }
+
+  // ---------------------------------------------------------------------
+  // 34. 任务书自身的诚实性(V0.9.0)
+  //
+  //     Session 标 ✅ 而产物不存在 —— 这一族此前**一道检查都没有**,
+  //     而它已经错过一次:V0.8.0 的 62878be 把三个 ⬜ 一次性批量翻成 ✅,
+  //     其中两个 Session 声明的四处产物一处都没交付。
+  // ---------------------------------------------------------------------
+  {
+    const tasks = p('SESSION_TASKS.md')
+    const runDocsGuard = () => runGuards()
+
+    withRestoredFiles([tasks], (restore) => {
+      // 34a —— ✅ 的 Session 交付点名一个不存在的路径
+      {
+        restore()
+        const before = readFileSync(tasks, 'utf8')
+        const mutated = before.replace(
+          '**交付**:`docs/DECISIONS/design-kit-adoption.md`',
+          '**交付**:`docs/DECISIONS/__does_not_exist__.md`',
+        )
+        if (mutated === before) {
+          expect('34a ✅ 的 Session 交付点名不存在的产物 → 守卫变红', false, '锚点失配,本条作废')
+        } else {
+          writeFileSync(tasks, mutated, 'utf8')
+          const r = runDocsGuard()
+          expect(
+            '34a ✅ 的 Session 交付点名不存在的产物 → 守卫变红',
+            !r.ok && /产物缺失/.test(r.output),
+            !r.ok
+              ? undefined
+              : '★ 任务书说做完了而产物不在,竟然没人红 —— 进度标记是所有后续判断的地基',
+          )
+        }
+      }
+
+      // 34b —— ✅ 的 Session 交付里一个反引号路径都没有
+      {
+        restore()
+        const before = readFileSync(tasks, 'utf8')
+        const mutated = before.replace(
+          // ⚠️ 那一行有**两个**反引号路径 —— 只去掉一个的话判据 1 仍然满足,
+          //   这条负向验证会因为夹具太弱而失败。两个一起去掉。
+          '**交付**:`docs/DECISIONS/design-kit-adoption.md`(两条裁决与实测判据)、\n' +
+            '`scripts/check-guards.mjs` 的「Session 标 ✅ 的交付产物都真的存在」守卫。',
+          '**交付**:两条裁决与实测判据,以及那条盯任务书的守卫。',
+        )
+        if (mutated === before) {
+          expect('34b ✅ 的 Session 交付说不出可核对的产物 → 守卫变红', false, '锚点失配,本条作废')
+        } else {
+          writeFileSync(tasks, mutated, 'utf8')
+          const r = runDocsGuard()
+          expect(
+            '34b ✅ 的 Session 交付说不出可核对的产物 → 守卫变红',
+            !r.ok && /产物缺失/.test(r.output),
+            !r.ok
+              ? undefined
+              : '「做完了」而说不出一个具体产物,那句「做完了」不可核对 —— 判据 1 正是为了逼出写路径的习惯',
+          )
+        }
+      }
+
+      // 34c —— 正向对照:原样的任务书必须通过
+      {
+        restore()
+        const r = runDocsGuard()
+        expect(
+          '34c 正向对照:合规的任务书被放行(规则不是「见到 ✅ 就红」)',
+          r.ok,
+          r.ok ? undefined : `守卫把合规的任务书也拦了:\n${r.output.slice(0, 300)}`,
+        )
+      }
+    })
+  }
+
+  // ---------------------------------------------------------------------
   // 31. 硬规则守卫**逐条**负向验证 + 完备性(V0.8.0)
   //
   //     ⚠️ **在此之前,check-guards.mjs 的 22 条守卫里有 5 条一次都没被验过**,
@@ -640,6 +844,8 @@ try {
         '每个 SDK 都有「与契约同步」的断言(逐语言,不共用)', // 29a–29c
         'CI job 都做实质检查且已登记(没有恒绿的绿勾)', // 26a–26c
         'CI 只调 check:all 一个入口,没有第二份门禁清单', // 21a–21c
+        '前端交互态样式走 CSS 伪类,不用 JS 承载', // 33e / 33f
+        'Session 标 ✅ 的交付产物都真的存在(任务书自身的诚实性)', // 34a–34c
       ]
 
       const accounted = new Set([...HARD_RULE_FIXTURES.map((f) => f.guard), ...VERIFIED_ELSEWHERE])
@@ -1561,14 +1767,21 @@ try {
 
   // 24d ★ 空集守卫:前端目录没了,三条约束不得静默通过
   {
-    const src = p('console-web', 'src')
-    const stash = p('console-web', '__stash__')
+    // ⚠️ 挪的是**整个包**,不是 src。
+    //   V0.9.0 把扫描范围从写死目录改成「按包发现」之后,把 src 挪到同包的
+    //   别处**文件仍在包里**,守卫照样扫得到 —— 那时这条负向验证会失败,
+    //   而失败的是夹具不是守卫。挪走整个包才对应「前端代码全没了」。
+    const src = p('console-web')
+    // ⚠️ 挪去 node_modules —— 它在 collectFiles 的 SKIP_DIRS 里。
+    //   挪到仓库内的**别的名字**是不够的:package.json 还在,扫描照样发现它。
+    //   同卷 rename,还原安全。
+    const stash = p('node_modules', '__console_web_stash__')
     renameSync(src, stash)
     const r = runGuards()
     renameSync(stash, src)
     expect(
-      '24d ★ console-web/src 整个消失 → 守卫变红(而不是空集扫描静默通过)',
-      !r.ok && /空集扫描|没有任何源码/.test(r.output),
+      '24d ★ 前端包整个消失 → 守卫变红(而不是空集扫描静默通过)',
+      !r.ok && /空集扫描/.test(r.output),
       r.ok ? '前端代码全没了,三条约束却「通过」了 —— 那正是本仓反复强调的最危险的绿' : undefined,
     )
   }

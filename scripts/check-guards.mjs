@@ -386,88 +386,400 @@ function checkStalePrincipalConsumers() {
 }
 
 /**
- * 前端三条约束(V0.5.0,D7)—— 为 V0.7.0 的 Tauri 套壳预留。
+ * ★ **Session 标 ✅,交付里点名的产物就必须存在。**
  *
- * ## 为什么这三条现在就要守
+ * ## 它守的是任务书自身的诚实性
  *
- * 三个宿主(远端 Web / 本地 sidecar / Tauri)要跑**同一份**前端代码。
- * 违反任一条的后果都不是「在 Tauri 里表现不好」,而是**根本跑不起来**:
+ * 本仓有一整套机制盯着「代码有没有说到做到」——守卫、探针、契约冻结、
+ * 出厂装配。**唯独没有东西盯着任务书。** 而任务书的进度标记是所有人
+ * (包括下一个会话的我)判断「哪些做完了」的唯一依据。
  *
- * | 约束 | 违反后在 Tauri 里会怎样 |
- * | --- | --- |
- * | 路由用 hash / memory | history router 依赖服务器把任意路径回落到 index.html。Tauri 没有服务器 —— 刷新 `/settings` 直接 404 |
- * | 不依赖浏览器专有 API | `localStorage` 在 Tauri 的 WebView 里存在但**不跨会话可靠**;`window.location` 直接操作会指向 `tauri://localhost` |
- * | 请求走统一 SDK 层 | 散落的 `fetch('/v1/…')` 在远端同源能跑,在 Tauri 下全部失败 |
+ * ⚠️ **它已经错过一次。** V0.8.0 的 `62878be` 把 Session 1/2/3 三个 ⬜
+ * **一次性批量翻成 ✅**,而那个提交自己的交付清单只写了「各 42 个模型」——
+ * 从未声称做了客户端或示例。结果:Session 1/2 声明要交付
+ * `examples/kotlin-session` / `examples/swift-session`,两个目录都不存在,
+ * 而标记说做完了。
  *
- * ⚠️ **现在写零成本,事后补是重构。** 路由散落进几十个组件、`fetch` 散落
- * 进每个页面之后再改,每一处都要动 —— 而那时已经没有「重写一遍」的预算了。
+ * 这与本仓反复抓的「注释承诺、实现只做一半」是同一族,
+ * 只是发生在**任务书**这一层 —— 而这一层此前一道检查都没有。
  *
- * ## 为什么是守卫而不是注释
+ * ## 判据:两条
  *
- * D7 原话:「加守卫,不是写进注释就算数」。理由本仓已经证明过三次 ——
- * 靠人记得的事会被忘,而忘的那次是静默的。
+ * 1. ✅ 的 Session,其 `**交付**` 行**必须至少有一个反引号路径**。
+ *    ——「做完了」而说不出一个具体产物,那句「做完了」不可核对。
+ * 2. 那些路径**必须真的存在**。
  *
- * ## 扫描范围
+ * ## 范围:只查还带 `**交付**` 行的版本块
  *
- * `console-web/src/**`。⚠️ **这个目录必须真实存在且有代码** ——
- * 空集扫描永远绿,而那是本仓反复强调的最危险的绿。
- * 这正是把前端放主仓的理由(AUTOPILOT-LOG A1)。
+ * 已压缩的版本块按第三节把实现细节移进了归档,块里只剩「改了什么」——
+ * 那里没有 `**交付**` 行,自然不参与。这不是漏检:那些版本的产物
+ * 早已被后续版本的测试与守卫持续使用着,缺了会以别的方式红。
+ *
+ * ## ⚠️ 明写的局限:它查的是**路径**,不是散文
+ *
+ * `**交付**:`sdk/kotlin`(生成的模型 + 客户端)` —— 反引号里是 `sdk/kotlin`,
+ * 它存在,于是通过;而「客户端」三个字是散文,**这条守卫看不见**。
+ * 实测就是这样:V0.8.0 缺的四处产物里,它只抓得到两处(两个示例目录),
+ * 抓不到两个客户端。
+ *
+ * ⇒ **推论:交付要写成路径,不要写成散文。** 判据 1 正是为了逼出这个习惯 ——
+ * 写不出路径的交付,本来就没法核对。
  *
  * @returns {{file: string, line: number, text: string}[]}
  */
-function checkFrontendConstraints() {
-  const root = p('console-web', 'src')
-  const files = collectFiles(root, (/** @type {string} */ f) => /\.(ts|tsx)$/.test(f))
+function checkSessionStatusHasArtifacts() {
+  const file = p('SESSION_TASKS.md')
+  /** @type {{file: string, line: number, text: string}[]} */
+  const out = []
+  let source
+  try {
+    source = readFileSync(file, 'utf8')
+  } catch {
+    return [{ file: 'SESSION_TASKS.md', line: 0, text: '读不到任务书 —— 本条无从判定' }]
+  }
 
-  // ★ 空集守卫。没有它,删掉 console-web 会让这三条全部「通过」。
-  if (files.length === 0) {
+  const lines = source.split(/\r?\n/)
+
+  // 版本块的边界:`## …M<版本>…`。Session 编号是**块内**的,所以必须分块处理。
+  /** @type {{ title: string, start: number, end: number }[]} */
+  const blocks = []
+  for (let i = 0; i < lines.length; i += 1) {
+    if (/^## .*M\d+\.\d+\.\d+/.test(lines[i] ?? '')) {
+      const prev = blocks[blocks.length - 1]
+      if (prev !== undefined) prev.end = i
+      blocks.push({ title: (lines[i] ?? '').slice(0, 60), start: i, end: lines.length })
+    }
+  }
+
+  let checked = 0
+  for (const block of blocks) {
+    const body = lines.slice(block.start, block.end)
+
+    // 1. 块内的 Session 状态表:`| 0 | 标题 | ✅ |`
+    /** @type {Map<string, string>} */
+    const status = new Map()
+    for (const line of body) {
+      const m = /^\|\s*(\d+)\s*\|[^|]*\|\s*(✅|🔄|⬜|🟠)\s*\|/.exec(line)
+      if (m) status.set(m[1] ?? '', m[2] ?? '')
+    }
+    if (status.size === 0) continue
+
+    // 2. 块内的 `### Session N · …` 与紧随其后的 `**交付**` 行
+    for (let i = 0; i < body.length; i += 1) {
+      const head = /^### Session (\d+)/.exec(body[i] ?? '')
+      if (head === null) continue
+      const n = head[1] ?? ''
+      if (status.get(n) !== '✅') continue
+
+      // 交付行可能折行 —— 收到下一个空行为止
+      let delivery = ''
+      for (let j = i + 1; j < body.length && !/^### /.test(body[j] ?? ''); j += 1) {
+        if (!/^\*\*交付\*\*/.test(body[j] ?? '')) continue
+        for (let k = j; k < body.length && (body[k] ?? '').trim() !== ''; k += 1) {
+          delivery += `${body[k]}\n`
+        }
+        break
+      }
+      if (delivery === '') continue
+
+      const lineNo = block.start + i + 1
+      // 反引号里像仓库路径的:带 `/`、不含空格、不是 URL
+      const paths = [...delivery.matchAll(/`([^`\s]+)`/g)]
+        .map((m) => m[1] ?? '')
+        .filter((s) => s.includes('/') && !s.startsWith('http') && !s.startsWith('@'))
+
+      if (paths.length === 0) {
+        out.push({
+          file: 'SESSION_TASKS.md',
+          line: lineNo,
+          text: `${block.title.replace(/<[^>]+>/g, '').trim()} 的 Session ${n} 标 ✅,但交付里没有任何反引号路径 —— 「做完了」说不出一个可核对的产物`,
+        })
+        continue
+      }
+
+      for (const rel of paths) {
+        checked += 1
+        if (existsSync(p(rel))) continue
+        out.push({
+          file: 'SESSION_TASKS.md',
+          line: lineNo,
+          text: `Session ${n} 标 ✅,但交付点名的 \`${rel}\` 不存在`,
+        })
+      }
+    }
+  }
+
+  // ★ 出口计数。一个「一条路径都没查到」的检查与没有检查等价,
+  //   而它在输出里显示为「通过」——本仓反复抓的那个形状。
+  if (checked === 0) {
+    out.push({
+      file: 'SESSION_TASKS.md',
+      line: 0,
+      text: '一条产物路径都没查到 —— 任务书里没有 ✅ 的 Session 带交付路径,本条退化成空集扫描',
+    })
+  }
+
+  return out
+}
+
+/**
+ * 前端三条约束(D7,为 Tauri 套壳预留)。
+ *
+ * 三个宿主(远端 Web / 本地 sidecar / Tauri)要跑**同一份代码**,
+ * 唯一的差别是 baseURL。违反任一条在 Tauri 里都不是「表现不好」,
+ * 是**根本跑不起来** —— 而那时前端已经写了几十个组件,改起来是重构。
+ *
+ * ## ⚠️ 扫描范围:从「哪个目录」改成「什么形状」(V0.9.0)
+ *
+ * 第一版写死 `console-web/src`,豁免写死单个 `console-web/src/api.ts`。
+ * 那在只有一个前端包时够用,而 V0.9.0 要新增 `packages/design-system`、
+ * 工作台、Tauri 前端 —— **它们全部逃出扫描范围,而守卫照样绿**。
+ *
+ * 这与「一维内部还有没有未被触及的表达方式」是同一形状:维度打了勾,
+ * 而它只覆盖了自己的一部分。
+ *
+ * ⇒ 改成按**形状**发现:**前端包 = `package.json` 的依赖里有 `react`**。
+ * 新增前端包不需要在任何地方登记 —— 没有清单可忘,也就没有「忘了登记」这回事。
+ *
+ * ## 但「不声明 react」是一条逃逸路径,所以单独堵上
+ *
+ * 一个包写了 `.tsx` 却不在 `package.json` 里声明 `react`,就从判据里溜了。
+ * 这条本身要红:**认不出的前端包比违规的前端包更危险** ——
+ * 后者会被报出来,前者悄无声息。
+ *
+ * ## 约束 3 的判据也跟着变:每个前端包**恰好一个** api 出口
+ *
+ * 从「只有 `console-web/src/api.ts` 可以碰网络」改成「每个前端包
+ * `src/api.ts` 恰好一个,且只有它可以碰网络」。三种坏法各自报出来:
+ *
+ * | 坏法 | 为什么坏 |
+ * | --- | --- |
+ * | 零个出口而包里有网络调用 | 请求散落了,三个宿主换 baseURL 时改不动 |
+ * | 两个出口 | 「唯一出口」不再唯一,注入 baseURL 时会漏掉一个 |
+ * | 非出口文件里有网络调用 | 同第一条 |
+ *
+ * @returns {{file: string, line: number, text: string}[]}
+ */
+/**
+ * 前端包 = `package.json` 的依赖里有 `react` 的包。
+ *
+ * 按**形状**发现,不按清单登记 —— 没有清单可忘,也就没有「忘了登记」这回事。
+ * 逃逸路径(写了 .tsx 却不声明 react)由 {@link checkFrontendConstraints} 单独堵。
+ *
+ * @returns {{ dir: string, rel: string }[]}
+ */
+function frontendPackages() {
+  const pkgFiles = collectFiles(REPO, isPackageJson)
+  /** @type {{ dir: string, rel: string }[]} */
+  const frontendPkgs = []
+  for (const file of pkgFiles) {
+    let json
+    try {
+      json =
+        /** @type {{dependencies?: Record<string,string>, devDependencies?: Record<string,string>}} */ (
+          JSON.parse(readFileSync(file, 'utf8'))
+        )
+    } catch {
+      continue
+    }
+    const deps = { ...(json.dependencies ?? {}), ...(json.devDependencies ?? {}) }
+    if (deps['react'] === undefined) continue
+    frontendPkgs.push({ dir: dirname(file), rel: repoPath(REPO, dirname(file)) })
+  }
+  return frontendPkgs
+}
+
+/**
+ * ★ **前端不得用 JS 承载 hover / active / focus 的样式。**
+ *
+ * ## 它守的是一条会在移植时被原样带进来的写法
+ *
+ * 设计 kit 的 21 个组件全部用 JS style 对象 + React state 表达交互态:
+ *
+ * ```jsx
+ * const [hover, setHover] = React.useState(false)
+ * onMouseEnter={() => setHover(true)}
+ * onFocus={e => { e.currentTarget.style.boxShadow = 'var(--focus-ring)' }}
+ * ```
+ *
+ * 移植时要改成 CSS 类 + `:hover` / `:active` / `:focus-visible`。
+ * **而如果只是改一遍不加守卫,下一个人会照着旧 kit 的写法加组件** ——
+ * kit 会一直在那里,它就是最方便的参照。
+ *
+ * ## 为什么这不是风格偏好
+ *
+ * | 后果 | 为什么严重 |
+ * | --- | --- |
+ * | **没有 `:focus-visible`** | `onFocus` 对鼠标点击也触发,焦点环因此常亮。而设计语言明写「键盘可达性不依赖颜色差异」、焦点环是那条通道的指示 —— 它对所有人常亮,那条规则就名存实亡 |
+ * | **写不了媒体查询** | Tauri 桌面窗口可缩放,而工作台是三栏布局。没有断点就没有三栏 |
+ * | 每次 hover 一次 re-render | 次要,但表格里每行一个组件时看得见 |
+ * | 触屏上 `onMouseEnter` 语义不对 | 次要,但白牌客户可能上平板 |
+ *
+ * ## 判据:两条,都窄到能说清「为什么这一个不行」
+ *
+ * 1. `onMouseEnter` / `onMouseLeave` / `onMouseOver` / `onMouseOut`
+ *    —— CSS `:hover` 覆盖了这个用例。真需要鼠标进出事件的场景
+ *    (拖放、画布命中测试)加 `dshwar-guard-allow: <理由>`。
+ * 2. `.style.<属性> = ` —— 直接改内联样式。焦点环、选中态这类
+ *    都该由 CSS 伪类接管。
+ *
+ * ⚠️ 刻意**不**禁 `style={{...}}` 本身:一次性的布局(`gridTemplateColumns`
+ * 按数据算)用内联是合理的,禁掉等于禁止写动态布局。禁的是**用 JS 表达
+ * 那些 CSS 伪类本来就能表达的状态**。
+ *
+ * @returns {{file: string, line: number, text: string}[]}
+ */
+function checkNoJsInteractionStyles() {
+  const pkgs = frontendPackages()
+  /** @type {{file: string, line: number, text: string}[]} */
+  const out = []
+
+  // ★ 空集守卫 —— 与三条约束共用同一个发现逻辑,所以同一个坏法也共用。
+  if (pkgs.length === 0) {
     return [
       {
-        file: 'console-web/src',
+        file: 'package.json',
         line: 0,
-        text: 'console-web/src 下没有任何源码 —— 三条前端约束会退化成空集扫描,永远绿',
+        text: '全仓找不到任何前端包 —— 本条会退化成空集扫描,永远绿',
       },
     ]
   }
 
+  let scanned = 0
+  for (const pkg of pkgs) {
+    const files = collectFiles(pkg.dir, (/** @type {string} */ f) => /\.(ts|tsx)$/.test(f))
+    scanned += files.length
+    if (files.length === 0) continue
+
+    out.push(
+      ...grepFiles(files, /\bon(MouseEnter|MouseLeave|MouseOver|MouseOut)\b/g, REPO).map((h) => ({
+        ...h,
+        text: `${h.text} —— hover 态走 CSS :hover,不要用 JS 状态`,
+      })),
+    )
+    out.push(
+      ...grepFiles(files, /\.style\.[A-Za-z][A-Za-z0-9]*\s*=[^=]/g, REPO).map((h) => ({
+        ...h,
+        text: `${h.text} —— 直接改内联样式;焦点环走 :focus-visible,选中态走 CSS 类`,
+      })),
+    )
+  }
+
+  // ★ 出口计数:前端包在、但一个源文件都没有 —— 同样是空集扫描。
+  if (scanned === 0) {
+    out.push({
+      file: 'package.json',
+      line: 0,
+      text: '前端包里一个 .ts/.tsx 都没有 —— 本条退化成空集扫描,永远绿',
+    })
+  }
+
+  return out
+}
+
+/**
+ * 前端三条约束(D7)—— 完整说明见 {@link frontendPackages} 与本函数体内注释。
+ * @returns {{file: string, line: number, text: string}[]}
+ */
+function checkFrontendConstraints() {
   /** @type {{file: string, line: number, text: string}[]} */
   const out = []
+  const frontendPkgs = frontendPackages()
 
-  // 约束 1:路由。禁 history router 与 history API。
-  out.push(
-    ...grepFiles(
-      files,
-      /\b(createBrowserRouter|BrowserRouter|history\.pushState|history\.replaceState|useHistory)\b/g,
-      REPO,
-    ).map((h) => ({ ...h, text: `[约束1 路由] ${h.text}` })),
-  )
+  // ---- 逃逸路径:写了 .tsx 却没声明 react ----
+  const inFrontend = (/** @type {string} */ f) =>
+    frontendPkgs.some((pkg) => repoPath(REPO, f).startsWith(`${pkg.rel}/`))
+  for (const tsx of collectFiles(REPO, (f) => f.endsWith('.tsx'))) {
+    if (inFrontend(tsx)) continue
+    out.push({
+      file: repoPath(REPO, tsx),
+      line: 0,
+      text: '[范围] 这个 .tsx 不属于任何声明了 react 的包 —— 它逃出了三条约束的扫描',
+    })
+  }
 
-  // 约束 2:浏览器专有 API。
-  //
-  // ⚠️ 刻意**不**禁 `document` 与 `window` 本身 —— React 组件树、事件、
-  // 测试夹具都要用到它们,禁掉等于禁止写前端。禁的是**那些在 Tauri 里
-  // 语义不同或不可用的具体入口**。规则要窄到能说清「为什么这一个不行」,
-  // 宽泛的禁令只会被加豁免绕过。
-  out.push(
-    ...grepFiles(
-      files,
-      /\b(localStorage|sessionStorage|window\.location\s*=|location\.assign|location\.replace|navigator\.serviceWorker|indexedDB)\b/g,
-      REPO,
-    ).map((h) => ({ ...h, text: `[约束2 浏览器专有 API] ${h.text}` })),
-  )
+  // ★ 空集守卫。没有它,前端包全没了会让三条约束「通过」。
+  if (frontendPkgs.length === 0) {
+    out.push({
+      file: 'package.json',
+      line: 0,
+      text: '[范围] 全仓找不到任何前端包(依赖里有 react 的包)—— 三条约束会退化成空集扫描,永远绿',
+    })
+    return out
+  }
 
-  // 约束 3:请求走统一 SDK 层。
-  //
-  // 只有 `src/api.ts` 允许出现网络调用 —— 它就是那一层。
-  const nonApi = files.filter((f) => !repoPath(REPO, f).endsWith('console-web/src/api.ts'))
-  out.push(
-    ...grepFiles(nonApi, /\b(fetch\s*\(|XMLHttpRequest|axios|EventSource\s*\()/g, REPO).map(
-      (h) => ({
+  let scanned = 0
+  for (const pkg of frontendPkgs) {
+    const files = collectFiles(pkg.dir, (/** @type {string} */ f) => /\.(ts|tsx)$/.test(f))
+    scanned += files.length
+    if (files.length === 0) continue
+
+    // 约束 1:路由。禁 history router 与 history API。
+    out.push(
+      ...grepFiles(
+        files,
+        /\b(createBrowserRouter|BrowserRouter|history\.pushState|history\.replaceState|useHistory)\b/g,
+        REPO,
+      ).map((h) => ({ ...h, text: `[约束1 路由] ${h.text}` })),
+    )
+
+    // 约束 2:浏览器专有 API。
+    //
+    // ⚠️ 刻意**不**禁 `document` 与 `window` 本身 —— React 组件树、事件、
+    // 测试夹具都要用到它们,禁掉等于禁止写前端。禁的是**那些在 Tauri 里
+    // 语义不同或不可用的具体入口**。规则要窄到能说清「为什么这一个不行」,
+    // 宽泛的禁令只会被加豁免绕过。
+    out.push(
+      ...grepFiles(
+        files,
+        /\b(localStorage|sessionStorage|window\.location\s*=|location\.assign|location\.replace|navigator\.serviceWorker|indexedDB)\b/g,
+        REPO,
+      ).map((h) => ({ ...h, text: `[约束2 浏览器专有 API] ${h.text}` })),
+    )
+
+    // 约束 3:每个前端包**恰好一个** api 出口。
+    const NET = /\b(fetch\s*\(|XMLHttpRequest|axios|EventSource\s*\()/g
+    // `api.ts` 与 `api.tsx` 都算出口 —— 同包并存是真会犯的错(改扩展名时忘了删旧的),
+    // 而只认其中一个的话,那种错会安静地变成「两个出口,守卫只看见一个」。
+    const exits = files.filter((f) => {
+      const rel = repoPath(REPO, f)
+      return rel === `${pkg.rel}/src/api.ts` || rel === `${pkg.rel}/src/api.tsx`
+    })
+    const nonExit = files.filter((f) => !exits.includes(f))
+    const strayNet = grepFiles(nonExit, NET, REPO)
+
+    if (exits.length > 1) {
+      out.push({
+        file: pkg.rel,
+        line: 0,
+        text: `[约束3 统一 SDK 层] 这个前端包有 ${exits.length} 个 api 出口 —— 「唯一出口」不再唯一,注入 baseURL 时会漏掉一个`,
+      })
+    } else if (exits.length === 0 && strayNet.length > 0) {
+      out.push({
+        file: pkg.rel,
+        line: 0,
+        text: '[约束3 统一 SDK 层] 这个前端包没有 src/api.ts,却有网络调用 —— 请求散落之后,三个宿主换 baseURL 时改不动',
+      })
+    }
+
+    out.push(
+      ...strayNet.map((h) => ({
         ...h,
-        text: `[约束3 统一 SDK 层] ${h.text} —— 请求只能在 console-web/src/api.ts 里发生`,
-      }),
-    ),
-  )
+        text: `[约束3 统一 SDK 层] ${h.text} —— 请求只能在 ${pkg.rel}/src/api.ts 里发生`,
+      })),
+    )
+  }
+
+  // ★ 出口计数。前端包在、源码全没了 —— 与「一个前端包都没有」同样是空集扫描,
+  //   而这一条是改成按形状发现之后**新出现**的路径:第一版扫的是写死的目录,
+  //   目录空了立刻报;现在包还在,只是里面没文件,循环会安静地跳过。
+  if (scanned === 0) {
+    out.push({
+      file: 'package.json',
+      line: 0,
+      text: '[范围] 前端包里一个 .ts/.tsx 都没有 —— 三条约束会退化成空集扫描,永远绿',
+    })
+  }
 
   return out
 }
@@ -1138,6 +1450,33 @@ if (unregistered.length === 0 && stale.length === 0) {
   console.log('        登记处见 scripts/check-guards.mjs 的 PRINCIPAL_CONSUMERS,')
   console.log('        背景见 docs/DECISIONS/principal-scope-binding.md')
   for (const h of [...unregistered, ...stale]) console.log(`        ${h.text}`)
+}
+
+const jsInteraction = checkNoJsInteractionStyles()
+if (jsInteraction.length === 0) {
+  console.log('  通过  前端交互态样式走 CSS 伪类,不用 JS 承载')
+} else {
+  failed += 1
+  console.log(`  违规  前端用 JS 承载 hover / active / focus  (${jsInteraction.length} 处)`)
+  console.log('        没有 :focus-visible 意味着鼠标点击也显示焦点环 —— 而焦点环是设计语言里')
+  console.log('        明写的键盘可达性通道。内联样式还写不了媒体查询,而工作台是三栏布局。')
+  for (const h of jsInteraction.slice(0, 10)) {
+    console.log(`        ${h.file}:${h.line}  ${h.text}`)
+  }
+}
+
+const sessionArtifacts = checkSessionStatusHasArtifacts()
+if (sessionArtifacts.length === 0) {
+  console.log('  通过  Session 标 ✅ 的交付产物都真的存在(任务书自身的诚实性)')
+} else {
+  failed += 1
+  console.log(`  违规  Session 标 ✅ 但产物缺失  (${sessionArtifacts.length} 处)`)
+  console.log(
+    '        进度标记是判断「哪些做完了」的唯一依据 —— 它错了,后面每个决定都建在错的基础上',
+  )
+  for (const h of sessionArtifacts.slice(0, 10)) {
+    console.log(`        ${h.file}:${h.line}  ${h.text}`)
+  }
 }
 
 const frontend = checkFrontendConstraints()

@@ -11,6 +11,20 @@
  *   6. gateway 的 OpenAPI info.version(V0.2.0 起才有,缺失时跳过)
  *
  * 以 root package.json 为基准 —— changesets 提升的就是它,让它当唯一事实源。
+ *
+ * ## ⚠️ 本脚本**不是**全部 —— 还有第 7 处由测试盯着
+ *
+ * `packages/console-contract/src/version.ts` 的 `CONSOLE_CONTRACT_VERSION`
+ * 是**源码里手写的字符串**,本脚本看不到它(它只比 package.json / CLAUDE.md /
+ * README / openapi.json 这四类)。盯它的是
+ * `packages/console-contract/test/version.test.ts`。
+ *
+ * 这个分工是刻意的:那个常量属于契约包的语义,放进本脚本要么写死路径,
+ * 要么发明一套「源码里的版本号」扫描规则,两条都比一条单测贵。
+ *
+ * **但必须写在这里** —— 否则下一个人读完上面那份六条清单,
+ * 会以为「全部 34 处一致」等于全仓一致。V0.9.0 立项时它就分叉过一次:
+ * 六处全同步完、本脚本全绿,而那条单测红了。
  */
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
