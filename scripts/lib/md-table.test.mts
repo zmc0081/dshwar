@@ -9,7 +9,15 @@
  * 外加「定位失败必须抛,不许静默不改」。
  */
 import { describe, expect, it } from 'vitest'
-import { formatRow, isSeparatorRow, parseRow, setTableCell, TableEditError } from './md-table.mjs'
+import {
+  formatRow,
+  isSeparatorRow,
+  isTableRow,
+  parseRow,
+  setTableCell,
+  tableRangeAfter,
+  TableEditError,
+} from './md-table.mjs'
 
 describe('parseRow · 行内代码里的竖线不是分隔符', () => {
   it('★ 代码跨度内的 `|` 不切列(按字符 split 会切成 4 列)', () => {
@@ -134,5 +142,107 @@ describe('formatRow', () => {
   it('往返不丢内容', () => {
     const cells = ['1', '`@dshwar/x|y`', '✅']
     expect(parseRow(formatRow(cells))).toEqual(cells)
+  })
+})
+
+describe('tableRangeAfter · 按身份定位,不按位置', () => {
+  // 真实形状:一个版本块里两张表,**第一列都有 `1`**。
+  // 这正是 V0.9.0 撞上的那一次 —— setTableCell 抛「匹配到 2 行」。
+  const twoTables = [
+    '## M0.9.0 · 端',
+    '',
+    '**Session 状态**',
+    '',
+    '| Session | 标题 | 状态 |',
+    '| ------- | ---- | ---- |',
+    '| 0 | 裁决 | ✅ |',
+    '| 1 | 移植 kit | ⬜ |',
+    '',
+    '### ★ 三条既定约束',
+    '',
+    '| #   | 约束 | 为什么 |',
+    '| --- | ---- | ------ |',
+    '| 1   | 不展示 shell 命令原文 | 展示到工具名与路径为止 |',
+    '| 2   | 没有运行时审批弹窗 | 取而代之是工作区设置页 |',
+    '',
+  ].join('\n')
+
+  it('★ 收窄到锚点后的那张表 —— 两张表首列撞车时仍唯一', () => {
+    // 不收窄:两行都匹配,setTableCell 抛错(这是正确行为,先钉住它)
+    expect(() =>
+      setTableCell(twoTables, { matchColumn: 0, matchValue: '1', setColumn: -1, setValue: '✅' }),
+    ).toThrow(TableEditError)
+
+    // 收窄之后唯一命中
+    const r = tableRangeAfter(twoTables, '**Session 状态**')
+    const out = setTableCell(twoTables, {
+      ...r,
+      matchColumn: 0,
+      matchValue: '1',
+      setColumn: -1,
+      setValue: '✅',
+    })
+    const rows = out.split('\n').filter((l) => isTableRow(l) && !isSeparatorRow(l))
+    // Session 表的 `1` 变了
+    expect(rows.find((l) => parseRow(l)[0] === '1' && parseRow(l)[1] === '移植 kit')).toContain(
+      '✅',
+    )
+    // 约束表的 `1` **没被碰**
+    expect(out).toContain('| 1   | 不展示 shell 命令原文 | 展示到工具名与路径为止 |')
+  })
+
+  it('★ 换成「约束表在前」也定位正确 —— 证明靠的不是位置', () => {
+    // 把两张表的顺序调过来。若实现是「取第一张表」,这条会打到约束表上。
+    const swapped = [
+      '## M0.9.0 · 端',
+      '',
+      '### ★ 三条既定约束',
+      '',
+      '| #   | 约束 | 为什么 |',
+      '| --- | ---- | ------ |',
+      '| 1   | 不展示 shell 命令原文 | 展示到工具名与路径为止 |',
+      '',
+      '**Session 状态**',
+      '',
+      '| Session | 标题 | 状态 |',
+      '| ------- | ---- | ---- |',
+      '| 1 | 移植 kit | ⬜ |',
+      '',
+    ].join('\n')
+
+    const r = tableRangeAfter(swapped, '**Session 状态**')
+    const out = setTableCell(swapped, {
+      ...r,
+      matchColumn: 0,
+      matchValue: '1',
+      setColumn: -1,
+      setValue: '✅',
+    })
+    // ⚠️ `formatRow` 不补对齐空格 —— 被改的那一行按最简形态重排,
+    //    而**没被碰的行原样保留**(下一条断言就是靠这个区分「改对了」与「全表重排」)。
+    expect(out).toContain('| 1 | 移植 kit | ✅ |')
+    expect(out).toContain('| 1   | 不展示 shell 命令原文 | 展示到工具名与路径为止 |')
+  })
+
+  it('只取紧跟锚点的那一张表,不跨到下一张', () => {
+    const r = tableRangeAfter(twoTables, '**Session 状态**')
+    const slice = twoTables.slice(r.from, r.to)
+    expect(slice).toContain('移植 kit')
+    expect(slice).not.toContain('不展示 shell 命令原文')
+  })
+
+  it('锚点不存在 → 抛,而不是退回「取第一张表」', () => {
+    expect(() => tableRangeAfter(twoTables, '**不存在的锚点**')).toThrow(TableEditError)
+  })
+
+  it('锚点存在但其后没有表格 → 抛', () => {
+    expect(() =>
+      tableRangeAfter('前言\n\n**孤零零的锚点**\n\n只是段落。\n', '**孤零零的锚点**'),
+    ).toThrow(TableEditError)
+  })
+
+  it('from/to 之外的锚点不算数(范围收窄是硬的)', () => {
+    const at = twoTables.indexOf('**Session 状态**')
+    expect(() => tableRangeAfter(twoTables, '**Session 状态**', at + 1)).toThrow(TableEditError)
   })
 })

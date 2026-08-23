@@ -32,7 +32,15 @@
  * 退出码:全绿 0,任一守卫没拦住 1。
  */
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 import { runTestsUnderMutation, withRestoredFiles } from './lib/mutate.mjs'
@@ -76,6 +84,61 @@ const runVersion = () => run([p('scripts', 'check-version.mjs')])
  * 记录被本脚本创建的路径,finally 里无条件清理。
  * @type {string[]}
  */
+/**
+ * 开机自愈:把上一次跑崩时遗留的前端包搬回原位。
+ *
+ * ## 为什么需要它,而不是「加个 finally 就够了」
+ *
+ * 24d 要验「前端包整个消失时守卫会不会红」,做法是把它们 `rename` 进
+ * `node_modules/__fe_stash_N__`(那里在扫描的 SKIP_DIRS 里),跑完再搬回来。
+ * finally 挡得住异常与正常退出 —— **挡不住 SIGKILL**。
+ *
+ * 2026-08-23 就真的发生了一次:一个跑本脚本的子进程在两次 rename 之间被杀,
+ * `console-web/` 整个从工作区消失。后果不是「少个目录」那么直白 ——
+ * 后续的 check-guards 报的是
+ *
+ *   · Session 标 ✅ 但交付点名的 `console-web/src` 不存在
+ *   · 登记了不存在的项目 console-web/tsconfig.json
+ *
+ * **两条都指向症状,一条都没指向原因。** 而这两条看起来像是任务书写错了
+ * 或 tsconfig 配错了 —— 顺着它们改,会把两处**本来正确**的东西改坏。
+ *
+ * ⇒ 所以自愈要**吵**:搬回来的同时打印发生了什么,
+ * 免得下一个人只看到「莫名其妙好了」。
+ *
+ * ⚠️ 只在**目标不存在**时搬 —— 目标已经存在说明有人手工恢复过,
+ * 这时覆盖会毁掉他的工作。那种情况留着残骸并报出来,由人裁决。
+ */
+function reclaimOrphanedStashes() {
+  const nm = p('node_modules')
+  if (!existsSync(nm)) return
+  for (const entry of readdirSync(nm, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !/^__fe_stash_\d+__$/.test(entry.name)) continue
+    const stash = join(nm, entry.name)
+    let name
+    try {
+      name = JSON.parse(readFileSync(join(stash, 'package.json'), 'utf8')).name
+    } catch {
+      console.log(`⚠️  ${entry.name} 里没有可读的 package.json —— 无法判断它该回哪,留着待查`)
+      continue
+    }
+    // 包名 `@dshwar/console-web` → 目录名 `console-web`。目录可能在根,也可能在 packages/。
+    const base = String(name).split('/').pop() ?? ''
+    const candidates = [p(base), p('packages', base)]
+    const target = candidates.find((c) => !existsSync(c))
+    if (target === undefined) {
+      console.log(`⚠️  ${entry.name}(${name})的原位已存在 —— 不覆盖,残骸留在 ${stash} 待人裁决`)
+      continue
+    }
+    renameSync(stash, target)
+    console.log(`♻️  上次跑崩遗留:已把 ${name} 从 ${entry.name} 搬回 ${target}`)
+    console.log('    (24d 会把前端包临时挪进 node_modules;进程被强杀时搬不回来)')
+  }
+}
+
+reclaimOrphanedStashes()
+
+/** @type {string[]} */
 const created = []
 /**
  * @param {string} relPath
@@ -736,6 +799,66 @@ try {
         )
       }
     })
+  }
+
+  // ---------------------------------------------------------------------
+  // 35. SDK 同步断言守卫:收窄「什么算一个 SDK」之后的两向(V0.9.0)
+  //
+  //     起因是一处**假阳性**:判据原先是「`sdk/` 下的任何目录」,
+  //     于是 `sdk/docs/`(只有一份讲**本守卫为什么存在**的裁决文档)
+  //     被判成缺 `render.ts` 的 SDK。
+  //
+  //     这是 CLAUDE.md「守卫不能惩罚记录」的第一个真实命中,
+  //     而且**不是文本形状** —— 本守卫按目录形状判定,说明书落进范围
+  //     是因为它的**位置**像 SDK,不是它的文字像违规。
+  //
+  //     收窄之后必须两向都验,否则「不再误报」很容易滑成「不再报」。
+  // ---------------------------------------------------------------------
+  {
+    const sdkRoot = p('sdk')
+    const dropSdk = () => {
+      rmSync(p('sdk/__doc_fixture__'), { recursive: true, force: true })
+      rmSync(p('sdk/__sdk_fixture__'), { recursive: true, force: true })
+    }
+
+    // 35a 正向对照:纯文档目录(有 .md,没有 package.json)→ 放行
+    //     ⚠️ 夹具必须在场。真实的 `sdk/docs/` 已经是这个形状,但对照
+    //        不该依赖它 —— 那份文档哪天挪走,这条就退化成恒绿。
+    {
+      dropSdk()
+      writeFixture('sdk/__doc_fixture__/why-this-rule-exists.md', '# 讲这条规则为什么存在\n')
+      const r = runGuards()
+      const flagged = /__doc_fixture__/.test(r.output)
+      expect(
+        '35a 正向对照:sdk/ 下的纯文档目录 → 不当成 SDK(守卫不能惩罚记录)',
+        !flagged,
+        flagged ? '守卫把一份讲它自己的说明书判成了「缺同步断言的 SDK」' : undefined,
+      )
+      dropSdk()
+    }
+
+    // 35b 反向:有 package.json 却没有 render.ts → 仍然红
+    //     没有这条,35a 的「不再误报」与「整条守卫失效」无法区分。
+    {
+      dropSdk()
+      writeFixture(
+        'sdk/__sdk_fixture__/package.json',
+        JSON.stringify({ name: '@dshwar/sdk-fixture', version: '0.9.0', private: true }, null, 2) +
+          '\n',
+      )
+      const r = runGuards()
+      const flagged = /__sdk_fixture__/.test(r.output)
+      expect(
+        '35b 有 package.json 的新 SDK 缺 render.ts → 守卫变红(收窄没把真判据一起放掉)',
+        flagged,
+        flagged ? undefined : '守卫放过了一个真的缺同步断言的 SDK —— 收窄判据时把真判据也一起丢了',
+      )
+      dropSdk()
+    }
+
+    if (!existsSync(sdkRoot)) {
+      expect('35 前置:sdk/ 目录存在', false, 'sdk/ 不存在 —— 35a/35b 都在空跑')
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -1892,9 +2015,44 @@ try {
       dir,
       p('node_modules', `__fe_stash_${i}__`),
     ])
-    for (const [dir, stash] of stashes) renameSync(dir, stash)
-    const r = runGuards()
-    for (const [dir, stash] of stashes) renameSync(stash, dir)
+    // ⚠️ **必须 finally 还原。** 2026-08-23 实测:一个跑本脚本的子进程
+    //   在两次 rename 之间被杀(会话额度耗尽),于是 `console-web/` 整个
+    //   从工作区消失、只剩 `node_modules/__fe_stash_0__` ——
+    //   而后续 check-guards 报的是「console-web/src 不存在」「登记了不存在的项目」,
+    //   **指向症状而不是原因**,诊断花了好几步。
+    //
+    //   finally 挡得住异常与正常退出,挡不住 SIGKILL ——
+    //   所以另有一道开机自愈(见本文件顶部 `reclaimOrphanedStashes`)。
+    let r
+    try {
+      for (const [dir, stash] of stashes) {
+        try {
+          renameSync(dir, stash)
+        } catch (e) {
+          // ⚠️ Windows 上 `EBUSY` 几乎总是**文件监听**占着目录 ——
+          //   dev server(`pnpm --filter @dshwar/design-system dev`)、编辑器索引、
+          //   或者一个没退干净的 `tsc --watch`。
+          //   原始报错只说 `EBUSY: resource busy or locked, rename ...`,
+          //   读的人没有理由把它和「我开着 vite」联系起来。
+          const code = /** @type {NodeJS.ErrnoException} */ (e).code
+          if (code === 'EBUSY' || code === 'EPERM') {
+            throw new Error(
+              `24d 挪不动 ${dir}(${code})—— 多半是有进程在监听这个目录。\n` +
+                '  先停掉 dev server / watch 进程再跑:\n' +
+                '    pnpm --filter @dshwar/design-system dev  ← 这类\n' +
+                '  已挪走的目录由本条的 finally 搬回,工作区不会留残骸。',
+              { cause: e },
+            )
+          }
+          throw e
+        }
+      }
+      r = runGuards()
+    } finally {
+      for (const [dir, stash] of stashes) {
+        if (existsSync(stash) && !existsSync(dir)) renameSync(stash, dir)
+      }
+    }
 
     // ★ 出口计数:一个前端包都没找到时,上面的循环一次都不跑,
     //   而 runGuards() 照样会因为「找不到任何前端包」而红 —— 那条红说明不了

@@ -1328,6 +1328,23 @@ function checkPrimaryColorHasNoFallback() {
  * (第一例是 `session-tasks.mjs check` 的三个假阳性)。
  * 判据改成三条合取:**引用渲染函数 + 读已提交的产物 + 有等值断言** ——
  * 三者缺一都不足以证明「产物是最新的」。
+ *
+ * ## ⚠️ 第三例假阳性(V0.9.0 Session 2):它把**自己的说明书**判成了违规
+ *
+ * 「哪些目录算一个 SDK」原先写成 **`sdk/` 下的任何目录**。于是
+ * `sdk/docs/`(里面只有 `why-sync-assertion.md` —— 一份 104 行的裁决文档,
+ * 讲的正是**本守卫为什么存在**)被当成一个缺 `render.ts` 的 SDK,报违规。
+ *
+ * 这是 CLAUDE.md「**守卫不能惩罚记录**」那条规则的第一个真实命中,
+ * 而且形状比那条规则写的更宽:本守卫**不按文本判定**,按**目录形状**判定。
+ * 说明书落进扫描范围,不是因为它的文字像违规,是因为它的**位置**像。
+ *
+ * ⇒ 判据改成「**有 `package.json` 的目录才是一个 SDK**」——
+ * 与 `pnpm-workspace.yaml` 认包的方式一致,也是三个真实 SDK 的共同标记。
+ * 纯文档目录没有 manifest,自然不在范围内。
+ *
+ * ⚠️ 这个改动**不放宽真正的判据**:一个有 `package.json` 却没有
+ * `render.ts` 的新 SDK 照样红。负向验证见 `verify-guards.mjs` 的 35a/35b。
  */
 function checkSdkHasSyncAssertion() {
   /** @type {{file: string, line: number, text: string}[]} */
@@ -1335,9 +1352,13 @@ function checkSdkHasSyncAssertion() {
   const sdkRoot = p('sdk')
   if (!existsSync(sdkRoot)) return out
 
+  let considered = 0
   for (const entry of readdirSync(sdkRoot, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue
     const name = entry.name
+    // 「是不是一个 SDK」的标记:有 manifest。纯文档目录没有,于是不在范围内。
+    if (!existsSync(join(sdkRoot, name, 'package.json'))) continue
+    considered += 1
     const render = join(sdkRoot, name, 'scripts', 'render.ts')
     if (!existsSync(render)) {
       out.push({
@@ -1369,6 +1390,17 @@ function checkSdkHasSyncAssertion() {
         text: `sdk/${name} 缺「重渲染 == 已提交」的同步断言 —— 契约改了不重新生成不会有人发现`,
       })
     }
+  }
+
+  // ★ 出口计数。收窄判据(只认有 manifest 的目录)之后多了一条退化路径:
+  //   若哪天 `sdk/*` 全都没有 package.json,循环一次都不进,本守卫**恒绿** ——
+  //   而那与「三个 SDK 全部合规」在输出上一模一样。
+  if (considered === 0) {
+    out.push({
+      file: 'sdk',
+      line: 0,
+      text: 'sdk/ 下一个带 package.json 的目录都没有 —— 本守卫退化成空集扫描,永远绿',
+    })
   }
   return out
 }

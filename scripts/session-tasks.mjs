@@ -46,7 +46,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { setTableCell, TableEditError } from './lib/md-table.mjs'
+import { setTableCell, tableRangeAfter, TableEditError } from './lib/md-table.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const MAIN = join(REPO, 'SESSION_TASKS.md')
@@ -56,6 +56,8 @@ const HISTORY = join(REPO, 'SESSION_TASKS_HISTORY.md')
 const MAX_CHARS = 150_000
 /** 合法的状态图例。传别的值直接拒 —— 图例统一是文档纪律的一部分。 */
 const MARKS = ['✅', '🔄', '⬜', '🟠']
+/** 「Session 状态」小结表的锚点文本。定位靠它,不靠「哪张表在前面」。 */
+const SESSION_TABLE_ANCHOR = '**Session 状态**'
 
 /**
  * 极简参数解析。与 `gateway/src/server.ts` 同款理由:几个参数不值得一个依赖。
@@ -111,6 +113,36 @@ function versionBlockRange(md, version) {
   return { start, end: next === null ? md.length : next.index }
 }
 
+/**
+ * 在版本块里收窄到**「Session 状态」那一张表**。
+ *
+ * ## 为什么必须收窄到表,而不是收窄到版本块
+ *
+ * V0.9.0 块里有两张表的第 0 列都是 `1`:
+ *
+ * | 表                | 第 0 列 = 1 的那行                |
+ * | ----------------- | --------------------------------- |
+ * | **Session 状态**  | `\| 1 \| 移植设计 kit… \| ⬜ \|`   |
+ * | 三条既定约束      | `\| 1 \| **不展示 shell 命令原文** \| … \|` |
+ *
+ * 于是「第 0 列 === "1"」在块范围内匹配到两行,`setTableCell` 抛错。
+ *
+ * ⚠️ **抛错是对的,不要靠「哪张表在前面」蒙混过去。** 旧的回读断言用
+ * `.find()` 取第一条匹配 —— 今天恰好是 Session 表在前所以是对的,
+ * 而那是**位置的巧合**:哪天在 Session 表之前插一张带数字首列的表,
+ * 它就会安静地读到另一张表里去,并且回读也一样读错、于是一致地「通过」。
+ *
+ * 这与本文件历史上那五次静默退回同源:**定位靠的是位置而不是身份。**
+ *
+ * @param {string} md
+ * @param {number} start 版本块起点
+ * @param {number} end 版本块终点
+ * @returns {{from: number, to: number}} Session 状态表的字符区间
+ */
+function sessionTableRange(md, start, end) {
+  return tableRangeAfter(md, SESSION_TABLE_ANCHOR, start, end)
+}
+
 /** 翻一个 Session 的状态。 */
 function cmdStatus(/** @type {Record<string,string>} */ args) {
   const { version, session, mark } = args
@@ -123,9 +155,10 @@ function cmdStatus(/** @type {Record<string,string>} */ args) {
 
   const md = readFileSync(MAIN, 'utf8')
   const { start, end } = versionBlockRange(md, version)
+  const table = sessionTableRange(md, start, end)
   const next = setTableCell(md, {
-    from: start,
-    to: end,
+    from: table.from,
+    to: table.to,
     matchColumn: 0, // Session 号
     matchValue: session,
     setColumn: -1, // 状态是最后一列
@@ -135,10 +168,14 @@ function cmdStatus(/** @type {Record<string,string>} */ args) {
 
   // ★ 回读断言 —— 写完不等于写对。这条是前几次静默退回唯一的捕手,
   //   现在留着当第二道:定位失败已经会抛,但回读能抓住「抛了却写进去别的」。
+  //   ⚠️ 回读也必须收窄到同一张表 —— 用 `.find()` 在整块里取第一条匹配,
+  //      读到的是「位置上最靠前的那张表」,而不是「Session 状态表」。
+  //      写和读都按位置猜的话,两边会一致地猜错、于是一致地「通过」。
   const back = readFileSync(MAIN, 'utf8')
   const { start: s2, end: e2 } = versionBlockRange(back, version)
+  const t2 = sessionTableRange(back, s2, e2)
   const row = back
-    .slice(s2, e2)
+    .slice(t2.from, t2.to)
     .split('\n')
     .find((l) => /^\s*\|/.test(l) && l.split('|')[1]?.trim() === session)
   if (row === undefined || !row.includes(mark)) {

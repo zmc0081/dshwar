@@ -373,7 +373,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 | Session | 标题                                                 | 状态 |
 | ------- | ---------------------------------------------------- | ---- |
 | 0       | 设计交付物可用性裁决 + console-web 现状核查          | ✅   |
-| 1       | 移植设计 kit → `packages/design-system` + 守卫扩范围 | ⬜   |
+| 1       | 移植设计 kit → `packages/design-system` + 守卫扩范围 | ✅   |
 | 2       | Web 工作台(workbench kit)                            | ⬜   |
 | 3       | 运营后台(console kit)                                | ⬜   |
 | 4       | 认证:系统浏览器 + PKCE + loopback + 钥匙串           | ⬜   |
@@ -456,9 +456,27 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 
 ### Session 1 · 移植设计 kit + 守卫扩范围
 
-**交付**:`packages/design-system`(21 组件 + tokens + 类型)、
-26 屏搬进对应前端包、前端守卫范围从 `console-web/src` 改为**全部前端包**、
-约束 3 的豁免改为「每包一个 api 出口」。
+**交付**:`packages/design-system/src/components/`(20 个组件,全内联样式 → CSS 伪类)、
+`packages/design-system/src/screens/`(26 屏:workbench 8 / console 13 / auth 5,
+`window.DSHWARDesignSystem_264a5f` → ES 模块)、
+`packages/design-system/src/styles/`(28 个 CSS,tokens + 组件样式)、
+`packages/design-system/src/accent/derive.ts`(派生算法逐字移植)、
+`packages/design-system/src/accent/spec.ts`(带边界 / 角色令牌 / 对比度下限做成可导出数据)、
+`packages/design-system/test/accent.test.ts`(三条一致性断言,绑住 sync doc 里「无人看着」的三项)、
+`packages/design-system/test/focus-visible.html`(验收 2 的鼠标/键盘实测台)、
+`packages/design-system/test/checkbox-keyboard.tsx`(键盘可达性实测台。
+Session 1 交付的是手抄 DOM 的 `.html` 版,Session 2 装上 react-dom 后
+换成挂真实 React 树的这一版,旧文件已删)、
+`scripts/check-guards.mjs`(前端守卫范围从写死 `console-web/src` 改为**按形状发现**;
+另在 `scripts/check-guards.mjs` 新增交互态样式守卫与「成功回执不得在 catch 之外」守卫)、
+`scripts/verify-guards.mjs`(负向验证 33a–33i,含三条反向对照)、
+`docs/DECISIONS/design-kit-adoption.md`(两条裁决与实测判据)。
+
+> ⚠️ **原交付行有两处不实,2026-08-23 更正**:写的是「21 组件」而实际 **20** 个;
+> 写的是「26 屏搬进**对应前端包**」而实际搬进了 `packages/design-system/src/screens/` ——
+> 前端包这一层要到 Session 2 才存在。两处都是**立项时按计划写的数**,
+> 而计划与产物之间没人对过账。这正是「Session 标 ✅ 必须有对应产物」那条守卫
+> 要拦的形状的**上游**:守卫查的是路径存不存在,查不到「21 与 20 差一个」。
 
 **验收**:①三条约束的守卫在新包上真的会红(负向验证逐包各一条);
 ②`derive-accent.js` 与 `branding.ts` 的**一致性断言** —— 同一个种子色,

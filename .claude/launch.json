@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "design-system",
-      "runtimeExecutable": "node",
-      "runtimeArgs": ["packages/design-system/scripts/serve.mjs"],
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@dshwar/design-system", "dev"],
       "port": 4321
     }
   ]

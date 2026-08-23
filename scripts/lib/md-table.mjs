@@ -169,3 +169,57 @@ export function setTableCell(markdown, opts) {
 
   return head + lines.join('\n') + tail
 }
+
+/**
+ * 在 `[from, to)` 里定位**紧跟某个标记之后的第一张表**,返回它的字符区间。
+ *
+ * ## 为什么需要它:按位置定位与按身份定位
+ *
+ * `setTableCell` 要求调用方把范围收窄到「只有一张候选表」。而现实中一个
+ * 版本块里常有好几张表,且**它们的第一列可能撞车** —— V0.9.0 块里
+ * 「Session 状态」表与「三条既定约束」表的第 0 列都有 `1`。
+ *
+ * 不收窄的话 `setTableCell` 会抛「匹配到 2 行」——**那是对的行为**。
+ * 而绕过它的诱惑是「取第一条匹配就行,反正 Session 表在前面」——
+ * 那是**按位置定位**,今天成立只因为排版恰好如此。哪天在它之前插一张
+ * 首列是数字的表,读和写会一致地跑到另一张表上,于是一致地「通过」。
+ *
+ * ⇒ 本函数按**身份**定位:先找标记文本,再取其后的第一张表。
+ * 找不到标记就抛 —— 拒绝猜。
+ *
+ * @param {string} markdown
+ * @param {string} marker 表格前的锚点文本,例如 `'**Session 状态**'`
+ * @param {number} [from] 搜索起点(默认 0)
+ * @param {number} [to] 搜索终点(默认全文)
+ * @returns {{from: number, to: number}} 表格首行到末行的字符区间
+ * @throws {TableEditError} 标记不存在,或标记之后没有表格
+ */
+export function tableRangeAfter(markdown, marker, from = 0, to = markdown.length) {
+  const region = markdown.slice(from, to)
+  const at = region.indexOf(marker)
+  if (at === -1) {
+    throw new TableEditError(
+      `在给定范围里找不到锚点 ${JSON.stringify(marker)} —— 无法定位到唯一一张表,拒绝猜。`,
+    )
+  }
+
+  const lines = region.slice(at).split('\n')
+  let first = -1
+  let last = -1
+  for (const [i, line] of lines.entries()) {
+    const isRow = isTableRow(line)
+    if (isRow) {
+      if (first === -1) first = i
+      last = i
+    } else if (first !== -1) {
+      break // 表已结束 —— 只取紧跟标记的**那一张**,不跨到下一张
+    }
+  }
+  if (first === -1) {
+    throw new TableEditError(`锚点 ${JSON.stringify(marker)} 之后没有表格行 —— 结构与预期不符。`)
+  }
+
+  const head = lines.slice(0, first).join('\n').length + 1
+  const through = lines.slice(0, last + 1).join('\n').length
+  return { from: from + at + head, to: from + at + through }
+}
