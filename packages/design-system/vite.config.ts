@@ -20,6 +20,17 @@
  * 2. Session 5 的 Tauri v2 壳按官方模板就是 Vite ——
  *    现在选它,那时不用换。
  *
+ * ## ⚠️ 这个文件一度不被类型检查
+ *
+ * 它在包根,而产品项目是 `rootDir: "./src"` —— 包根的文件并不进去。
+ * 于是它落在**所有 tsconfig 之外**:实测在里面写 `const x: number = '字符串'`,
+ * `pnpm typecheck` 照样全绿。
+ *
+ * 现已并入 `tsconfig.test.json`(noEmit + rootDir ".")。打开的第一刻就抓到一个真错误:
+ * 原先写的 `esbuild: { jsx: 'automatic' }` 在 Vite 8 的 `ESBuildOptions` 里**不存在** ——
+ * 而它一直「工作正常」,只因为 Vite 本来就从 tsconfig 读 `jsx: react-jsx`,
+ * 那一行从头到尾没起过任何作用。
+ *
  * ⚠️ **本配置不参与任何构建产物。** `package.json` 的 `main` 仍指向
  * `tsc -b` 出的 `dist/`,`build` 脚本仍是 `tsc -b`。这里只有 dev server。
  * 写清楚是因为「仓库里有 vite.config」通常意味着「产物由 vite 打」,
@@ -38,9 +49,5 @@ export default defineConfig({
   // 依赖预打包:把 react / react-dom 的 CJS 转成浏览器能 import 的 ESM。
   optimizeDeps: {
     include: ['react', 'react-dom', 'react-dom/client', 'react/jsx-runtime'],
-  },
-  esbuild: {
-    // tsconfig 里是 `jsx: react-jsx`,这里对齐 —— 否则实测页要手工 import React。
-    jsx: 'automatic',
   },
 })

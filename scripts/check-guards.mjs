@@ -280,6 +280,121 @@ function checkScriptsTsconfigReferences() {
 }
 
 /**
+ * ★ **包根的 `.ts` 不得落在所有 tsconfig 之外。**
+ *
+ * ## 它守的是「谁验证它」的第八次
+ *
+ * 前七次的清单在 CLAUDE.md 第六节。这一次的形状是:
+ * **一个文件既在守卫的扫描范围内、又在类型检查的范围外。**
+ *
+ * `checkMissingTsconfig` 查的是「有 `src/*.ts` 却没有 tsconfig.json」——
+ * 它假设一个包的 TS 都在 `src/` 下。而工具类配置(`vite.config.ts`、
+ * `tailwind.config.ts`、`playwright.config.ts`)按惯例放在**包根**,
+ * 那里既不在产品项目的 `include: ["src/**"]` 里,也不在 `test/**` 里。
+ *
+ * 后果不是「少查一个文件」:
+ *
+ * | 谁 | 看得见它吗 |
+ * | --- | --- |
+ * | 前端三条约束、交互态样式、回执守卫 | ✅ 看得见(它们扫 `pkg.dir` 全目录) |
+ * | `tsc -b` | ❌ **完全看不见** |
+ *
+ * 于是它是一个**被守卫盯着、却不被编译器检查**的文件 ——
+ * 而「守卫全绿」很容易被读成「这个文件没问题」。
+ *
+ * ## 它是怎么被抓到的(V0.9.0 Session 2)
+ *
+ * 我自己刚制造了一个:`packages/design-system/vite.config.ts`。
+ * 植入 `const x: number = '字符串'`,`pnpm typecheck` **照样全绿**。
+ * 并进 `tsconfig.test.json` 之后,打开的第一刻就抓到一处真错误 ——
+ * `esbuild: { jsx: 'automatic' }` 在 Vite 8 的 `ESBuildOptions` 里根本不存在,
+ * 而它一直「工作正常」,只因为 Vite 本来就从 tsconfig 读 `jsx`,
+ * 那一行从头到尾没起过任何作用。
+ *
+ * **一个从未起作用的配置项,与一个正确的配置项,在行为上一模一样。**
+ *
+ * ## 判据
+ *
+ * 对每个有 `package.json` 的目录,找它**直接子级**(不递归)的 `.ts` / `.tsx`,
+ * 若该文件不被这个包的任何一份 tsconfig 的 `include` 覆盖 → 报出来。
+ *
+ * ⚠️ 只查直接子级:再深就是 `src/` / `test/` / `scripts/`,
+ * 那三处各自已有守卫(`checkMissingTsconfig` / `checkTestTsconfigReferences` /
+ * `checkScriptsTsconfigReferences`)。本条补的是它们之间的那道缝。
+ *
+ * @returns {{out: {file: string, line: number, text: string}[], scanned: number}}
+ */
+function checkRootLevelTsIsChecked() {
+  /** @type {{file: string, line: number, text: string}[]} */
+  const out = []
+  const manifests = collectFiles(REPO, isPackageJson)
+    .map((f) => dirname(f))
+    .filter((dir) => repoPath(REPO, dir) !== '' && repoPath(REPO, dir) !== '.')
+
+  let scanned = 0
+  for (const dir of manifests) {
+    /** @type {string[]} */
+    let entries
+    try {
+      entries = readdirSync(dir, { withFileTypes: true })
+        .filter((e) => e.isFile() && /\.tsx?$/.test(e.name) && !e.name.endsWith('.d.ts'))
+        .map((e) => e.name)
+    } catch {
+      continue
+    }
+    if (entries.length === 0) continue
+
+    // 收集这个包所有 tsconfig 的 include 模式
+    /** @type {string[]} */
+    const patterns = []
+    for (const name of readdirSync(dir).filter((n) => /^tsconfig(\..+)?\.json$/.test(n))) {
+      try {
+        const raw = readFileSync(join(dir, name), 'utf8')
+        // tsconfig 允许注释,先剥掉行注释再解析
+        const json = JSON.parse(raw.replace(/^\s*\/\/.*$/gm, ''))
+        for (const inc of json.include ?? []) patterns.push(String(inc))
+        for (const f of json.files ?? []) patterns.push(String(f))
+      } catch {
+        // 解析不了就当它没有 include —— 宁可多报,不可漏报
+      }
+    }
+
+    for (const file of entries) {
+      scanned += 1
+      const covered = patterns.some((pat) => {
+        if (pat === file) return true
+        // 把 include 的 glob 转成正则:** → .*,* → [^/]*
+        const re = new RegExp(
+          '^' +
+            pat
+              .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+              .replace(/\*\*\//g, '(?:.*/)?')
+              .replace(/\*\*/g, '.*')
+              .replace(/\*/g, '[^/]*') +
+            '$',
+        )
+        return re.test(file)
+      })
+      if (!covered) {
+        out.push({
+          file: `${repoPath(REPO, dir)}/${file}`,
+          line: 0,
+          text: `包根的 ${file} 不在本包任何 tsconfig 的 include 里 —— 守卫扫得到它,tsc 看不见它`,
+        })
+      }
+    }
+  }
+
+  // ⚠️ **这里刻意不报「空集扫描」违规。** 别处的出口计数报违规,是因为空集
+  //   意味着**退化**(该扫的东西逃出了范围)。这里不一样:「一个包根 .ts 都没有」
+  //   是**理想状态**,V0.9.0 之前的仓库正是如此。
+  //
+  //   但「零个对象」仍不该被读成「查过了」—— 所以把数量印进通过行,
+  //   让「通过(0 个)」与「通过(3 个)」一眼可分。
+  return { out, scanned }
+}
+
+/**
  * 有 TS 源码却**完全没有** `tsconfig.json` 的 workspace 成员。
  *
  * ⚠️ 这条堵的是上面两条自己的洞。它们都从「有 tsconfig.json 的目录」出发遍历 ——
@@ -1279,23 +1394,38 @@ const CI_JOB_VERIFICATION = {
 function checkPrimaryColorHasNoFallback() {
   /** @type {{file: string, line: number, text: string}[]} */
   const out = []
-  const roots = ['packages', 'gateway', 'console-web', 'sdk'].map((d) => p(d)).filter(existsSync)
-
-  for (const root of roots) {
-    for (const file of collectFiles(root, isTs)) {
-      const rel = repoPath(REPO, file)
-      const lines = readFileSync(file, 'utf8').split(/\r?\n/)
-      for (const [i, line] of lines.entries()) {
-        if (/^\s*(\/\/|\*|\/\*)/.test(line)) continue
-        if (
-          /dshwar-guard-allow:\s*\S/.test(line) ||
-          /dshwar-guard-allow:\s*\S/.test(lines[i - 1] ?? '')
-        )
-          continue
-        // primaryColor ?? '#xxx'  /  primaryColor || "#xxx"  /  primaryColor ?? SUGGESTED_...
-        if (/primaryColor\s*(\?\?|\|\|)\s*(['"`]#|SUGGESTED_PRIMARY_COLOR)/.test(line)) {
-          out.push({ file: rel, line: i + 1, text: `${rel}:${i + 1}  ${line.trim()}` })
-        }
+  // ⚠️ **扫描范围按形状发现,不写死目录名。**
+  //
+  //   原先是 `['packages', 'gateway', 'console-web', 'sdk']` —— 一张手写清单。
+  //   V0.9.0 Session 1 已经因为同一形状改过一次前端守卫(那次是
+  //   `p('console-web','src')` 写死),而这里漏了。
+  //
+  //   后果很具体:Session 2 新建的根级前端包 `workbench-web/` 不在清单里,
+  //   于是它里面写 `branding.primaryColor ?? '#2F6FEB'` **不会红** ——
+  //   V0.8.0 那次「未配置 vs 配置成某个值」的类型层区分,
+  //   在**最新的那个前端**里悄悄停止生效,而门禁全绿。
+  //
+  //   ⇒ 改成**扫全仓的 .ts / .tsx**(`SKIP_DIRS` 已排除 node_modules / dist /
+  //     .git / feasibility 等)。新包、新目录、根级还是 packages/ 下,一律在范围内。
+  //
+  //   ⚠️ 中途试过一版「有 package.json 的目录才扫」—— 那是在**另一个维度上收窄**:
+  //     负向验证的夹具 `packages/__guard_fixture__/` 只有 `src/theme.ts`、
+  //     没有 manifest,于是 30a/30b 立刻变红。反向对照抓住了这次回归,
+  //     记在这里:**扩范围的改动同样会缩范围**,两个方向都要验。
+  for (const file of collectFiles(REPO, isTs)) {
+    const rel = repoPath(REPO, file)
+    const lines = readFileSync(file, 'utf8').split(/\r?\n/)
+    for (const [i, line] of lines.entries()) {
+      // 跳过注释行 —— 讲「不许这么写」的说明与违规在文本上一模一样。
+      if (/^\s*(\/\/|\*|\/\*)/.test(line)) continue
+      if (
+        /dshwar-guard-allow:\s*\S/.test(line) ||
+        /dshwar-guard-allow:\s*\S/.test(lines[i - 1] ?? '')
+      )
+        continue
+      // primaryColor ?? '#xxx'  /  primaryColor || "#xxx"  /  primaryColor ?? SUGGESTED_...
+      if (/primaryColor\s*(\?\?|\|\|)\s*(['"`]#|SUGGESTED_PRIMARY_COLOR)/.test(line)) {
+        out.push({ file: rel, line: i + 1, text: `${rel}:${i + 1}  ${line.trim()}` })
       }
     }
   }
@@ -1629,6 +1759,23 @@ if (noTsconfig.length === 0) {
   console.log('        上面两条守卫都从「有 tsconfig 的目录」出发遍历,')
   console.log('        所以一个根本没有 tsconfig 的包对它们不可见 —— 这条堵那个洞。')
   for (const h of noTsconfig) console.log(`        ${h.text}`)
+}
+
+const rootTs = checkRootLevelTsIsChecked()
+if (rootTs.out.length === 0) {
+  // ★ 数量印在**下一行**,不进守卫名。
+  //   守卫名要稳定 —— 完备性断言(verify-guards 的 31)是按名字登记的,
+  //   把随仓库变化的计数写进名字,等于每加一个配置文件就要改一次登记表。
+  //   而「0 个对象」与「都查过了」仍要能区分,所以数量必须印出来。
+  console.log('  通过  包根的 .ts 都在某份 tsconfig 的 include 里')
+  console.log(`        (本轮检查对象 ${rootTs.scanned} 个 —— 0 个不等于查过了)`)
+} else {
+  failed += 1
+  console.log(`  违规  包根的 .ts 落在所有 tsconfig 之外  (${rootTs.out.length} 处)`)
+  console.log('        守卫扫得到它(它们扫整个包目录),tsc 看不见它 ——')
+  console.log('        于是「守卫全绿」会被读成「这个文件没问题」。')
+  console.log('        V0.9.0 实测:vite.config.ts 里写错的一个选项名藏了整整一轮。')
+  for (const h of rootTs.out) console.log(`        ${h.file}  ${h.text}`)
 }
 
 const unregistered = checkPrincipalConsumers()

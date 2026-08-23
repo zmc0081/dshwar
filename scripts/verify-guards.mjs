@@ -802,6 +802,70 @@ try {
   }
 
   // ---------------------------------------------------------------------
+  // 36. 包根的 .ts 必须被某份 tsconfig 覆盖(V0.9.0 Session 2)
+  //
+  //     起因是自造的一个盲点:`packages/design-system/vite.config.ts`
+  //     在包根,而产品项目是 `rootDir: "./src"` —— 它落在所有 tsconfig 之外。
+  //     植入 `const x: number = '字符串'`,`pnpm typecheck` 照样全绿。
+  //
+  //     并进 tsconfig 的第一刻就抓到一处真错误:`esbuild: { jsx: 'automatic' }`
+  //     在 Vite 8 里根本不存在,而它一直「工作正常」——
+  //     **一个从未起作用的配置项,与一个正确的配置项,在行为上一模一样。**
+  // ---------------------------------------------------------------------
+  {
+    const dropRoot = () => {
+      rmSync(p('packages/__rootts_fixture__'), { recursive: true, force: true })
+    }
+    const fixturePkg = (/** @type {string[]} */ include) => {
+      writeFixture(
+        'packages/__rootts_fixture__/package.json',
+        JSON.stringify(
+          { name: '@dshwar/rootts-fixture', version: '0.9.0', private: true },
+          null,
+          2,
+        ) + '\n',
+      )
+      writeFixture(
+        'packages/__rootts_fixture__/tsconfig.json',
+        JSON.stringify({ include }, null, 2) + '\n',
+      )
+      writeFixture('packages/__rootts_fixture__/src/index.ts', 'export const x = 1\n')
+      writeFixture('packages/__rootts_fixture__/tool.config.ts', 'export default { a: 1 }\n')
+    }
+
+    // 36a 包根 .ts 不在任何 include 里 → 变红
+    {
+      dropRoot()
+      fixturePkg(['src/**/*.ts'])
+      const r = runGuards()
+      const hit =
+        /包根的 \.ts 落在所有 tsconfig 之外/.test(r.output) && /tool\.config\.ts/.test(r.output)
+      expect(
+        '36a 包根的 .ts 不被任何 tsconfig 覆盖 → 守卫变红',
+        hit,
+        hit ? undefined : '守卫放过了一个 tsc 完全看不见、而其它守卫扫得到的文件',
+      )
+      dropRoot()
+    }
+
+    // 36b 正向对照:被 include 覆盖 → 放行
+    //     ⚠️ 少了这条,36a 的红无法与「见到包根 .ts 就红」区分 ——
+    //        而那种实现会逼着人把配置文件挪走或改成 .js,两者都更糟。
+    {
+      dropRoot()
+      fixturePkg(['src/**/*.ts', 'tool.config.ts'])
+      const r = runGuards()
+      const hit = /tool\.config\.ts/.test(r.output)
+      expect(
+        '36b 正向对照:包根 .ts 已被 include 覆盖 → 放行(规则不是「见到就红」)',
+        !hit,
+        hit ? '守卫把一个已经在类型检查里的配置文件也报了' : undefined,
+      )
+      dropRoot()
+    }
+  }
+
+  // ---------------------------------------------------------------------
   // 35. SDK 同步断言守卫:收窄「什么算一个 SDK」之后的两向(V0.9.0)
   //
   //     起因是一处**假阳性**:判据原先是「`sdk/` 下的任何目录」,
@@ -1062,6 +1126,7 @@ try {
         'CI 只调 check:all 一个入口,没有第二份门禁清单', // 21a–21c
         '前端交互态样式走 CSS 伪类,不用 JS 承载', // 33e / 33f
         '成功回执不在 catch 之外(没有假的成功回执)', // 33g–33i
+        '包根的 .ts 都在某份 tsconfig 的 include 里', // 36a / 36b
         'Session 标 ✅ 的交付产物都真的存在(任务书自身的诚实性)', // 34a–34c
       ]
 
@@ -2726,6 +2791,40 @@ try {
       r.ok ? undefined : '守卫把正确的写法也拦了 —— 那样没人能读这个字段',
     )
     rmSync(p('packages/__guard_fixture__'), { recursive: true, force: true })
+  }
+
+  // 30d ★ 范围:**根级**目录里的兜底同样要红(V0.9.0 Session 2)
+  //
+  //     30a–30c 的夹具都在 `packages/` 下。而守卫的扫描范围曾是一张手写清单
+  //     `['packages','gateway','console-web','sdk']` —— 根级的新前端包
+  //     (Session 2 的 `workbench-web/`)整个逃出去,里面写兜底**不会红**,
+  //     而三条既有验证**全绿**:它们的夹具恰好都在清单覆盖的位置。
+  //
+  //     ⇒ 这一条把「范围」本身变成被验证的对象:夹具摆在**清单之外**的位置。
+  {
+    const rootFixture = p('__root_guard_fixture__')
+    rmSync(rootFixture, { recursive: true, force: true })
+    writeFixture(
+      '__root_guard_fixture__/src/theme.ts',
+      [
+        '// 负向测试夹具:位置在**仓库根级**,不在 packages/ 之下。',
+        "import type { TenantBranding } from '@dshwar/console-contract'",
+        'export function seedOf(branding: TenantBranding): string {',
+        "  return branding.primaryColor ?? '#2F6FEB'",
+        '}',
+        '',
+      ].join('\n'),
+    )
+    const r = runGuards()
+    const hit = /__root_guard_fixture__/.test(r.output)
+    expect(
+      '30d ★ 根级目录里的兜底也变红(扫描范围不是一张手写目录清单)',
+      hit,
+      hit
+        ? undefined
+        : '守卫看不见根级目录 —— 新建的前端包会整个逃出扫描,而这里三条既有验证照样全绿',
+    )
+    rmSync(rootFixture, { recursive: true, force: true })
   }
 }
 

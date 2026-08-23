@@ -10,7 +10,13 @@
     "rootDir": ".",
     "tsBuildInfoFile": "./dist/.tsbuildinfo.test"
   },
-  "include": ["test/**/*.ts", "test/**/*.tsx"],
+  // ⚠️ `vite.config.ts` 也在这里,不在产品项目里 —— 产品项目是 rootDir: "./src",
+  // 把包根的文件并进去会把 rootDir 抬起来、dist/ 凭空多两层。
+  //
+  // 不并进任何项目的后果是**它整个不被类型检查**:实测在里面写
+  // `const x: number = '字符串'`,`pnpm typecheck` 照样绿。
+  // 一个配置文件写错类型不会立刻炸,只会在 dev server 起不来时才发现。
+  "include": ["test/**/*.ts", "test/**/*.tsx", "vite.config.ts"],
   "exclude": ["dist", "node_modules"],
   "references": [{ "path": "./tsconfig.json" }]
 }
