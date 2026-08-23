@@ -19,6 +19,20 @@
  * - 提供"保持单用户"作为平级出路,不做成"取消"(取消读起来像放弃,保持是一个选择)。
  * 零 accent:这段内容是为了保护用户,不是展示品牌。
  *
+ * ## 🚨 V0.9.0 Session 3:底部那行「证据」是写死的
+ *
+ * kit 原版是常量 `E_ISOLATION_MEMBER_CAP · req_7c12de40b1`,而且挂着 `copyable` ——
+ * 在设计稿里无害,接上真实 API 之后它是一条**假证据**:
+ * 用户按下复制、把它贴进工单,而服务端日志里根本没有这个 id。
+ * 支持同事照着它去查一条从未发生过的请求,查不到之后被怀疑的是用户。
+ *
+ * 与「假成功回执」同族 —— **界面给出的凭据,与它实际拿到的不一致**。
+ * 而它比回执更晚炸:回执错了当场就粘不出东西,假 id 要等到工单那头才发现,
+ * 那时已经隔了几天,没人会回头怀疑这一屏。
+ *
+ * ⇒ 现在这一行由调用方给(见 {@link IsolationGateEvidence}),
+ * 并且**允许根本没有** —— 逻辑档下宿主是先手拦的,请求从没发出去过。
+ *
  * @module @dshwar/design-system/screens/console/IsolationGate
  */
 import type * as React from 'react'
@@ -26,15 +40,83 @@ import { Button } from '../../components/Button.tsx'
 import { CodeRef } from '../../components/CodeRef.tsx'
 import { Icon } from '../../components/Icon.tsx'
 import { Select } from '../../components/Select.tsx'
+import type { CapacityReading } from './capacity.ts'
+
+/**
+ * 这次拦截的**证据** —— 底部那行可复制的机器串。
+ *
+ * 两级可空,分别对应两件**不同**的事,不要合并:
+ *
+ * | 形态 | 意思 |
+ * | --- | --- |
+ * | `evidence === null` | 请求没发出去 —— 客户端先手拦的,不存在任何服务端回执 |
+ * | `requestId === null` | 请求发了、也被拒了,但这次没拿到 id(响应头缺、或走了本地降级)|
+ *
+ * 两者都**不许伪造**。不给 id,用户知道自己手上没有;编一个 id,
+ * 他会拿着它去开工单 —— 而工单那头查不到,最后被怀疑的是用户。
+ * **编一个比不给贵得多**,而两者在界面上一样好看,这正是它危险的地方。
+ */
+export interface IsolationGateEvidence {
+  /**
+   * 错误码,如 `E_ISOLATION_MEMBER_CAP`。
+   *
+   * ⚠️ 刻意收成 `string` 而不是字面量联合。码表属于契约,不属于设计系统:
+   * 收窄在这里意味着服务端每加一个码都要发一次设计系统。
+   * 该在**转换层**认不出就停下的,是界面会据此改变行为的字段
+   * (比如 {@link CapacityReading} 的 `isolation`);这一串只是原样展示。
+   */
+  readonly code: string
+  /** 这次调用的 requestId;取不到时 `null` —— **不要编一个**。 */
+  readonly requestId: string | null
+}
+
+/**
+ * 把证据拼成那一行可复制的串。
+ *
+ * ⚠️ 缺 requestId 时**显式写出来**,不省略。这一串的用途就是被按「复制」粘进工单,
+ * 而一个悄悄少了 id 的串,粘出来与完整的串长得一模一样 ——
+ * 于是「我没拿到 id」在传递中变成「他忘了贴 id」。
+ *
+ * 措辞与 `WorkspaceSettingsScreen` 的 `evidenceLine` 保持一致:
+ * 两屏的这句话最终落进同一个工单系统,不该有两种说法。
+ */
+function evidenceText({ code, requestId }: IsolationGateEvidence): string {
+  return `${code} · ${requestId ?? '(无 requestId)'}`
+}
 
 export interface IsolationGateProps {
-  open?: boolean
+  /**
+   * 开着没有。**必填,不给默认。**
+   *
+   * 一个可选的 `open` 漏传时安静地什么都不画,而这一屏不画的后果是:
+   * 管理员在逻辑档下顺利加进第二个人,所有人的文件落进同一个
+   * `anonymous/anonymous/` 互相覆盖。
+   * 数字错了看得见,**闸门没出现看不见** —— 这一处的失败方向必须是编译错误。
+   */
+  readonly open: boolean
   /** 「保持单用户部署」—— 刻意不叫"取消" */
-  onClose?: () => void
+  readonly onClose?: () => void
   /** 「切换到进程档并继续」 */
-  onSwitch?: () => void
-  memberCap?: number
-  rssPerProcessMb?: number
+  readonly onSwitch?: () => void
+  /**
+   * 🚨 底部那行证据。`null` = 没有回执,底部就是空的。
+   *
+   * 逻辑档下宿主应当**先手弹这一屏**而不是打开添加表单
+   * (见 `MembersScreen` 那条注释),请求根本没发出去,自然没有 id 可给。
+   * 这时不要拿一句「(无)」把空位填满 —— **空不是错误,不该长得像错误**。
+   */
+  readonly evidence: IsolationGateEvidence | null
+  /**
+   * ⚠️ **V0.9.0 Session 3:两个独立默认值换成一份必填的容量读数。**
+   *
+   * 原先是 `memberCap = 39` / `rssPerProcessMb = 63` —— 与 `CapacityReadout`
+   * 里那两个**同名同值**,却是两份各自的常量。D2 要的是同一个来源,
+   * 而两个恰好相等的默认值不是同一个来源,只是今天还没分家。
+   *
+   * 这一屏尤其不能错:它是**开户闸门**,上面写的数就是管理员照着加人的数。
+   * 显示 39 而服务端只让加 12,管理员会加到第 13 个才知道。
+   */
+  readonly capacity: CapacityReading
 }
 
 /** 三条说明的色调,与 kit 的 `tone === 'danger' ? … : tone === 'warn' ? … : …` 一一对应。 */
@@ -44,10 +126,11 @@ export function IsolationGate({
   open,
   onClose,
   onSwitch,
-  memberCap = 39,
-  rssPerProcessMb = 63,
+  evidence,
+  capacity,
 }: IsolationGateProps): React.JSX.Element | null {
   if (!open) return null
+  const { memberCap, rssPerProcessMb } = capacity
 
   const reasons: readonly [string, ReasonTone, React.ReactNode][] = [
     [
@@ -231,15 +314,17 @@ export function IsolationGate({
             <Button variant="ghost" onClick={onClose}>
               保持单用户部署
             </Button>
-            <span
-              style={{
-                marginLeft: 'auto',
-                font: 'var(--fw-regular) var(--fs-caption)/1 var(--font-mono)',
-                color: 'var(--text-tertiary)',
-              }}
-            >
-              <CodeRef copyable>E_ISOLATION_MEMBER_CAP · req_7c12de40b1</CodeRef>
-            </span>
+            {evidence === null ? null : (
+              <span
+                style={{
+                  marginLeft: 'auto',
+                  font: 'var(--fw-regular) var(--fs-caption)/1 var(--font-mono)',
+                  color: 'var(--text-tertiary)',
+                }}
+              >
+                <CodeRef copyable>{evidenceText(evidence)}</CodeRef>
+              </span>
+            )}
           </div>
         </div>
       </div>

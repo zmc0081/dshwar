@@ -9,7 +9,14 @@
  *    `applyAccent` **本仓没有对应导出**,见下方那个函数的注释。
  * 3. 一次性布局的 `style={{}}` 原样保留;本屏没有 hover / active / focus 的 JS 状态,
  *    因此也没有对应的 `styles/screens/*.css`。
- * 4. `seed` / `name` 两个 `useState` 是**表单数据**,不是交互态 —— 伪类换不掉,原样保留。
+ * 4. **V0.9.0 Session 3:两个 `useState` 提成受控 props。** 移植时(Session 1)它们是
+ *    本地表单状态 —— 那一轮的纪律是机械转换。接真实 API 之后不行了:
+ *    保存要走 `console-contract`,而本地 state 与服务端上的值会分家。
+ *
+ *    ⚠️ 顺带修一处:原先 `const d = seed ? derive(...) : null` 用**真值**判断,
+ *    于是**空串被当成「未配置」**。空串是配置错误(有人清空了输入框却没点重置),
+ *    显示成中性外观、而保存下去的是一个空串。判据改成 `=== null || === ''`,
+ *    两种情况都不派生,但**理由不同**,将来要分开报警时判据就在那一行。
  *
  * ## 原 kit 注释(原样保留)
  *
@@ -18,7 +25,7 @@
  * @module @dshwar/design-system/screens/console/BrandingScreen
  */
 import type * as React from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { derive, type DeriveResult, type RoleRow, type Theme } from '../../accent/derive.ts'
 import { Button } from '../../components/Button.tsx'
 import { Card } from '../../components/Card.tsx'
@@ -67,16 +74,70 @@ function applyAccent(seedHex: string, el: HTMLElement, theme: Theme = 'light'): 
   return d
 }
 
-export function BrandingScreen(): React.JSX.Element {
-  // primaryColor: string | null。null = 未配置 = 无彩中性外观(NEUTRAL_BRANDING)。
-  // '#1D5BD4' 只是配置页的**建议起点占位**,不是契约默认值。
-  const SUGGESTED = '#1D5BD4'
-  const [seed, setSeed] = useState<string | null>(null)
-  const [name, setName] = useState('Acme Console')
-  const d = seed ? derive(seed, 4.5) : null
+/**
+ * 品牌配置的**表现层形状**。
+ *
+ * ⚠️ 字段名与 `@dshwar/console-contract` 的 `TenantBranding` 一一对应,
+ * 但**类型不是从那里 import 的** —— 设计系统不依赖契约包,
+ * 它要能被三个宿主与白牌前端复用。转换由调用方做。
+ *
+ * ## 🚨 `primaryColor: string | null` 的 null 不许被兜底
+ *
+ * `null` = **未配置** = 无彩中性外观(`NEUTRAL_BRANDING`)。
+ * 它与「配置成某个颜色」在类型层就是分开的 —— V0.8.0 把哨兵默认色
+ * `#2F6FEB` 改掉,为的就是这个区分。
+ *
+ * 一行 `branding.primaryColor ?? '#2F6FEB'` 能把那次改动**完全抵消**,
+ * 而不会有任何东西变红。`check-guards.mjs` 有一条守卫盯着这个形状。
+ */
+export interface BrandingDraft {
+  readonly productName: string
+  /** `null` = 未配置 = 中性外观。**空串是配置错误,不是未配置。** */
+  readonly primaryColor: string | null
+  readonly legalEntityName: string
+  readonly supportEmail: string
+}
+
+export interface BrandingScreenProps {
+  readonly branding: BrandingDraft
+  /**
+   * 配置页输入框的**建议起点占位**,不是契约默认值。
+   *
+   * ⚠️ 必填且由调用方给 —— 写死在这里就等于设计系统里藏了一个默认色,
+   * 而那正是 V0.8.0 拆掉的东西。调用方应当传
+   * `console-contract` 的 `SUGGESTED_PRIMARY_COLOR`。
+   */
+  readonly suggestedSeed: string
+  readonly onChange?: (next: BrandingDraft) => void
+  readonly onSave?: () => void
+  readonly onReset?: () => void
+  /** 保存进行中 —— 写入控件应当 disabled。 */
+  readonly saving?: boolean
+}
+
+export function BrandingScreen({
+  branding,
+  suggestedSeed,
+  onChange,
+  onSave,
+  onReset,
+  saving,
+}: BrandingScreenProps): React.JSX.Element {
+  const SUGGESTED = suggestedSeed
+  const { primaryColor: seed, productName: name } = branding
+  const setSeed = (next: string | null): void => onChange?.({ ...branding, primaryColor: next })
+  const setName = (next: string): void => onChange?.({ ...branding, productName: next })
+
+  // ⚠️ **判据是 `=== null`,不是真值。** 空串是**配置错误**(有人清空了输入框
+  //   却没点重置),不是「未配置」—— 用 `seed ?` 会把两者合并,
+  //   于是界面显示中性外观、而保存下去的是一个空串。
+  //   与 LogoSlot 的 `??` vs `||` 是同一条。
+  const d = seed === null || seed === '' ? null : derive(seed, 4.5)
   const scope = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (scope.current && seed) applyAccent(seed, scope.current)
+    if (scope.current !== null && seed !== null && seed !== '') {
+      applyAccent(seed, scope.current)
+    }
   }, [seed])
   const roleRow = (r: RoleRow): React.JSX.Element => (
     <div
@@ -136,8 +197,12 @@ export function BrandingScreen(): React.JSX.Element {
         sub="平台只接受一个种子色；ramp 与六个角色令牌按对比度约束派生"
         actions={
           <>
-            <Button variant="ghost">重置为中性外观</Button>
-            <Button variant="primary">保存并确认派生结果</Button>
+            <Button variant="ghost" disabled={saving === true} onClick={() => onReset?.()}>
+              重置为中性外观
+            </Button>
+            <Button variant="primary" disabled={saving === true} onClick={() => onSave?.()}>
+              {saving === true ? '保存中…' : '保存并确认派生结果'}
+            </Button>
           </>
         }
       />
@@ -184,7 +249,7 @@ export function BrandingScreen(): React.JSX.Element {
                 />
                 <Input
                   label="主色种子（primaryColor）"
-                  value={seed || ''}
+                  value={seed ?? ''}
                   placeholder={SUGGESTED + '（建议起点）'}
                   mono
                   onChange={(e) => setSeed(e.target.value || null)}
@@ -219,13 +284,17 @@ export function BrandingScreen(): React.JSX.Element {
               disabled
               onChange={() => {}}
             />
-            <Input label="法律实体（legalEntityName）" value="Acme Inc." onChange={() => {}} />
+            <Input
+              label="法律实体（legalEntityName）"
+              value={branding.legalEntityName}
+              onChange={(e) => onChange?.({ ...branding, legalEntityName: e.target.value })}
+            />
             <Input
               label="支持邮箱（supportEmail）"
-              value="ops@acme.example"
+              value={branding.supportEmail}
               mono
               hint="与 supportUrl 至少给一个，否则用户求助无门。"
-              onChange={() => {}}
+              onChange={(e) => onChange?.({ ...branding, supportEmail: e.target.value })}
             />
             <div style={{ display: 'grid', gap: 'var(--s-3)' }}>
               <span

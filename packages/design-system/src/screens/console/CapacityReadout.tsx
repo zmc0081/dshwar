@@ -18,6 +18,7 @@
 import type * as React from 'react'
 import { CodeRef } from '../../components/CodeRef.tsx'
 import { Icon } from '../../components/Icon.tsx'
+import type { CapacityReading } from './capacity.ts'
 
 interface ReadoutProps {
   label: string
@@ -72,22 +73,23 @@ function Readout({ label, value, unit, note }: ReadoutProps): React.JSX.Element 
   )
 }
 
+/**
+ * ⚠️ **V0.9.0 Session 3:五个独立的默认值换成一个必填的 {@link CapacityReading}。**
+ *
+ * 原先是 `isolation = 'logical'` / `maxProcesses = 39` / `memberCap = 39` /
+ * `rssPerProcessMb = 63` / `totalMb = 2560` —— 五个默认值,而 `IsolationGate`
+ * 另有两个同名同值的。那不是「有两个来源」,是有三个(加上服务端真在用的那个)。
+ *
+ * D2 要的是**同一个来源**。默认值在这里就是第二个来源:
+ * 漏传一个字段,界面照样显示一个像模像样的数,而没有任何东西会红。
+ * 必填之后漏传是**编译错误**。
+ */
 export interface CapacityReadoutProps {
-  /** `isolation.level` —— 逻辑档下 MEMBER CAP 恒为 1 */
-  isolation?: 'logical' | 'process'
-  maxProcesses?: number
-  memberCap?: number
-  rssPerProcessMb?: number
-  totalMb?: number
+  readonly capacity: CapacityReading
 }
 
-export function CapacityReadout({
-  isolation = 'logical',
-  maxProcesses = 39,
-  memberCap = 39,
-  rssPerProcessMb = 63,
-  totalMb = 2560,
-}: CapacityReadoutProps): React.JSX.Element {
+export function CapacityReadout({ capacity }: CapacityReadoutProps): React.JSX.Element {
+  const { isolation, maxProcesses, memberCap, rssPerProcessMb, totalMb, basis } = capacity
   return (
     <section
       aria-label="容量基线"
@@ -110,8 +112,10 @@ export function CapacityReadout({
       />
       <Readout
         label="MAX PROCESSES"
-        value={maxProcesses}
-        note={`deriveMaxProcesses · basis ${totalMb} MB`}
+        // ⚠️ 逻辑档下服务端给 null —— **null 不是 0**,是「这一档不按进程算」。
+        //   显示成 0 会让人以为一个进程都起不来。
+        value={maxProcesses === null ? '—' : maxProcesses}
+        note={basis === '' ? `basis ${totalMb} MB` : basis}
       />
       <Readout
         label="MEMBER CAP"

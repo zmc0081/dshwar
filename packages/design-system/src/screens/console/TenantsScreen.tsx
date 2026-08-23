@@ -19,6 +19,7 @@ import { Icon } from '../../components/Icon.tsx'
 import { IconButton } from '../../components/IconButton.tsx'
 import { Input } from '../../components/Input.tsx'
 import { QuarantineBanner } from '../../components/QuarantineBanner.tsx'
+import type { CapacityReading } from './capacity.ts'
 import { Select } from '../../components/Select.tsx'
 import { Table, type TableColumn } from '../../components/Table.tsx'
 import { Tag } from '../../components/Tag.tsx'
@@ -107,8 +108,13 @@ export function EmptyState({
 export interface TenantsScreenProps {
   /** 空状态开关(顶栏的「有数据 / 空状态」分段控件) */
   empty?: boolean
-  /** 透传给 CapacityReadout —— 逻辑档的 MEMBER CAP 是 1 人 */
-  isolation?: 'logical' | 'process'
+  /**
+   * 透传给 CapacityReadout 的**整份**容量读数。
+   *
+   * ⚠️ V0.9.0 Session 3:原先只透传 `isolation`,其余四个数由 CapacityReadout
+   * 自己的默认值兜底 —— 那就是 D2 说的「第二个来源」。现在整份传下去。
+   */
+  capacity: CapacityReading
   /**
    * 打开某一行租户。
    *
@@ -118,7 +124,7 @@ export interface TenantsScreenProps {
   onOpenTenant?: (index: number) => void
 }
 
-export function TenantsScreen({ empty, isolation }: TenantsScreenProps): React.JSX.Element {
+export function TenantsScreen({ empty, capacity }: TenantsScreenProps): React.JSX.Element {
   const [sel, setSel] = useState(0)
   const act = (
     <span style={{ display: 'flex', gap: 2, justifyContent: 'flex-end' }}>
@@ -222,12 +228,9 @@ export function TenantsScreen({ empty, isolation }: TenantsScreenProps): React.J
           </>
         }
       />
-      {/* isolation 省略时不显式传 undefined —— exactOptionalPropertyTypes 下
-          「没传」与「传了 undefined」是两回事,后者进不去可选属性。
-          效果与 kit 一致:由 CapacityReadout 自己的默认值兜底。 */}
-      <CapacityReadout {...(isolation === undefined ? {} : { isolation })} />
+      <CapacityReadout capacity={capacity} />
       {/* kit 原样保留:两个分支都是 null,渲染上等于什么都不做。 */}
-      {!empty && isolation === 'process' ? null : null}
+      {!empty && capacity.isolation === 'process' ? null : null}
       {!empty ? (
         <QuarantineBanner message="租户 legal-review 处于隔离档，出站请求已阻断。" />
       ) : null}

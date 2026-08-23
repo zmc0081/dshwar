@@ -21,7 +21,7 @@
  * ⇒ 断言的是「客户端有没有把 `this` 带对」,而不是「fetch 能不能跑」。
  */
 import { describe, expect, it } from 'vitest'
-import { DshwarClient } from '../src/client.ts'
+import { DshwarAdminClient, DshwarClient } from '../src/client.ts'
 
 describe('浏览器语义:globalThis.fetch 必须 bind', () => {
   it('★ 客户端不得以自己为 this 调用宿主的 fetch(浏览器会抛 Illegal invocation)', async () => {
@@ -89,6 +89,47 @@ describe('浏览器语义:globalThis.fetch 必须 bind', () => {
       const client = new DshwarClient({ baseUrl: 'http://x', token: 't' })
       await expect(client.listWorkspaces()).resolves.toBeDefined()
       expect(sawHost, 'this 不是 globalThis —— 客户端没有 bind').toBe(true)
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
+
+  it('★ DshwarAdminClient 同样要 bind —— 两个客户端各有一份构造函数', async () => {
+    // ⚠️ 这一条是 V0.9.0 Session 3 补的,起因是**一处不实的注释**:
+    //   `DshwarAdminClient` 的构造函数里写着「谁盯着它:test/browser-fetch.test.ts」,
+    //   而那时这个文件只覆盖了 `DshwarClient`。
+    //
+    //   两个类各有一份 `this.fetchImpl = ...`,**修一个不会修另一个**。
+    //   一条声称有人盯着、实际没人盯着的注释,比没有注释更糟:
+    //   它让下一个人跳过这里。
+    const realFetch = globalThis.fetch
+    const host = globalThis
+    let sawHost = false
+    try {
+      globalThis.fetch = function (this: unknown): Promise<Response> {
+        sawHost = this === host
+        if (this !== host) {
+          throw new TypeError("Failed to execute 'fetch' on 'Window': Illegal invocation")
+        }
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              isolationLevel: 'logical',
+              maxProcesses: null,
+              memberCap: 1,
+              memberCount: 0,
+              rssPerProcessMb: 58,
+              basis: 'test',
+              requestId: 'r',
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+        )
+      } as typeof globalThis.fetch
+
+      const admin = new DshwarAdminClient({ baseUrl: 'http://x', adminKey: 'k' })
+      await expect(admin.capacity()).resolves.toBeDefined()
+      expect(sawHost, 'this 不是 globalThis —— DshwarAdminClient 没有 bind').toBe(true)
     } finally {
       globalThis.fetch = realFetch
     }

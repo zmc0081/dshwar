@@ -16,5 +16,9 @@
   },
   "include": ["src/**/*.ts", "src/**/*.tsx"],
   "exclude": ["dist", "node_modules"],
-  "references": [{ "path": "../packages/console-contract" }, { "path": "../sdk/typescript" }]
+  "references": [
+    { "path": "../packages/console-contract" },
+    { "path": "../packages/design-system" },
+    { "path": "../sdk/typescript" }
+  ]
 }

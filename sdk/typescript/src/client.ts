@@ -12,6 +12,19 @@ import type { components } from './generated/schema.ts'
 
 type Schemas = components['schemas']
 
+/**
+ * 分页参数拼成 query 串。没有参数时返回空串 —— **不是 `'?'`**。
+ *
+ * ⚠️ 一个裸的 `?` 在多数服务端能用,但它会让日志里的路径与实际调用不一致,
+ * 也会让「同一个端点」在指标里裂成两条。省一个字符不值这个。
+ */
+function pageQuery(options: { limit?: number; cursor?: string }): string {
+  const query = new URLSearchParams()
+  if (options.limit !== undefined) query.set('limit', String(options.limit))
+  if (options.cursor !== undefined) query.set('cursor', options.cursor)
+  return query.size === 0 ? '' : `?${query.toString()}`
+}
+
 export type Session = Schemas['Session']
 export type StreamEvent = Schemas['StreamEvent']
 export type CredentialDescriptor = Schemas['CredentialDescriptor']
@@ -443,24 +456,41 @@ export class DshwarAdminClient {
   }
 
   /**
-   * 部署容量:隔离档、进程上限、成员上限(V0.5.0)。
+   * Admin 面的共用请求。
    *
-   * 控制台首页那三个数从这里来。**它与服务端的开户闸门是同一个来源** ——
-   * 两处各算各的话,界面会显示一个管理员照着加人、加到一半被拒的数。
+   * ⚠️ **V0.9.0 Session 3 抽出来的。** 在此之前两个方法各自内联了一份
+   * fetch + 错误映射 —— 而 Session 3 要再加八个方法,那就是十份复制。
+   *
+   * 复制的代价不是行数:`plannedVersion` 是 V0.5.5 才补进错误映射的,
+   * 补的时候要**逐处**改。漏掉任何一处,那个端点的 501 就不带计划版本 ——
+   * 而调用方拿到的是一个「没实现,但不知道什么时候实现」的错误,
+   * 与「这个端点根本不存在」无法区分。
    */
-  async capacity(): Promise<{
-    isolationLevel: string
-    maxProcesses: number | null
-    memberCap: number
-    memberCount: number
-    rssPerProcessMb: number
-    basis: string
-  }> {
-    const response = await this.fetchImpl(`${this.baseUrl}/v1/admin/capacity`, {
-      headers: { 'x-dshwar-admin-key': this.key },
-    })
+  private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+    let response: Response
+    try {
+      response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+        ...init,
+        headers: {
+          'x-dshwar-admin-key': this.key,
+          'content-type': 'application/json',
+          ...init.headers,
+        },
+      })
+    } catch (cause) {
+      throw new DshwarTransportError('request failed before a response was received', cause)
+    }
     if (!response.ok) {
-      const body = (await response.json()) as DshwarErrorBody
+      let body: DshwarErrorBody
+      try {
+        body = (await response.json()) as DshwarErrorBody
+      } catch (cause) {
+        // 网关之外的东西(反向代理、负载均衡)也可能返回非 JSON 的错误
+        throw new DshwarTransportError(
+          `unexpected non-JSON error response (${response.status})`,
+          cause,
+        )
+      }
       throw new DshwarApiError({
         code: body.error.code,
         message: body.error.message,
@@ -469,6 +499,98 @@ export class DshwarAdminClient {
         plannedVersion: response.headers.get('x-dshwar-planned-version') ?? undefined,
       })
     }
-    return (await response.json()) as Awaited<ReturnType<DshwarAdminClient['capacity']>>
+    return (await response.json()) as T
+  }
+
+  /**
+   * 部署容量:隔离档、进程上限、成员上限(V0.5.0)。
+   *
+   * 控制台首页那三个数从这里来。**它与服务端的开户闸门是同一个来源** ——
+   * 两处各算各的话,界面会显示一个管理员照着加人、加到一半被拒的数。
+   *
+   * ⚠️ **V0.9.0 Session 3 把返回类型从手写的内联对象改成 `Schemas['Capacity']`。**
+   * 原先那份手写的漏掉了 `requestId` —— 而每个响应都带它,那是支持工单的抓手。
+   * 更要紧的是:手写的那一层**契约冻结检查看不见**,契约改了它不会红。
+   * 本类的其余方法一律直接用 `Schemas[...]`,不再重新声明形状。
+   */
+  async capacity(): Promise<Schemas['Capacity']> {
+    return this.request('/v1/admin/capacity')
+  }
+
+  // ------------------------------------------------------------------
+  // 运营后台需要的那部分 —— V0.9.0 Session 3 补齐。
+  //
+  // 补之前这个类只有两个方法(`listCredentials` / `capacity`),而 Admin 面有九条。
+  // 与工作区那次同一个理由:**一个第一方 UI 需要用而第三方拿不到的端点,
+  // 本身就是气味。**
+  //
+  // ⚠️ 返回**契约的响应类型原样**,不做投影。`capacity()` 是本类里的反面教材:
+  //   它重新声明了一份 `Capacity` 已经有的形状,还漏掉了 `requestId` ——
+  //   而契约冻结检查看不见手写的那一层。新方法一律 `Schemas[...]`。
+  // ------------------------------------------------------------------
+
+  /** 列出本租户的成员。 */
+  async listSubjects(
+    options: { limit?: number; cursor?: string } = {},
+  ): Promise<Schemas['ListSubjectsResponse']> {
+    return this.request(`/v1/admin/subjects${pageQuery(options)}`)
+  }
+
+  /** 取单个成员。 */
+  async getSubject(id: string): Promise<Schemas['GetSubjectResponse']> {
+    return this.request(`/v1/admin/subjects/${encodeURIComponent(id)}`)
+  }
+
+  /** 取成员配额。 */
+  async getQuota(subjectId: string): Promise<Schemas['GetQuotaResponse']> {
+    return this.request(`/v1/admin/subjects/${encodeURIComponent(subjectId)}/quota`)
+  }
+
+  /**
+   * 改成员配额。
+   *
+   * ⚠️ `tokenLimit: null` 是**「不限」**,不是「没配」—— 契约里它是
+   * `number | null` 而不是可选字段,两种状态在类型层就是分开的。
+   * 调用方不要用 `?? 0` 之类的写法把它兜掉。
+   */
+  async updateQuota(
+    subjectId: string,
+    patch: Schemas['UpdateQuotaRequest'],
+  ): Promise<Schemas['GetQuotaResponse']> {
+    return this.request(`/v1/admin/subjects/${encodeURIComponent(subjectId)}/quota`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    })
+  }
+
+  /** 单个成员的用量明细。 */
+  async subjectUsage(
+    subjectId: string,
+    options: { limit?: number; cursor?: string } = {},
+  ): Promise<Schemas['ListUsageResponse']> {
+    return this.request(
+      `/v1/admin/subjects/${encodeURIComponent(subjectId)}/usage${pageQuery(options)}`,
+    )
+  }
+
+  /** 全租户用量。 */
+  async usage(
+    options: { limit?: number; cursor?: string } = {},
+  ): Promise<Schemas['ListUsageResponse']> {
+    return this.request(`/v1/admin/usage${pageQuery(options)}`)
+  }
+
+  /** 模型策略(允许的模型 + 回落模型)。 */
+  async policies(
+    options: { limit?: number; cursor?: string } = {},
+  ): Promise<Schemas['ListPoliciesResponse']> {
+    return this.request(`/v1/admin/policies${pageQuery(options)}`)
+  }
+
+  /** 审计流水。 */
+  async audit(
+    options: { limit?: number; cursor?: string } = {},
+  ): Promise<Schemas['ListAuditResponse']> {
+    return this.request(`/v1/admin/audit${pageQuery(options)}`)
   }
 }

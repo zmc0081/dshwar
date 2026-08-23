@@ -110,6 +110,9 @@ importers:
       '@dshwar/console-contract':
         specifier: workspace:*
         version: link:../packages/console-contract
+      '@dshwar/design-system':
+        specifier: workspace:*
+        version: link:../packages/design-system
       '@dshwar/sdk':
         specifier: workspace:*
         version: link:../sdk/typescript
@@ -117,9 +120,18 @@ importers:
       '@types/react':
         specifier: 19.2.2
         version: 19.2.2
+      '@types/react-dom':
+        specifier: 19.2.2
+        version: 19.2.2(@types/react@19.2.2)
       react:
         specifier: 19.2.0
         version: 19.2.0
+      react-dom:
+        specifier: 19.2.0
+        version: 19.2.0(react@19.2.0)
+      vite:
+        specifier: 8.2.1
+        version: 8.2.1(@types/node@26.2.0)(yaml@2.9.0)
 
   examples/minimal-server:
     dependencies:
