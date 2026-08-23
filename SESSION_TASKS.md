@@ -375,7 +375,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 | 0       | 设计交付物可用性裁决 + console-web 现状核查          | ✅   |
 | 1       | 移植设计 kit → `packages/design-system` + 守卫扩范围 | ✅   |
 | 2       | Web 工作台(workbench kit)                            | ✅   |
-| 3       | 运营后台(console kit)                                | ⬜   |
+| 3       | 运营后台(console kit)                                | 🔄   |
 | 4       | 认证:系统浏览器 + PKCE + loopback + 钥匙串           | ⬜   |
 | 5       | Tauri 壳:一份 React 三宿主 + 运行期主题 + updater    | ⬜   |
 | 6       | 打包(单独两周,不混功能)                              | ⬜   |
@@ -526,8 +526,23 @@ Session 1 交付的是手抄 DOM 的 `.html` 版,Session 2 装上 react-dom 后
 
 ### Session 3 · 运营后台
 
-**交付**:console kit 13 屏(总览 / 租户 / 成员 / 用量 / 配额 / 模型 /
-审计 / 品牌 / 隔离闸门 / 容量读数)。
+**交付**:`packages/design-system/src/screens/console/`(13 屏从夹具写死改为受控 props)、
+`console-web/src/api.ts`(从只有 `capacity()` 扩到运营后台需要的那部分 Admin API)、
+`console-web/src/view/`(转换层:Admin API 形状 → 表现层 props)、
+`console-web/src/App.tsx`(13 屏接线 + 四态)、
+`console-web/test/`(转换层与视图逻辑的断言)、
+`sdk/typescript/src/client.ts`(`DshwarAdminClient` 补齐运营后台要用的 Admin 端点)。
+
+**收尾项(本 Session 一并做完,不另开)**:
+`scripts/verify-guards.mjs`(**14 条文本形状守卫的「不惩罚记录」实证**)。
+
+> ⚠️ 收尾项的来历:V0.9.0 Session 2 对全部 **28 条**文本形状守卫做了一次追溯扫描,
+> **15 条判为 at-risk,而只有 1 条完成了实证**(深链守卫,已确认会拦住讲解性注释)。
+> 那次扫描的 44 个 agent 里有 27 个撞上会话额度身亡,返回的 `confirmed: 0` 是假的。
+>
+> **排进交付行是刻意的** —— 否则它会变成又一件「报告里提过就算了」的事。
+> 判据:每条 at-risk 的守卫,要么补上「说明被放行」的反向对照,
+> 要么写明「它的扫描范围里不可能有说明」并给出依据。
 
 **验收**:容量读数与开户闸门**同一个来源**(V0.5.0 D2 的老账);
 品牌页写入走 `console-contract`,`primaryColor: null` 走中性令牌而非兜底色。
