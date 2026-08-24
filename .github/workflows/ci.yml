@@ -76,8 +76,22 @@ jobs:
       # ★ 唯一的门禁入口。要加检查请改 package.json 的 check:all,不要改这里。
       #   契约冻结的基线选择(PR 比目标分支 / push 比上一提交)已经收进
       #   scripts/check-contract.mjs,不需要在这里算 --base。
+      # ⚠️ 失败时把最后几十行**喂进 annotation**。
+      #
+      #   理由不是调试方便:job 的完整日志**只有对仓库有 admin 权限的人下得到**
+      #   (API 对其余人返回 403),而 annotation 是公开可读的。
+      #   于是「CI 为什么红」对提 PR 的外部贡献者、对手机上看面板的人,
+      #   都从「看不到」变成「看得到一段」。
+      #
+      #   这不是第二份门禁清单:跑的仍然只有 `check:all` 一条命令,
+      #   外面那层只做「把它的尾巴复述一遍」。
       - name: pnpm check:all
-        run: pnpm check:all
+        run: |
+          set -o pipefail
+          pnpm check:all 2>&1 | tee /tmp/gate.log || {
+            echo "::error title=check:all 失败::$(tail -n 40 /tmp/gate.log | tr '\n' ' | ' | cut -c1-1500)"
+            exit 1
+          }
 
   # ── 以下是 CI 独有的东西,不属于 check:all ────────────────────────────
   #
@@ -220,7 +234,15 @@ jobs:
       #   `pnpm deploy --prod` 装不上的包,在这里会变成 ERR_MODULE_NOT_FOUND。
       #   守卫(check-guards)是早一步的那道;这一步是它的兜底实证。
       - name: 打包
-        run: pnpm pack:desktop
+        shell: bash
+        run: pnpm pack:desktop 2>&1 | tee /tmp/pack.log
+
+      # 与门禁那一步同款:失败原因喂进 annotation。
+      # 打包这一步尤其需要 —— 它的失败几乎全是环境差异,而看日志要 admin 权限。
+      - name: 失败时把打包的尾巴喂进 annotation
+        if: failure()
+        shell: bash
+        run: echo "::error title=pack:desktop 失败::$(tail -n 40 /tmp/pack.log | tr '\n' ' | ' | cut -c1-1500)"
 
       - uses: actions/upload-artifact@v4
         with:

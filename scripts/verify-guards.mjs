@@ -3288,33 +3288,80 @@ try {
     }
 
     // 21b 负向 —— ci.yml 里把一条门禁单列出来
+    //
+    // ⚠️ 锚点选 `- run: pnpm install --frozen-lockfile`(每个 job 都有的准备步),
+    //    而不是门禁那一步本身:门禁那一步的写法会变(V0.9.0 Session 6 给它
+    //    加了「失败时喂 annotation」的包装,当场把旧锚点打飞),
+    //    而**锚点失配时这条会报「守卫放行了枚举」—— 一个完全错的结论**。
     {
-      writeFileSync(
-        ciPath,
-        ciSrc.replace(
-          '      - name: pnpm check:all\n        run: pnpm check:all',
-          '      - name: Lint\n        run: pnpm lint\n\n      - name: pnpm check:all\n        run: pnpm check:all',
-        ),
-        'utf8',
+      const ANCHOR = '      - run: pnpm install --frozen-lockfile'
+      const mutated = ciSrc.replace(
+        ANCHOR,
+        '      - name: Lint\n        run: pnpm lint\n\n' + ANCHOR,
       )
-      const r = runGuards()
-      expect(
-        '21b ci.yml 里单列 `pnpm lint` → 守卫变红(第二份清单长回来了)',
-        !r.ok,
-        !r.ok ? undefined : '守卫放行了枚举 —— 漂移会顺着这条路慢慢长回来',
+      // ★ 先断言变异真的生效。报的是「锚点失配,本条结论作废」,
+      //   **不是**「守卫漏报」—— 两者的修法完全相反。
+      if (mutated === ciSrc) {
+        expect(
+          '21b ci.yml 里单列 `pnpm lint` → 守卫变红(第二份清单长回来了)',
+          false,
+          `锚点失配(找不到 ${ANCHOR.trim()})—— 本条结论作废,不是守卫漏报`,
+        )
+      } else {
+        writeFileSync(ciPath, mutated, 'utf8')
+        const r = runGuards()
+        expect(
+          '21b ci.yml 里单列 `pnpm lint` → 守卫变红(第二份清单长回来了)',
+          !r.ok,
+          !r.ok ? undefined : '守卫放行了枚举 —— 漂移会顺着这条路慢慢长回来',
+        )
+      }
+      writeFileSync(ciPath, ciSrc, 'utf8')
+    }
+
+    // 21d ★ 负向 —— 门禁项藏在**块标量**里(多行 run)也要红
+    //
+    // 这一条补的是 21b 照不到的那一半:21b 注入的是单行 `run:`,
+    // 而守卫原先的判据只认单行 —— 于是「写进多行 run 块」是一条
+    // 完整的绕过路径,而 21b 全绿。
+    {
+      const ANCHOR = '      - run: pnpm install --frozen-lockfile'
+      const mutated = ciSrc.replace(
+        ANCHOR,
+        '      - name: 准备\n        run: |\n          pnpm lint\n          pnpm install --frozen-lockfile\n',
       )
+      if (mutated === ciSrc) {
+        expect('21d ★ 门禁项藏在多行 run 块里 → 守卫仍然变红', false, '锚点失配 —— 本条结论作废')
+      } else {
+        writeFileSync(ciPath, mutated, 'utf8')
+        const r = runGuards()
+        expect(
+          '21d ★ 门禁项藏在多行 run 块里 → 守卫仍然变红',
+          !r.ok,
+          !r.ok ? undefined : '判据只认单行 run —— 多行块是一条完整的绕过路径',
+        )
+      }
       writeFileSync(ciPath, ciSrc, 'utf8')
     }
 
     // 21c 负向 —— 把入口本身删掉
     {
-      writeFileSync(ciPath, ciSrc.replace(/pnpm check:all/g, 'echo skipped'), 'utf8')
-      const r = runGuards()
-      expect(
-        '21c ci.yml 里删掉 `pnpm check:all` → 守卫变红(入口没了)',
-        !r.ok,
-        !r.ok ? undefined : '删掉门禁入口竟然还是绿的 —— 只查枚举、不查入口等于没查',
-      )
+      const mutated = ciSrc.replace(/pnpm check:all/g, 'echo skipped')
+      if (mutated === ciSrc) {
+        expect(
+          '21c ci.yml 里删掉 `pnpm check:all` → 守卫变红(入口没了)',
+          false,
+          'ci.yml 里根本没有 `pnpm check:all` —— 锚点失配,本条结论作废',
+        )
+      } else {
+        writeFileSync(ciPath, mutated, 'utf8')
+        const r = runGuards()
+        expect(
+          '21c ci.yml 里删掉 `pnpm check:all` → 守卫变红(入口没了)',
+          !r.ok,
+          !r.ok ? undefined : '删掉门禁入口竟然还是绿的 —— 只查枚举、不查入口等于没查',
+        )
+      }
       writeFileSync(ciPath, ciSrc, 'utf8')
     }
   })

@@ -2039,12 +2039,24 @@ function checkCiEnumeratesGates() {
   }
 
   // 方向 2:不得单列任何一条
+  //
+  // ⚠️ **不能只看 `run:` 那一行。** 原先的判据是 `/^\s*(?:-\s*)?run:\s*(.+)$/`,
+  //    于是块标量(`run: |` 后面缩进的那几行)里的命令**完全看不见** ——
+  //    把 `pnpm lint` 写进一个多行 run 块就能绕过整条守卫。
+  //
+  //    这个盲点是 V0.9.0 Session 6 自己撞出来的:给门禁那一步加了个
+  //    「失败时把尾巴喂进 annotation」的包装(于是它变成了块标量),
+  //    verify-guards 的 21b 当场变红 —— 而它红的理由是**夹具没写进去**
+  //    (锚点失配),不是守卫漏报。两件事一起暴露:判据太窄,验证没断言锚点。
+  //
+  // ⇒ 改成扫**所有非注释、非 name: 的行**。跳过这两类的理由与
+  //   「守卫不能惩罚记录」同款:注释与步骤名里提到脚本名是**说明**,不是执行。
   const lines = ci.split(/\r?\n/)
   for (const [i, line] of lines.entries()) {
-    // 只看真正执行的地方(run:),注释与 name: 里提到脚本名是正常的说明文字
-    const run = /^\s*(?:-\s*)?run:\s*(.+)$/.exec(line)
-    if (run === null) continue
-    const command = run[1] ?? ''
+    const trimmed = line.trim()
+    if (trimmed === '' || trimmed.startsWith('#')) continue
+    if (/^\s*(?:-\s*)?name:/.test(line)) continue
+    const command = line
     for (const gate of gates) {
       if (gate === 'check:all') continue
       // 词边界:避免 `check:contract` 被 `check:contract-foo` 之类误伤
