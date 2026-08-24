@@ -767,10 +767,27 @@ CI 上 Rust 断言与打包都真的跑(不再是「吵着跳过」)。
 > cargo 断言从 15 条涨到 23 条(新增 8 条在 `main.rs`:端口解析 / 配置脚本 /
 > 令牌新鲜度 / `\\?\` 前缀)。
 >
-> ⚠️ **CI 那半没有验过** —— GitHub Actions 跑不到这台机器上。
-> `desktop-shell` job 的 YAML 结构核对过(解析得开、步骤与条件如预期),
-> 但**它的第一次真实运行才是它的验证**。同一句话在 Session 5 对 `test:shell`
-> 说过一次,这次轮到这个 job。
+> ✅ **CI 实测(2026-08-24,run 32754523815 —— 本仓第一次五个 job 全绿)**:
+> `桌面壳(windows-latest)` 与 `桌面壳(ubuntu-latest)` 都跑完 Rust 断言 + 真打一次包,
+> 产物 63.2 MB / 49.8 MB 上传成功。ubuntu 那半的 keyring 配方
+> (`dbus-run-session` + `gnome-keyring-daemon --unlock`)**是有效的** ——
+> 无头环境里那条 round-trip 真的读写了 Secret Service。
+>
+> 🚨 **而第一次真跑抓到三条红,它们不同源** —— 「YAML 结构核对过不等于跑过」
+> 在这里第二次兑现,并且**三条里没有一条是新代码的问题**:
+>
+> | 红的是什么        | 根因                                                                                                         | 修法                                             |
+> | ----------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------ |
+> | 门禁 ×2           | `ubuntu-latest` **自带 Cargo**,于是 `test:shell` 走了「真跑」那一档,撞上门禁 job 没装的 WebKitGTK            | CI 上跳过并**核对代跑方还在**(负向验证 46a–46c)  |
+> | 桌面壳(ubuntu)    | AppImage 的 `linuxdeploy` 自己是个 AppImage,跑它要 FUSE,而 runner 上没有 libfuse2                            | `bundle.targets` 收窄为 deb(PACKAGING.md 第六节) |
+> | **annotation 层** | 先 `tail -n 40` 再 `tr` 再 `cut -c1-1500` —— `tail` 取末尾而 `cut -c1-N` 取开头,两个方向相反的截断把结论切掉 | `scripts/ci-annotate.mjs` 关键行提取             |
+>
+> ⚠️ 第一条的根子是一句**证据为真、推论为假**的话:实测过的是「workflow 里没写 cargo」,
+> 写下的结论是「CI 里没有 Rust」。见 `docs/DECISIONS/unverified-plausible-causation.md` 例 5 ——
+> 那一节还记着**扫全集**扫出的第二处(`kotlinc` / `swift`),形状一模一样。
+>
+> ⚠️ 第三条值得单记:**报信的那一层自己也会骗人**,而它骗人的时候看起来
+> 正是「工具在干活」。⇒ 查一条红之前,先核对那条红说的是不是真因。
 
 > 🚨 **打包第一次跑就抓到一个出厂缺陷**:`@dshwar/gateway` 的 **17 个运行时依赖
 > 全部躺在 `devDependencies` 里**,而它有 `bin: dshwar-gateway`。
