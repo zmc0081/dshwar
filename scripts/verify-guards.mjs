@@ -862,6 +862,87 @@ try {
   }
 
   // ---------------------------------------------------------------------
+  // 43. 运行时依赖不许躺在 devDependencies 里:三向(V0.9.0 Session 6)
+  //
+  //     pnpm 的 workspace 把 devDependencies 也铺进 node_modules,于是
+  //     「仓库里跑得起来」证明不了「装出来跑得起来」。实测:Session 6 第一次
+  //     `pnpm deploy --prod` 网关,第一行 import 就 ERR_MODULE_NOT_FOUND ——
+  //     17 个运行时依赖全在 devDependencies 里,而那个包是 `bin: dshwar-gateway`。
+  //
+  //     三向:
+  //       a 真的漏声明        → 红
+  //       b ★ 声明了          → 放行(规则不是「见到 import 就红」)
+  //       c ★ 注释里的示例    → 放行(守卫不能惩罚记录 —— @dshwar/principal
+  //                             的模块注释里就有一行 import 示例)
+  // ---------------------------------------------------------------------
+  {
+    const HEADER = /运行时依赖躺在 devDependencies 里/
+    const FIXTURE = /__dep_fixture__/
+    const dropDep = () => rmSync(p('packages/__dep_fixture__'), { recursive: true, force: true })
+    /**
+     * @param {string} body src/index.ts 的内容
+     * @param {Record<string, string>} deps 声明的 dependencies
+     */
+    const depFixture = (body, deps) => {
+      writeFixture(
+        'packages/__dep_fixture__/package.json',
+        JSON.stringify(
+          { name: '@dshwar/dep-fixture', version: '0.9.0', files: ['dist'], dependencies: deps },
+          null,
+          2,
+        ) + '\n',
+      )
+      writeFixture('packages/__dep_fixture__/src/index.ts', body)
+    }
+
+    const DEP_CASES = [
+      {
+        label: '43a 将发布的包 import 了没声明的东西 → 守卫变红',
+        blocked: true,
+        body: "import { z } from 'zod'\nexport const s = z.string()\n",
+        deps: {},
+        hint: '消费方只装 dependencies —— 产物第一行 import 就 ERR_MODULE_NOT_FOUND',
+      },
+      {
+        label: '43b ★ 反向对照:声明了的 import → 放行(规则不是「见到 import 就红」)',
+        blocked: false,
+        body: "import { z } from 'zod'\nexport const s = z.string()\n",
+        deps: { zod: '^4.4.3' },
+        hint: '',
+      },
+      {
+        label: '43c ★ 反向对照:注释里的 import 示例 → 放行(守卫不能惩罚记录)',
+        blocked: false,
+        body:
+          '/**\n' +
+          " * 用法:import { thing } from '@dshwar/not-a-real-dep'\n" +
+          ' */\n' +
+          'export const ok = 1\n',
+        deps: {},
+        hint: '',
+      },
+    ]
+
+    for (const c of DEP_CASES) {
+      dropDep()
+      depFixture(c.body, c.deps)
+      const r = runGuards()
+      const hit = HEADER.test(r.output) && FIXTURE.test(r.output)
+      const passed = c.blocked ? hit : !hit
+      expect(
+        c.label,
+        passed,
+        passed
+          ? undefined
+          : c.blocked
+            ? `守卫放行了一个漏声明的依赖 —— ${c.hint}`
+            : '守卫把一个合法写法判成了漏声明 —— 这类误报会让人学会给它加豁免',
+      )
+      dropDep()
+    }
+  }
+
+  // ---------------------------------------------------------------------
   // 42. 没人自带「币种 → 指数」对照表:三向(V0.9.0 Session 5.5)
   //
   //     minor → major 的指数不都是 2(JPY 是 0,KWD 是 3)。自带一张表 =
@@ -1879,6 +1960,7 @@ try {
         '前端不持有长效凭据(refresh token 不进浏览器存储)', // 40a–40d
         'Session 标 ✅ 的交付产物都真的存在(任务书自身的诚实性)', // 34a–34c
         '没有人自带「币种 → 指数」对照表(指数随金额从契约来)', // 42a–42c
+        '将发布的包,import 的东西都在 dependencies 里(出厂装得上)', // 43a–43c
       ]
 
       const accounted = new Set([...HARD_RULE_FIXTURES.map((f) => f.guard), ...VERIFIED_ELSEWHERE])

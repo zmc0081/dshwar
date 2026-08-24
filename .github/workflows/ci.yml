@@ -119,6 +119,103 @@ jobs:
       #   这个洞是 2026-08-17 扫「还有没有第二个恒绿的检查」时找出来的。
       - name: 五次采样,与 V0.4.5 的 Windows 口径对齐
         run: node scripts/measure-process-cost.mjs --assert --require-threshold
+
+  # 桌面壳:Rust 断言 + 真的打一次包(V0.9.0 Session 6)。
+  #
+  # 为什么值一个 job:Session 5 交付 `src-tauri` 时,**CI 里一个 rust / cargo /
+  # tauri 字样都没有** —— 那 15 条断言(含一条真读写系统钥匙串的 round-trip)
+  # 只在开发机上跑过。`pnpm test:shell` 当时会「吵着跳过」,而吵闹只对
+  # 看输出的人有效,对**从不看输出的绿勾**无效。
+  #
+  # 打包本身也必须在 CI 上跑:打包链路的失败几乎全是**环境差异**
+  # (少一个系统库、少一个 target、Node 版本不对),而那种失败在开发机上
+  # 永远不出现。只在本地打过包 = 只证明了这台机器能打包。
+  desktop-shell:
+    name: 桌面壳(${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # macOS 刻意不在列:它要 Apple Developer($99/年)才能签名,
+        # 而**没签名的 .dmg 装不上**(Gatekeeper 直接拦)。跑一个装不上的产物
+        # 只是把 CI 时间花掉。签名进来的那一天再加 macos-latest。
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          # ⚠️ **钉死 22**,不跟矩阵:这个版本会被**拷进安装包**当 sidecar 运行时
+          # (scripts/pack-sidecar.mjs 拷的就是跑它的那个 node)。
+          # 跟矩阵的话,同一次 CI 会产出两个带不同运行时的包,
+          # 而「用户装到的是哪一个」取决于哪个 job 先传完产物。
+          node-version: 22
+          cache: pnpm
+
+      # Tauri 在 Linux 上要 WebKitGTK。少了它,报的是一堆 pkg-config 找不到,
+      # 与「代码写错了」长得完全不一样 —— 所以显式装,不靠镜像里碰巧有。
+      - name: Linux 系统依赖
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf gnome-keyring dbus-x11
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: pnpm install --frozen-lockfile
+
+      # ★ 15 条 Rust 断言,其中一条**真的读写系统钥匙串**。
+      #
+      # ⚠️ 无头 Linux 上没有 Secret Service,那一条会红。正解是**起一个后端**,
+      #    不是给它加 `#[ignore]` —— 藏起来之后就再也没人验过了
+      #    (src-tauri/README.md 第五节写着这句话,这里是它的兑现)。
+      # ⚠️ 这里直接调 `cargo test`,而**不是** `pnpm test:shell` —— 后者是
+      #    check:all 里的一项,在 CI 里单列它就成了「第二份门禁清单」
+      #    (check-guards 有一条守卫盯着这件事,它当场拦过一次)。
+      #
+      #    两者的关系:`test:shell` 是**本机**入口 —— 它在没有 cargo 时吵着跳过。
+      #    这个 job 的前提是 cargo 一定在,而且还要先起一个 keyring 后端,
+      #    那是环境编排,不是门禁项。
+      - name: Rust 断言(Linux:先起一个 keyring 后端)
+        if: runner.os == 'Linux'
+        run: |
+          dbus-run-session -- bash -c '
+            echo -n "ci-test-password" | gnome-keyring-daemon --unlock --components=secrets &
+            sleep 2
+            cargo test --manifest-path src-tauri/Cargo.toml
+          '
+
+      - name: Rust 断言(Windows:凭据管理器是系统自带的)
+        if: runner.os == 'Windows'
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      # tauri-cli 从源码装要几分钟 —— 上面的 rust-cache 会把它连同依赖一起缓存。
+      - name: 装 tauri-cli
+        run: cargo install tauri-cli --version "^2" --locked
+
+      # ★ 真的打一次包:前端产物 → sidecar(Node 运行时 + 生产依赖树 + 原生模块)
+      #   → cargo tauri build。三步任一失败都会让这个 job 红。
+      #
+      # ⚠️ 这一步顺带盯着「运行时依赖不许躺在 devDependencies 里」的**真实后果**:
+      #   `pnpm deploy --prod` 装不上的包,在这里会变成 ERR_MODULE_NOT_FOUND。
+      #   守卫(check-guards)是早一步的那道;这一步是它的兜底实证。
+      - name: 打包
+        run: pnpm pack:desktop
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.os }}
+          # ⚠️ 这些包**没有签名**:Windows 上装会有 SmartScreen 警告。
+          #    签名要外部资源(SignPath Foundation 需先有 release),不在本 Session。
+          path: |
+            src-tauri/target/release/bundle/**/*.msi
+            src-tauri/target/release/bundle/**/*.exe
+            src-tauri/target/release/bundle/**/*.deb
+            src-tauri/target/release/bundle/**/*.AppImage
+          if-no-files-found: error
 # ════════════════════════════════════════════════════════════════════════
 # ⚠️ 本文件里的每个 job 都必须做**实质检查**,且在守卫里登记。
 #

@@ -137,6 +137,48 @@ JS 常识,例 2 只需要"Linux 更快"的常识。**不依赖具体知识的解
 那里永远是匿名,**无论作用域有没有生效**。那条探针能"验证"任何结论。
 写验证的时候要再问一遍:这个观察在假设为真和为假时,结果会不同吗?
 
+---
+
+## 例 4:「`cargo tauri build` 设了 `NODE_ENV=production`,所以 pnpm 要装 --production」
+
+**现象**(V0.9.0 Session 6):`pnpm pack:desktop` 的第一步(前端构建)失败,
+pnpm 自动补跑了一次 `install --production`,而它要**删掉根 node_modules
+里的 devDependencies**;非 TTY 下 pnpm 拒绝执行并报错。
+
+**那个解释**:这一步是被 `tauri.conf.json` 的 `beforeBuildCommand` 拉起的,
+而 `cargo tauri build` 会设 `NODE_ENV=production` —— pnpm 读到它,
+于是认为要装生产依赖。
+
+**为什么它特别顺**:`NODE_ENV=production` 让 npm 系工具只装 dependencies
+是**真实存在**的行为;Tauri 设这个变量也是真的。两个真事实拼一起,
+严丝合缝,而且**给出了一个立刻可做的修法**(把前端构建从 `beforeBuildCommand`
+挪出来自己编排)——那个修法我也真的做了。
+
+**实测推翻**:挪出来之后,**同样的失败在第一步又出现了一次** ——
+这次根本没有 Tauri 参与。`echo $NODE_ENV` 是空的。
+
+真正的原因在 `node_modules/.pnpm-workspace-state-v1.json`:
+
+```
+pnpm deploy --prod --config.node-linker=hoisted
+  → 把 { dev: false, production: true, nodeLinker: "hoisted" }
+    写进了**根 workspace** 的状态文件
+  → 而根 node_modules 一个字节都没动(deploy 写的是别的目录)
+  → 下一次任何 pnpm 命令比对「上次装的设置」与「这次要的设置」,
+    发现不一致 → 自动补装,而且照着记录去装 --production
+```
+
+**没被审视的那个箭头**:「pnpm 决定装什么」被默认为「看环境变量」,
+而实际上它看的是**上一次安装留下的记录**。
+
+**推翻它的那个观察,事后看很便宜**:把前端构建单独跑一次(不经 Tauri),
+看它还失不失败。十秒钟。
+
+⚠️ **顺带的一条**:这次的错误解释**没有造成损失**,因为它导出的修法
+(显式编排三步)本身是对的 —— 但它**掩盖了真正的风险**:
+CI 上 `CI=true`,pnpm 不会停下来问,会**直接把 devDependencies 删掉**。
+按错误解释修完,那个风险仍然完整地留着,而且看起来已经解决了。
+
 ### 与本仓其它机制的关系
 
 这三条都是**文档层**的错误,而本仓对代码层的同类问题已经有机制:

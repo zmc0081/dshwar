@@ -31,7 +31,8 @@
     "verify:assertions": "node scripts/verify-assertions.mjs",
     "check:docs": "node scripts/session-tasks.mjs check",
     "verify:caps": "node scripts/verify-cap-termination.mjs",
-    "test:shell": "node scripts/test-shell.mjs"
+    "test:shell": "node scripts/test-shell.mjs",
+    "pack:desktop": "node scripts/pack-desktop.mjs"
   },
   "devDependencies": {
     "@changesets/cli": "^3.0.0",

@@ -18,6 +18,19 @@ const SKIP_DIRS = new Set([
   // 副本里的每个包都报成「未登记进根 tsconfig」—— 而它们本来就登记在
   // 副本自己的根 tsconfig 里。那份副本跑它自己的门禁。
   '.claude',
+  // Rust 的构建产物目录(`src-tauri/target`)。两条理由,第二条是硬的:
+  //
+  // 1. 它是产物,不是源码 —— 与 `dist` 同理;
+  // 2. **`cargo build` 跑着的时候它在不停地建/删临时文件**,而一次
+  //    「walk 到一半目录没了」会让守卫直接 ENOENT 崩掉 ——
+  //    那种崩溃与「守卫发现了违规」在退出码上是一样的,但它什么都没查。
+  //    (V0.9.0 Session 6 实测撞上:与 `cargo tauri build` 并行跑门禁。)
+  'target',
+  // `pnpm deploy --prod` 铺进来的 sidecar 生产依赖树。它是**产物的一部分**,
+  // 里面有几十个 package.json —— 扫进去的话,守卫会把上游包也当成本仓的包。
+  'sidecar',
+  // 打包进安装包的外部二进制(Node 运行时)。同上,是产物。
+  'binaries',
 ])
 
 /**

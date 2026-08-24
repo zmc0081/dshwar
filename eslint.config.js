@@ -36,6 +36,13 @@ export default tseslint.config(
       '**/node_modules/**',
       '**/dist/**',
       '**/*.tsbuildinfo',
+      // 桌面壳的构建产物(V0.9.0 Session 6)。`src-tauri/target` 里有
+      // `tauri-codegen` 生成的 JS(注入脚本、资源清单),它们不是本仓写的代码;
+      // 其中一个还是**二进制**,eslint 会报「File appears to be binary」。
+      // sidecar / binaries 是 `pnpm pack:desktop` 铺出来的产物,同理。
+      'src-tauri/target/**',
+      'src-tauri/sidecar/**',
+      'src-tauri/binaries/**',
       'feasibility/**',
       'feasibility-v2/**',
       '.changeset/**',

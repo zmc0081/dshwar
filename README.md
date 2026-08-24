@@ -321,6 +321,14 @@ SDK 的类型由 OpenAPI 生成,不手写。错误码是闭集,映射成可穷�
 - **反向代理必须关缓冲、调长超时**,否则 SSE 会退化成「一次性收到一坨」
 - 部署组合用 [`profiles/gateway.yml`](profiles/gateway.yml)
 
+### 桌面端打包
+
+`pnpm pack:desktop` —— 前端产物 → sidecar(Node 运行时 + 生产依赖树 + 原生模块)
+→ `cargo tauri build`。见 [`docs/PACKAGING.md`](docs/PACKAGING.md)。
+
+⚠️ **产出的包没有签名**:Windows 走 SignPath Foundation(开源免费,需先有 release),
+macOS 走 Apple Developer($99/年)。签名之前,Windows 上安装会有 SmartScreen 警告。
+
 ---
 
 ## 身份互操作

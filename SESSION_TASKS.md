@@ -379,7 +379,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 | 4       | 认证:系统浏览器 + PKCE + loopback + 钥匙串           | ✅   |
 | 5       | Tauri 壳:一份 React 三宿主 + 运行期主题 + updater    | ✅   |
 | 5.5     | `costMinorUnits` 的两个洞(语义折叠 + 单位假设)       | ✅   |
-| 6       | 打包(单独两周,不混功能)                              | ⬜   |
+| 6       | 打包(单独两周,不混功能)                              | ✅   |
 
 ---
 
@@ -723,12 +723,60 @@ state 匹配才算回调 / 收完等响应落地再兑现)、
 
 ---
 
-### Session 6 · 打包(单独两周)
+### Session 6 · 打包(单独两周)✅
 
-**⚠️ 不混进功能 Session。** 胖客户端要打包 Node 22 运行时与三个原生模块
-(`node-pty` / `sharp` / `@vscode/ripgrep`),而 Tauri 没有 `@electron/rebuild`
-那样的现成工具链:target-triple 命名、分平台 prebuild、macOS 每个 `.node`
-单独签名都要自己搭。
+**⚠️ 不混进功能 Session。** 胖客户端要打包 Node 运行时与原生模块,
+而 Tauri 没有 `@electron/rebuild` 那样的现成工具链:target-triple 命名、
+分平台 prebuild、macOS 每个 `.node` 单独签名都要自己搭。
+
+> 🚨 **两处前提在开工时被实测推翻,记在这里免得后来人按原文找。**
+>
+> | 原文                                                      | 实测                                                                                                                                                                    |
+> | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+> | 「三个原生模块:`node-pty` / `sharp` / `@vscode/ripgrep`」 | **三个都不在依赖树里**。`node-pty` 随 `dsh-subprocess-local`,而那个包在 `DELIBERATELY_OMITTED` 里有明确理由(上游 `ProcessInspector` 的 win32 直接抛);另两个全仓查无此项 |
+> | (隐含)原生模块要**从源码分平台编译**                      | 真正在树里的是 **koffi**(`dsh-fs-local` / `dsh-session-persistence-jsonl` 的运行时依赖),而它按**平台专属 npm 包**分发 —— 不编译,但要确认装进去的是当前平台那一份        |
+>
+> ⇒ 「分平台 prebuild」这半的工作量比计划小得多,
+> 而**跨平台打包做不到一台机器出全部产物**这一条不变:
+> `pnpm deploy` 装的是本机平台的可选依赖,Node 运行时也是本机那一份。
+
+**交付**:`src-tauri/src/main.rs`(app crate:拉起 sidecar → 读端口 → 再开窗)、
+`src-tauri/build.rs` + `src-tauri/capabilities/default.json`(codegen 与能力清单)、
+`scripts/make-icon.mjs`(**生成**的中性图标,不是美术稿 —— 安装包永远中性)、
+`scripts/pack-sidecar.mjs`(Node 运行时 + 生产依赖树 + 原生模块,target-triple 命名)、
+`scripts/pack-desktop.mjs`(三步编排,`pnpm pack:desktop`)、
+`.github/workflows/ci.yml`(新 job `desktop-shell`:Rust 工具链 + 15 条断言 + 真打一次包)、
+`scripts/check-guards.mjs`(新守卫:将发布的包,import 的东西都在 `dependencies` 里)、
+`docs/DECISIONS/workspace-hides-missing-deps.md`(形状:开发环境比消费方宽松)、
+`docs/PACKAGING.md`(三个只在打包时才显形的坑,逐个写明)。
+
+**验收**:`pnpm pack:desktop` 在开发机上产出可安装的包;
+CI 上 Rust 断言与打包都真的跑(不再是「吵着跳过」)。
+
+> ✅ **本机实测(Windows)**:产出 `DSHWAR_0.9.0_x64-setup.exe`(26.1 MB)与
+> `DSHWAR_0.9.0_x64_en-US.msi`(40.6 MB);跑起来之后 `dshwar-desktop` 与
+> `dshwar-gateway` 两个进程都在,网关监听一个随机回环端口,
+> **拿壳注入的令牌请求 `/v1/sessions` 得 200,换一个猜的得 401**。
+> cargo 断言从 15 条涨到 23 条(新增 8 条在 `main.rs`:端口解析 / 配置脚本 /
+> 令牌新鲜度 / `\\?\` 前缀)。
+>
+> ⚠️ **CI 那半没有验过** —— GitHub Actions 跑不到这台机器上。
+> `desktop-shell` job 的 YAML 结构核对过(解析得开、步骤与条件如预期),
+> 但**它的第一次真实运行才是它的验证**。同一句话在 Session 5 对 `test:shell`
+> 说过一次,这次轮到这个 job。
+
+> 🚨 **打包第一次跑就抓到一个出厂缺陷**:`@dshwar/gateway` 的 **17 个运行时依赖
+> 全部躺在 `devDependencies` 里**,而它有 `bin: dshwar-gateway`。
+> pnpm 的 workspace 把 devDependencies 也铺进 `node_modules`,于是
+> 测试绿、build 绿、直接跑 dist 也能起来 —— 而 `pnpm deploy --prod` 出来的产物
+> 第一行 import 就 `ERR_MODULE_NOT_FOUND`。已修 + 加守卫(负向验证 43a–43c)。
+
+> ⚠️ **签名不在本 Session**:Windows 走 SignPath Foundation(开源免费,
+> **需先有 release**),macOS 走 Apple Developer($99/年)。两者都要外部资源,
+> 而打包链路得先跑通。产出的包**没有签名** —— Windows 上装会有 SmartScreen 警告。
+>
+> ⚠️ **macOS 不在 CI 矩阵里**:没签名的 `.dmg` 会被 Gatekeeper 直接拦下,
+> 跑一个装不上的产物只是把 CI 时间花掉。签名进来的那一天再加 `macos-latest`。
 
 ---
 

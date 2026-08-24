@@ -27,3 +27,13 @@ feasibility-v2/node_modules/
 .mutation-journal/
 
 src-tauri/target/
+# 打包产物(V0.9.0 Session 6)。两者都是 `pnpm pack:desktop` 现生成的:
+# sidecar 是 `pnpm deploy --prod` 铺出来的生产依赖树(约 12 MB),
+# binaries 里是**拷贝的 Node 运行时**(约 90 MB)。
+# ⚠️ 提交它们等于把一份 Node 二进制放进 git 历史 —— 而且它随平台而异。
+src-tauri/sidecar/
+src-tauri/binaries/
+# `tauri-build` 每次构建都重新生成的 ACL / 能力清单 JSON Schema(约 340 KB)。
+# 它是**产物**:改 capabilities/default.json 之后重新生成即可,
+# 提交它只会让每次构建都产生一份与代码无关的 diff。
+src-tauri/gen/schemas/

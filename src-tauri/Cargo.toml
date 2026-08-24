@@ -6,17 +6,31 @@ description = "DSHWAR 桌面壳。本 crate 只做宿主能力:系统钥匙串�
 license = "MIT"
 publish = false
 
-# ⚠️ 本 crate 刻意**先做成 lib**,而不是一个完整的 Tauri 二进制。
+# V0.9.0 Session 5 时这里只有 lib —— 打包是单独两周,那时不做。
+# Session 6 补上 bin:`tauri-build` 的 codegen 要前端产物与图标,两者现在都有了。
 #
-# 理由:打包(Node 22 运行时 + node-pty / sharp / @vscode/ripgrep 三个原生模块)
-# 是**单独两周**,不进本 Session。而一个完整的 Tauri app crate 要跑 tauri-build
-# 的 codegen,那一步要前端产物、要图标、要签名配置 —— 全是打包那一档的东西。
-#
-# 拆成 lib 之后,**安全关键的那部分现在就能编译、能测**:
-# 钥匙串读写是这一版唯一碰长效凭据的代码,它不该等到打包那两周才第一次跑起来。
+# **lib 仍然保留**,而且它才是被测的那一半:`cargo test` 跑的是 lib 里的
+# 15 条断言(钥匙串真读写 + 允许清单逐维相等)。bin 只做装配 ——
+# 装配逻辑越薄,「测不到的那部分」就越小。
 [lib]
 name = "dshwar_shell"
 path = "src/lib.rs"
+
+[[bin]]
+name = "dshwar-desktop"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+serde_json = "1"
+# 本机令牌要真随机 —— 网关绑在 127.0.0.1 上,本机任何进程都够得着那个端口,
+# 令牌是唯一的门。std 不提供 RNG,而 getrandom 只是一层系统调用的包装
+# (Windows 上是 BCryptGenRandom),不引入任何算法实现。
+getrandom = "0.2"
 
 # 系统钥匙串:Windows Credential Manager / macOS Keychain / Linux Secret Service。
 # ⚠️ 选它而不是自己写,是因为「把密钥存到系统安全存储」这件事在三个平台上

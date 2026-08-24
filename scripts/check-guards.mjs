@@ -1509,6 +1509,11 @@ const CI_JOB_VERIFICATION = {
   gate: 'check:all 本体 —— 其下每一项各自有守卫(check-guards)或探针(verify-assertions)',
   'process-cost':
     'verify-guards 27a/27b —— 把阈值调到 0 必须红;删掉平台条目 + --require-threshold 必须红',
+  'desktop-shell':
+    'cargo test 的 15 条断言(负向验证:去掉 Cargo.toml 的平台 keyring feature,' +
+    'round_trip_through_the_real_keychain 立刻红)+ pack:desktop 三步任一失败即红 ——' +
+    '其中「运行时依赖躺在 devDependencies 里」由 check-guards 早一步拦,' +
+    '这个 job 是它的兜底实证(pnpm deploy --prod 装不上的包会变成 ERR_MODULE_NOT_FOUND)',
 }
 
 /**
@@ -1588,6 +1593,104 @@ function checkPrimaryColorHasNoFallback() {
         out.push({ file: rel, line: i + 1, text: `${rel}:${i + 1}  ${line.trim()}` })
       }
     }
+  }
+  return out
+}
+
+/**
+ * ★ **将发布的包,src 里 import 的每个包名都必须在 `dependencies` 里。**
+ *
+ * ## 它防的是「在 monorepo 里一切正常,装出来是坏的」(V0.9.0 Session 6)
+ *
+ * pnpm 的 workspace 把 devDependencies 也铺进 `node_modules` —— 于是一个
+ * **只声明在 devDependencies** 的运行时依赖,在仓库里跑得好好的:
+ * 测试绿、`pnpm build` 绿、`node gateway/dist/server.js` 也能起来。
+ *
+ * 而消费方装到的只有 `dependencies`。⇒ 打包 / `npm i` 出来的产物
+ * **第一行 import 就炸**,错误是 `ERR_MODULE_NOT_FOUND`,
+ * 而它指向的包在开发机上明明存在。
+ *
+ * ⚠️ **实测,不是假设**:Session 6 第一次 `pnpm deploy --prod` 网关时,
+ * `@deepseek-ai/dsh-credentials` 直接找不到。逐个数下来
+ * **17 个运行时依赖全部躺在 devDependencies 里** ——
+ * 而这个包是 `bin: dshwar-gateway`,本来就是要发出去的。
+ *
+ * ## 判据为什么扫 `src/` 而不是 `dist/`
+ *
+ * `dist/` 是构建产物,`.gitignore` 掉了 —— 而本守卫在 `check:all` 里
+ * **排在 `typecheck` 之前**,新克隆的仓库里那时还没有 dist。
+ * 扫 dist 会让这条守卫在 CI 上退化成「扫了 0 个文件」,
+ * 而那与「全部合规」在输出上一模一样。src 永远在。
+ *
+ * ⚠️ **类型导入也算。** `import type { TenantMapConfig } from '@dshwar/tenant-map'`
+ * 在 dist 里被擦掉,但它出现在 `.d.ts` 里 —— 消费方做类型检查时要装它。
+ * 「运行时用不到」不等于「消费方不需要」。
+ *
+ * ## 判据
+ *
+ * 非 `private` 且有 `src/` 的包:逐行扫 `from '<包名>'` / `import '<包名>'`,
+ * 裸规格(不以 `.` 或 `node:` 开头)的包名必须在 `dependencies`
+ * 或 `peerDependencies` 里。整行注释跳过 —— 文档里的 import 示例
+ * 是**说明**不是依赖(`@dshwar/principal` 的 README 示例就是这么一处)。
+ *
+ * @returns {{file: string, line: number, text: string}[]}
+ */
+function checkPublishedDepsAreDeclared() {
+  /** @type {{file: string, line: number, text: string}[]} */
+  const out = []
+  /** 裸规格 → 包名(`@scope/name/sub` → `@scope/name`)。 */
+  const packageOf = (/** @type {string} */ spec) =>
+    spec.startsWith('@') ? spec.split('/').slice(0, 2).join('/') : (spec.split('/')[0] ?? spec)
+
+  let scannedPackages = 0
+  for (const manifest of collectFiles(REPO, isPackageJson)) {
+    const dir = dirname(manifest)
+    /** @type {{name?: string, private?: boolean, dependencies?: Record<string,string>, peerDependencies?: Record<string,string>}} */
+    let pkg
+    try {
+      pkg = JSON.parse(readFileSync(manifest, 'utf8'))
+    } catch {
+      continue
+    }
+    if (pkg.private === true || pkg.name === undefined) continue
+    const srcDir = join(dir, 'src')
+    if (!existsSync(srcDir)) continue
+    const files = collectFiles(srcDir, isTs)
+    if (files.length === 0) continue
+    scannedPackages += 1
+
+    const declared = new Set([
+      ...Object.keys(pkg.dependencies ?? {}),
+      ...Object.keys(pkg.peerDependencies ?? {}),
+    ])
+    for (const hit of grepFiles(
+      files,
+      /from ['"]([^'".][^'"]*)['"]|import ['"]([^'".][^'"]*)['"]/g,
+      REPO,
+    )) {
+      for (const m of hit.text.matchAll(
+        /from ['"]([^'".][^'"]*)['"]|import ['"]([^'".][^'"]*)['"]/g,
+      )) {
+        const spec = m[1] ?? m[2]
+        if (spec === undefined || spec.startsWith('.') || spec.startsWith('node:')) continue
+        const name = packageOf(spec)
+        if (declared.has(name)) continue
+        out.push({
+          file: hit.file,
+          line: hit.line,
+          text: `${hit.file}:${String(hit.line)}  ${pkg.name ?? '?'} import 了 ${name},而它不在 dependencies 里`,
+        })
+      }
+    }
+  }
+
+  // ★ 出口计数:一个将发布的包都没扫到 = 空集扫描,而它显示为「通过」。
+  if (scannedPackages === 0) {
+    out.push({
+      file: 'package.json',
+      line: 0,
+      text: '一个「将发布且有 src/」的包都没找到 —— 本条退化成空集扫描,永远绿',
+    })
   }
   return out
 }
@@ -2144,6 +2247,20 @@ if (colorFallback.length === 0) {
   console.log('        类型上仍分开,行为上又合并,而且没有任何东西会变红。')
   console.log('        判空收敛在派生入口一处(derive(seed: string | null)),不在调用点判。')
   for (const h of colorFallback) console.log(`        ${h.text}`)
+}
+
+const undeclaredDeps = checkPublishedDepsAreDeclared()
+if (undeclaredDeps.length === 0) {
+  console.log('  通过  将发布的包,import 的东西都在 dependencies 里(出厂装得上)')
+} else {
+  failed += 1
+  console.log(`  违规  运行时依赖躺在 devDependencies 里  (${undeclaredDeps.length} 处)`)
+  console.log('        pnpm 的 workspace 把 devDependencies 也铺进 node_modules ——')
+  console.log('        于是仓库里一切正常:测试绿、build 绿、直接跑 dist 也能起来。')
+  console.log('        而消费方只装 dependencies,产物第一行 import 就炸。')
+  console.log('        V0.9.0 Session 6 第一次 pnpm deploy --prod 网关时实测撞上:')
+  console.log('        17 个运行时依赖全在 devDependencies 里,而那个包有 bin。')
+  for (const h of undeclaredDeps) console.log(`        ${h.text}`)
 }
 
 const currencyTable = checkNoCurrencyExponentTable()
