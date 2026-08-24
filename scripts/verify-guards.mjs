@@ -857,6 +857,296 @@ try {
   }
 
   // ---------------------------------------------------------------------
+  // 39. 「守卫不能惩罚记录」的**逐条**实证(V0.9.0 Session 3 收尾项)
+  //
+  //     ## 它补的是什么
+  //
+  //     Session 2 对全部 28 条文本形状守卫做了一次追溯扫描,**15 条判为 at-risk**,
+  //     而那次只有 1 条完成了实证 —— 44 个 agent 里 27 个撞会话额度身亡,
+  //     返回的 `confirmed: 0` 是假的。
+  //
+  //     Session 2 随后把「跳过整行注释」做进了共用的 `grepFiles`,
+  //     另外两条(vitest 集中化 / 守卫脚本只读)各自带着同款判断。
+  //     **按推理,15 条现在都被覆盖了。** 这一节把推理换成实证。
+  //
+  //     ## 判据:一张表钉死「每条守卫 × 讲它的注释 × 真违规」
+  //
+  //     每一行给三样:守卫的输出标记、一段**描述被禁形状的注释**、
+  //     以及**同一个形状的真代码**。然后两向都验:
+  //
+  //       a 注释形态 → 全部放行(守卫不能惩罚记录)
+  //       b 代码形态 → 全部变红(跳过注释没把真判据一起放掉)
+  //
+  //     ⚠️ **b 是必需的。** 少了它,一个「什么都不报」的实现也能通过 a ——
+  //     而那正是这一整套守卫失效时的样子。
+  //
+  //     ## ⚠️ 完备性:表里的条目数必须对得上 at-risk 的条数
+  //
+  //     不钉死的话,这张表会随时间退化成「写到哪算哪」,
+  //     而退化的过程完全不可见:守卫从 15 条长到 20 条,表一条没跟着长,
+  //     门禁始终显示为绿。
+  // ---------------------------------------------------------------------
+  {
+    /**
+     * 输出里所有的**违规标题行**。
+     *
+     * ⚠️ 这是这条验证上第三次改判据,前两次都错在同一件事上:
+     *
+     *   1. `marker.test(整份输出)` —— 匹配到守卫**自己的通过行**
+     *      (`通过  密码体系`),7 条守卫被误判成「惩罚了记录」;
+     *   2. 过滤「含夹具目录名」的行 —— 违规的**标题行不含文件名**
+     *      (文件名在下一行的明细里),于是 6 条真违规被误判成漏报。
+     *
+     * ⇒ 真正的结论是「**这条守卫报了违规没有**」,而那只写在标题行上。
+     *   CLAUDE.md:判据要打在真正的结论上,不是打在输出的某个片段上。
+     *
+     * ⚠️ 基线干净是前提 —— verify-guards 开头已经断言过了,
+     *   否则别处的违规会混进来。
+     *
+     * @param {string} output
+     */
+    const VIOLATION = String.fromCharCode(36829, 35268) // 「违规」
+    const PASSED = String.fromCharCode(36890, 36807) // 「通过」
+
+    /**
+     * 输出里所有的违规**块** —— 标题行 + 其后的缩进明细行。
+     *
+     * ⚠️ 必须按块,不能按行。守卫名与子规则标记落在**不同的行**上:
+     *
+     * | 落在哪 | 例 |
+     * | --- | --- |
+     * | 标题行 | `违规  ANONYMOUS 越界  (1 处)` |
+     * | 明细行 | `        [约束1 路由] history.pushState(…)` |
+     *
+     * 按行匹配会漏掉后者 —— 三条前端约束共用一个标题(「前端三条约束」),
+     * 区分它们的标记只在明细里。
+     *
+     * ⚠️ **这是本条判据的第三次修正**,前两次都错在同一件事上:
+     *   1. 匹配整份输出 → 命中守卫**自己的通过行**,7 条被误判成「惩罚了记录」;
+     *   2. 只看含夹具目录名的行 → 标题行不含文件名,6 条真违规被误判成漏报。
+     *
+     * ⇒ CLAUDE.md:**判据要打在真正的结论上**,而结论是「这条守卫报没报违规」。
+     */
+    const violationLines = (/** @type {string} */ output) => {
+      /** @type {string[]} */
+      const blocks = []
+      /** @type {string | null} */
+      let cur = null
+      for (const line of output.split(String.fromCharCode(10))) {
+        const t = line.trimStart()
+        if (t.startsWith(VIOLATION)) {
+          if (cur !== null) blocks.push(cur)
+          cur = line
+        } else if (cur !== null) {
+          if (t.startsWith(PASSED)) {
+            blocks.push(cur)
+            cur = null
+          } else {
+            cur += String.fromCharCode(10) + line
+          }
+        }
+      }
+      if (cur !== null) blocks.push(cur)
+      return blocks
+    }
+    const dropRec = () => {
+      rmSync(p('packages/__record_fixture__'), { recursive: true, force: true })
+      for (const ext of ['ts', 'tsx']) {
+        rmSync(p('gateway/src/__record_fixture__.' + ext), { force: true })
+      }
+    }
+
+    /**
+     * 一条守卫 × 一段讲它的注释 × 一段真违规。
+     *
+     * `marker` 是守卫在输出里点名这个夹具时会带的字样 ——
+     * 判据打在**守卫自己的标记**上,不是「夹具名出现在输出里」:
+     * 夹具包会撞上别的无关守卫(比如缺 tsconfig),按包名判会误判。
+     */
+    const RECORD_CASES = [
+      {
+        guard: '深链上游内部实现',
+        marker: /深链上游内部实现/,
+        comment: "// 反例:不许 import '@deepseek-ai/dsh-fs/lib/local.js' —— 硬规则 2",
+        code: "import { x } from '@deepseek-ai/dsh-fs/lib/local.js'",
+      },
+      {
+        guard: '密码体系',
+        marker: /密码体系/,
+        comment: '// 硬规则 4:凡出现 bcrypt / argon2 / passwordHash 字段即违规',
+        code: 'export const passwordHash = "x"',
+      },
+      {
+        guard: '凭据取值泄漏',
+        marker: /凭据取值泄漏/,
+        comment: '// 硬规则 5:Admin API 不得写 resolve(ref).value —— 凭据永不返回值',
+        code: 'export const v = resolve(ref).value',
+      },
+      {
+        guard: '散落的 env 读取',
+        marker: /env 读取/,
+        comment: '// 配置只经 profile 注入 —— 这里不许出现 process.env',
+        code: 'export const v = process.env["X"]',
+      },
+      {
+        guard: 'ANONYMOUS 越界',
+        marker: /ANONYMOUS/,
+        comment: '// 硬规则 6:除 principal 包外不得出现 ANONYMOUS,缺 principal 一律 fail closed',
+        code: 'export const p = ANONYMOUS',
+      },
+      {
+        guard: 'principal.current() 调用点',
+        marker: /principal\.current/,
+        comment: '// 新增 principal.current() 调用点必须登记进白名单',
+        code: 'export const p = ctx.principal.current()',
+      },
+      {
+        guard: '回执守卫',
+        marker: /回执在 catch 之外/,
+        comment: '// 反例:setDone(true) 写在 catch 之外,失败时照样报成功',
+        code: 'export function f(run, setDone) {\n  try {\n    run()\n  } catch {\n    return\n  }\n  setDone(true)\n}',
+      },
+      {
+        guard: 'hover 事件',
+        marker: /JS 承载 hover/,
+        comment: '// hover 态走 CSS :hover,不用 onMouseEnter / onMouseLeave 承载',
+        code: 'export const H = (p) => <div onMouseEnter={p.on} />',
+      },
+      {
+        guard: '内联样式赋值',
+        marker: /JS 承载 hover/,
+        comment: '// 焦点环走 :focus-visible,不要写 el.style.boxShadow = ...',
+        code: 'export const F = (e) => {\n  e.currentTarget.style.boxShadow = "x"\n}',
+      },
+      {
+        guard: '约束1 路由',
+        marker: /\[约束1 路由\]/,
+        comment: '// 约束 1:不用 history.pushState —— Tauri 里没有服务端回落',
+        code: 'export const go = () => history.pushState({}, "", "/x")',
+      },
+      {
+        guard: '约束2 浏览器专有 API',
+        marker: /\[约束2/,
+        comment: '// 约束 2:不用 localStorage —— Tauri 里语义不同',
+        code: 'export const v = localStorage.getItem("k")',
+      },
+      {
+        guard: '约束3 统一 SDK 层',
+        marker: /\[约束3/,
+        comment: '// 约束 3:组件不 fetch( —— 网络只走唯一出口 api.ts',
+        code: 'export const load = () => fetch("/v1/x")',
+      },
+      {
+        guard: 'primaryColor 兜底',
+        marker: /primaryColor/,
+        comment: "// 不许写 branding.primaryColor ?? '#2F6FEB' —— 未配置 ≠ 配置成某个值",
+        code: "export const c = branding.primaryColor ?? '#2F6FEB'",
+      },
+    ]
+
+    /** 写一个前端夹具包(声明 react 才进前端守卫的扫描范围)。 */
+    const recordFixture = (/** @type {string} */ body, /** @type {string} */ ext) => {
+      writeFixture(
+        'packages/__record_fixture__/package.json',
+        JSON.stringify(
+          {
+            name: '@dshwar/record-fixture',
+            version: '0.9.0',
+            private: true,
+            devDependencies: { react: '19.2.0' },
+          },
+          null,
+          2,
+        ) + '\n',
+      )
+      writeFixture(`packages/__record_fixture__/src/probe.${ext}`, body)
+      // ⚠️ **同一段内容也写进 `gateway/`。**
+      //
+      //   守卫的扫描范围各不相同,而这张表想一次覆盖全部:
+      //   「凭据取值泄漏」只扫 `gateway/`(硬规则 5 管的是 Admin API),
+      //   「散落的 env 读取」只扫 `packages/`,前端三条约束只扫前端包。
+      //
+      //   一个夹具只放一处的话,范围之外的守卫会显示为「漏报」——
+      //   **而那不是漏报,是夹具没摆到它看得见的地方**。
+      //   两处都摆,判据才问的是「守卫会不会拦」,而不是「我摆对了没有」。
+      writeFixture(`gateway/src/__record_fixture__.${ext}`, body)
+    }
+
+    // 39a —— 讲这些形状的**注释**,一条都不许被点名
+    {
+      dropRec()
+      // 全部注释放进**一个文件**:守卫是逐行扫的,合并不影响判定,
+      // 而一次运行比十三次快得多 —— 且任何一条被点名都会在同一份输出里现形。
+      const allComments = RECORD_CASES.map((c) => c.comment).join('\n')
+      recordFixture(`${allComments}\nexport const ok = 1\n`, 'tsx')
+      const r = runGuards()
+      // ⚠️ **判据打在「点名了夹具文件」的行上**,不是整份输出。
+      //   第一版写成 `c.marker.test(r.output)` —— 而守卫的**通过行**里就带着
+      //   它自己的名字(`通过  密码体系`),于是 7 条守卫被误判成「惩罚了记录」。
+      //   这与 Session 2 那次 `includes(f.guard)` 匹配到通过行是同一个坑:
+      //   **判据要打在真正的结论上,不是打在输出的某个片段上。**
+      const flaggedLines = violationLines(r.output)
+      const punished = RECORD_CASES.filter((c) => flaggedLines.some((l) => c.marker.test(l))).map(
+        (c) => c.guard,
+      )
+      expect(
+        `39a ★ ${RECORD_CASES.length} 条守卫都不惩罚「讲这个形状」的注释`,
+        punished.length === 0,
+        punished.length === 0
+          ? undefined
+          : `这些守卫把说明判成了违规:${punished.join(' / ')}\n` +
+              '⚠️ 人不会绕过这种误报,人会**照它说的改** —— 而唯一能改的就是把解释删掉。',
+      )
+      dropRec()
+    }
+
+    // 39b —— 反向:同一个形状的**真代码**,一条都不许漏
+    //         少了这条,一个「什么都不报」的实现也能通过 39a。
+    {
+      let missed = []
+      for (const c of RECORD_CASES) {
+        dropRec()
+        recordFixture(`${c.code}\n`, 'tsx')
+        const r = runGuards()
+        if (!violationLines(r.output).some((l) => c.marker.test(l))) missed.push(c.guard)
+      }
+      dropRec()
+      expect(
+        `39b ★ 同样 ${RECORD_CASES.length} 个形状写成真代码 → 全部变红`,
+        missed.length === 0,
+        missed.length === 0
+          ? undefined
+          : `这些守卫放过了真违规:${missed.join(' / ')}\n` +
+              '⚠️ 「跳过注释」把真判据也一起放掉了 —— 那比误报更贵。',
+      )
+    }
+
+    // 39c —— 完备性:表里的条数必须覆盖 Session 2 扫描判为 at-risk 的那 15 条
+    {
+      // ⚠️ 15 条 at-risk 里有 2 条是**同一个守卫的两个子规则**
+      //   (checkNoJsInteractionStyles 的 hover 与内联样式),
+      //   表里各占一行;另有 checkVitestSpawnIsCentralized 与
+      //   checkGuardScriptsDoNotWrite 两条 —— 它们扫的是 `scripts/` 下的
+      //   门禁脚本本身,**夹具包进不了那个范围**,所以不在表里,
+      //   改为在这里写明理由(判据要求:要么补对照,要么写明为什么不需要)。
+      const EXPLAINED_ELSEWHERE = [
+        'checkVitestSpawnIsCentralized —— 只扫 scripts/,夹具包进不去;' +
+          '而它自己的判据里已有 `/^\\s*(\\/\\/|\\*|\\/\\*)/` 跳过注释(check-guards.mjs 内可见)',
+        'checkGuardScriptsDoNotWrite —— 同上,只扫 scripts/,同款跳过注释',
+      ]
+      const covered = RECORD_CASES.length + EXPLAINED_ELSEWHERE.length
+      expect(
+        '39c 完备性:Session 2 扫出的 15 条 at-risk 全部有着落(补对照或写明理由)',
+        covered === 15,
+        covered === 15
+          ? undefined
+          : `覆盖 ${covered} 条,而 at-risk 是 15 条 —— 差额没有着落。\n` +
+              '⚠️ 不钉死的话这张表会退化成「写到哪算哪」,而退化的过程完全不可见。',
+      )
+    }
+  }
+
+  // ---------------------------------------------------------------------
   // 38. eslint 分域规则覆盖每个前端包:两向(V0.9.0 Session 2)
   //
   //     「范围写成手写清单」这一族在本版本内的第四次。前三次:

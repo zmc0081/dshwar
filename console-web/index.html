@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DSHWAR 运营后台</title>
+    <!--
+      ⚠️ Lucide UMD —— `Icon` 组件读的是 `window.lucide.icons`(见它的模块注释:
+      「宿主需在 head 里加载」)。**不加载它,全站每一个图标都渲染成空的 <svg>**:
+      不报错、不缺位,只是什么都没画出来 —— 与「这个按钮本来就没有图标」
+      在屏幕上无法分辨。
+
+      🚨 `workbench-web/index.html` 今天**没有**这一段,所以工作台的图标是全空的。
+         那是一处待修,不是「工作台不用图标」。
+
+      ⚠️ 走 CDN 只适用于**开发**。真实部署要自托管这个文件:
+      远端部署常有 CSP,而 Tauri 里根本没有外网前提可言。
+      版本号锁死在 0.544.0,与 `Icon` 的模块注释一致 —— 图标集升级会静默改字形。
+    -->
+    <script src="https://unpkg.com/lucide@0.544.0/dist/umd/lucide.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <!--
+      ⚠️ 运行期配置。**宿主注入,不编译进产物。**
+
+      这一段在真实部署里由服务端模板渲染、或由 Tauri 壳在加载前写入。
+      开发时用下面这份占位值,指向本地网关。
+
+      为什么不放 .env:.env 会在构建时被内联进 bundle,而那就等于
+      「一个二进制服务所有租户」这条不成立了 —— adminKey 与 baseUrl 都是
+      每个部署各不相同的东西。
+
+      🚨 **键名与工作台的 `__DSHWAR_CONFIG__` 不同,是刻意的。**
+         两个前端可能被同一个反代挂在同一个源下,而它们要的令牌是两种:
+         这里是 Admin API Key,那里是运行时 bearer。网关的 runtimeAuth 在看
+         bearer 之前先判 admin 头存不存在,存在就直接 401 —— 混用的症状是
+         一个不提「你拿错了钥匙」的 401。
+    -->
+    <script>
+      window.__DSHWAR_CONSOLE_CONFIG__ = {
+        // 开发期指向 dev server 自己 —— vite 把 /v1 代理到本地网关,于是浏览器看到的是同源。
+        baseUrl: 'http://localhost:4323',
+        // ⚠️ 必须与网关 `adminKeys[].key` 里的某一条**逐字一致**。
+        //    示例配置里是 `admin-acme-CHANGE-ME`(见 gateway/gateway.config.example.json)。
+        //    对不上时网关回 401,而那句话读起来像「钥匙被吊销了」。
+        adminKey: 'admin-acme-CHANGE-ME',
+
+        // ---- 以下全部可缺。缺 = 未配置 = 中性外观,那是受支持的完整形态 ----
+        productName: 'DSHWAR',
+        legalEntityName: null,
+        // 🚨 null = 未配置 = 无彩中性。这里**不要**填一个「好看一点」的默认色 ——
+        //    填了之后「未配置」与「配置成这个色」就再也分不开了。
+        primaryColor: null,
+        supportEmail: null,
+        privacyPolicyUrl: null,
+        termsOfServiceUrl: null,
+        logoPath: null,
+        logoDarkPath: null,
+
+        // ---- 操作者身份。Admin Key 认不出人,没有 whoami 端点 ----
+        // ⚠️ 开发时留 null,让「未知操作者」这条路径**默认就被走到**:
+        //    填一个假名字的话,这条回退路径永远没人看见,直到真实部署忘了注入。
+        operatorName: null,
+        operatorInitials: null,
+      }
+    </script>
+    <script type="module" src="./src/main.tsx"></script>
+  </body>
+</html>

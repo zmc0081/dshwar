@@ -375,7 +375,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 | 0       | 设计交付物可用性裁决 + console-web 现状核查          | ✅   |
 | 1       | 移植设计 kit → `packages/design-system` + 守卫扩范围 | ✅   |
 | 2       | Web 工作台(workbench kit)                            | ✅   |
-| 3       | 运营后台(console kit)                                | 🔄   |
+| 3       | 运营后台(console kit)                                | ✅   |
 | 4       | 认证:系统浏览器 + PKCE + loopback + 钥匙串           | ⬜   |
 | 5       | Tauri 壳:一份 React 三宿主 + 运行期主题 + updater    | ⬜   |
 | 6       | 打包(单独两周,不混功能)                              | ⬜   |

@@ -12,6 +12,12 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter", "@dshwar/workbench-web", "dev"],
       "port": 4322
+    },
+    {
+      "name": "console",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@dshwar/console-web", "dev"],
+      "port": 4323
     }
   ]
 }
