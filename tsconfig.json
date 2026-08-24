@@ -11,6 +11,7 @@
     { "path": "./packages/principal" },
     { "path": "./packages/auth" },
     { "path": "./packages/auth-static" },
+    { "path": "./packages/auth-pkce" },
     { "path": "./packages/design-system" },
     { "path": "./console-web" },
     { "path": "./workbench-web" },

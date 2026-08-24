@@ -18,6 +18,7 @@
     { "path": "./packages/auth-jwt/tsconfig.test.json" },
     { "path": "./packages/auth-oidc/tsconfig.test.json" },
     { "path": "./packages/auth-static/tsconfig.test.json" },
+    { "path": "./packages/auth-pkce/tsconfig.test.json" },
     { "path": "./packages/billing-local/tsconfig.test.json" },
     { "path": "./packages/billing-stripe/tsconfig.test.json" },
     { "path": "./packages/design-system/tsconfig.test.json" },

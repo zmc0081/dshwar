@@ -829,6 +829,87 @@ function frontendPackages() {
 }
 
 /**
+ * ★ **前端不得持有长效凭据。**
+ *
+ * ## 它守的是什么
+ *
+ * V0.9.0 Session 4 的验收:「前端代码里**搜不到长效凭据**」。
+ *
+ * 那句话不是一条 grep 规则,是**架构约束**:浏览器里没有钥匙串,
+ * 而 `localStorage` / `sessionStorage` / cookie 都对任何一段同源脚本可读 ——
+ * 一次 XSS 就能把 refresh token 整个带走,而它的价值恰恰在于**长期有效**。
+ *
+ * access token 是短效的,泄漏的窗口以分钟计;refresh token 泄漏等于
+ * **把账号交出去**,而且用户不会收到任何提示。两者的处置完全不同,
+ * 所以这条守卫只拦后者。
+ *
+ * ## 判据
+ *
+ * 前端包(依赖里有 `react` 的包)里,不得出现
+ * 「把 refresh token 交给浏览器存储」这个形状:
+ *
+ * ```
+ * localStorage.setItem(..., refreshToken)
+ * sessionStorage.setItem('refresh_token', ...)
+ * document.cookie = `refresh_token=...`
+ * ```
+ *
+ * ⚠️ **只看「浏览器存储 × refresh」的组合**,不单看任何一半:
+ *
+ * | 只看这一半 | 会误伤什么 |
+ * | --- | --- |
+ * | 见到 `refreshToken` 就红 | 传递一个短效 token 的正常代码;讲这条规则的注释 |
+ * | 见到 `localStorage` 就红 | 存 UI 偏好(折叠状态、上次选的租户)—— 那是合法用途 |
+ *
+ * ⚠️ 而 `localStorage` 本身已被**约束 2** 禁掉(它在 Tauri 里语义不同)。
+ * 本条与那条**不重复**:约束 2 管的是「跨宿主能不能用」,
+ * 这条管的是「就算能用,也不许放这个东西」。
+ * 两条的范围不同 —— 将来 Tauri 侧放开某种存储时,这一条仍然要拦。
+ *
+ * ## ⚠️ 守卫不能惩罚记录
+ *
+ * 走 `grepFiles`,它已经跳过整行注释 —— `host.ts` 里那段讲
+ * 「为什么 Web 宿主不存 refresh token」的 JSDoc 因此不会被点名。
+ * 负向验证 40b 就是这个形态。
+ *
+ * @returns {{file: string, line: number, text: string}[]}
+ */
+function checkNoLongLivedCredentialInFrontend() {
+  const pkgs = frontendPackages()
+  if (pkgs.length === 0) {
+    return [
+      {
+        file: 'package.json',
+        line: 0,
+        text: '全仓找不到任何前端包 —— 本条会退化成空集扫描,永远绿',
+      },
+    ]
+  }
+
+  /** 浏览器存储 × refresh 的组合。两半都要出现在同一行。 */
+  const PATTERN =
+    /(localStorage|sessionStorage|document\.cookie|indexedDB)[^\n]*\b(refresh[_-]?token|refreshToken)\b|\b(refresh[_-]?token|refreshToken)\b[^\n]*(localStorage|sessionStorage|document\.cookie|indexedDB)/gi
+
+  /** @type {{file: string, line: number, text: string}[]} */
+  const out = []
+  let scanned = 0
+  for (const pkg of pkgs) {
+    const files = collectFiles(pkg.dir, isTs)
+    scanned += files.length
+    out.push(...grepFiles(files, PATTERN, REPO))
+  }
+
+  if (scanned === 0) {
+    out.push({
+      file: 'package.json',
+      line: 0,
+      text: '前端包里一个 .ts/.tsx 都没有 —— 本条退化成空集扫描,永远绿',
+    })
+  }
+  return out
+}
+
+/**
  * ★ **成功回执必须在成功之后给。**
  *
  * ## 它守的是「假成功回执」—— 本仓最贵的那一族
@@ -1884,6 +1965,17 @@ if (unregistered.length === 0 && stale.length === 0) {
   console.log('        登记处见 scripts/check-guards.mjs 的 PRINCIPAL_CONSUMERS,')
   console.log('        背景见 docs/DECISIONS/principal-scope-binding.md')
   for (const h of [...unregistered, ...stale]) console.log(`        ${h.text}`)
+}
+
+const longLived = checkNoLongLivedCredentialInFrontend()
+if (longLived.length === 0) {
+  console.log('  通过  前端不持有长效凭据(refresh token 不进浏览器存储)')
+} else {
+  failed += 1
+  console.log(`  违规  前端把长效凭据交给了浏览器存储  (${longLived.length} 处)`)
+  console.log('        refresh token 泄漏等于把账号交出去,而用户不会收到任何提示')
+  console.log('        access token 是短效的,泄漏窗口以分钟计 —— 两者的处置完全不同')
+  for (const h of longLived.slice(0, 10)) console.log(`        ${h.file}:${h.line}  ${h.text}`)
 }
 
 const fakeReceipt = checkNoReceiptOutsideTry()

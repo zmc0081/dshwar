@@ -376,7 +376,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 | 1       | 移植设计 kit → `packages/design-system` + 守卫扩范围 | ✅   |
 | 2       | Web 工作台(workbench kit)                            | ✅   |
 | 3       | 运营后台(console kit)                                | ✅   |
-| 4       | 认证:系统浏览器 + PKCE + loopback + 钥匙串           | ⬜   |
+| 4       | 认证:系统浏览器 + PKCE + loopback + 钥匙串           | ✅   |
 | 5       | Tauri 壳:一份 React 三宿主 + 运行期主题 + updater    | ⬜   |
 | 5.5     | `costMinorUnits` 的两个洞(语义折叠 + 单位假设)       | ⬜   |
 | 6       | 打包(单独两周,不混功能)                              | ⬜   |
@@ -552,10 +552,32 @@ Session 1 交付的是手抄 DOM 的 `.html` 版,Session 2 装上 react-dom 后
 
 ### Session 4 · 认证
 
-**交付**:系统浏览器 + PKCE + loopback 回调;refresh token 存系统钥匙串,
-前端永不持有长效凭据。
+**交付**:`packages/auth-pkce/src/pkce.ts`(PKCE 纯计算,三宿主共用同一份 ——
+用 `crypto.subtle` 而非 `node:crypto`)、
+`packages/auth-pkce/src/host.ts`(四个宿主端口 + Web 宿主的 `SecretStore` **一律拒绝**)、
+`packages/auth-pkce/src/exits.ts`(loopback 静默失败的三条出口)、
+`packages/auth-pkce/test/pkce.test.ts`(安全性质断言:S256 不退化 / verifier 不进 URL /
+state 先比 / 回环 IP 字面量)、
+`packages/auth-pkce/test/host-exits.test.ts`(架构约束断言)、
+`scripts/check-guards.mjs`(新守卫:前端不得把 refresh token 交给浏览器存储)、
+`scripts/verify-guards.mjs`(负向验证 40a–40d,含三条反向对照)。
 
 **验收**:前端代码里**搜不到长效凭据**;三个宿主共用同一套认证实现。
+
+> ⚠️ **「搜不到长效凭据」不是一条 grep 规则,是架构约束。**
+> 浏览器里没有钥匙串,而 localStorage / cookie 对任何同源脚本可读 ——
+> 一次 XSS 就能带走 refresh token,而它的价值恰恰在于长期有效。
+> ⇒ 远端 Web 宿主的 `SecretStore` **一律抛 `RefreshTokenNotStorable`**;
+> 那不是故障,是这个宿主的正确行为(它只拿短效 access token)。
+>
+> ⚠️ **手工粘贴授权码(OOB)明确不实现**,理由见 `exits.ts` 顶部与
+> 设计侧的 `DesktopAuthScreen.tsx` —— 方向是 browser → app,
+> 而那正是 loopback 绑定要防的方向。这条不在实现时重新讨论。
+>
+> ⚠️ **钥匙串的实际写入落在 Session 5**(Tauri 侧,Rust 有系统钥匙串 API)。
+> 本 Session 交付的是**端口与约束**:接口定死了、Web 的拒绝路径定死了、
+> 守卫定死了 —— 而具体的钥匙串实现属于宿主。
+> 写清楚是因为「交付了认证」与「桌面端能记住登录」是两件事。
 
 ---
 

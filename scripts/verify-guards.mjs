@@ -857,6 +857,82 @@ try {
   }
 
   // ---------------------------------------------------------------------
+  // 40. 前端不持有长效凭据:四向(V0.9.0 Session 4)
+  //
+  //     判据是「浏览器存储 × refresh」的**组合**,不是任何一半。
+  //     两条反向对照各守一半误伤:
+  //       · 传递一个短效 token 的正常代码
+  //       · 存 UI 偏好的 localStorage(那是合法用途)
+  // ---------------------------------------------------------------------
+  {
+    const dropCred = () => rmSync(p('packages/__cred_fixture__'), { recursive: true, force: true })
+    const credFixture = (/** @type {string} */ body) => {
+      writeFixture(
+        'packages/__cred_fixture__/package.json',
+        JSON.stringify(
+          {
+            name: '@dshwar/cred-fixture',
+            version: '0.9.0',
+            private: true,
+            devDependencies: { react: '19.2.0' },
+          },
+          null,
+          2,
+        ) + '\n',
+      )
+      writeFixture('packages/__cred_fixture__/src/store.tsx', body)
+    }
+    const MARK = /长效凭据交给了浏览器存储/
+
+    const CRED_CASES = [
+      {
+        label: '40a 把 refresh token 写进 localStorage → 守卫变红',
+        blocked: true,
+        body: "export const save = (t: string) => localStorage.setItem('refresh_token', t)\n",
+        hint: 'refresh token 泄漏等于把账号交出去,而用户不会收到任何提示',
+      },
+      {
+        label: '40b ★ 正向对照:讲这条规则的注释 → 放行(守卫不能惩罚记录)',
+        blocked: false,
+        body:
+          '// ⚠️ 不许写 localStorage.setItem("refresh_token", t) —— 浏览器里没有钥匙串\n' +
+          'export const save = (): void => {}\n',
+        hint: '',
+      },
+      {
+        label: '40c ★ 正向对照:短效 token 的正常传递 → 放行(判据不是「见到 refreshToken 就红」)',
+        blocked: false,
+        body: 'export const use = (refreshToken: string): string => refreshToken.slice(0, 4)\n',
+        hint: '',
+      },
+      {
+        label: '40d ★ 正向对照:localStorage 存 UI 偏好 → 放行(判据不是「见到 localStorage 就红」)',
+        blocked: false,
+        body: "export const remember = (id: string) => localStorage.setItem('lastTenant', id)\n",
+        hint: '',
+      },
+    ]
+
+    for (const c of CRED_CASES) {
+      dropCred()
+      credFixture(c.body)
+      const r = runGuards()
+      const hit = MARK.test(r.output)
+      const passed = c.blocked ? hit : !hit
+      expect(
+        c.label,
+        passed,
+        passed
+          ? undefined
+          : c.blocked
+            ? `守卫放行了这种形态 —— ${c.hint}`
+            : '守卫冤枉了一个合法写法 —— 只看判据的一半会误伤',
+      )
+      dropCred()
+    }
+  }
+
+  // ---------------------------------------------------------------------
   // 39. 「守卫不能惩罚记录」的**逐条**实证(V0.9.0 Session 3 收尾项)
   //
   //     ## 它补的是什么
@@ -1626,6 +1702,7 @@ try {
         '成功回执不在 catch 之外(没有假的成功回执)', // 33g–33i
         '包根的 .ts 都在某份 tsconfig 的 include 里', // 36a / 36b
         'eslint 的分域规则覆盖了每一个前端包', // 38a / 38b
+        '前端不持有长效凭据(refresh token 不进浏览器存储)', // 40a–40d
         'Session 标 ✅ 的交付产物都真的存在(任务书自身的诚实性)', // 34a–34c
       ]
 

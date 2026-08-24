@@ -369,6 +369,8 @@ importers:
         specifier: ^6.2.9
         version: 6.2.9
 
+  packages/auth-pkce: {}
+
   packages/auth-static:
     dependencies:
       '@dshwar/auth':
