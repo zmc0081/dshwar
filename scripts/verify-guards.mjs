@@ -170,6 +170,76 @@ function expect(name, passed, detail) {
   if (detail) console.log(`        ${detail}`)
 }
 
+const VIOLATION = String.fromCharCode(36829, 35268) // 「违规」
+const PASSED = String.fromCharCode(36890, 36807) // 「通过」
+
+/**
+ * 输出里所有的违规**块** —— 标题行 + 其后的缩进明细行。
+ *
+ * ⚠️ 必须按块,不能按行。守卫名与子规则标记落在**不同的行**上:
+ *
+ * | 落在哪 | 例 |
+ * | --- | --- |
+ * | 标题行 | `违规  ANONYMOUS 越界  (1 处)` |
+ * | 明细行 | `        [约束1 路由] history.pushState(…)` |
+ *
+ * 按行匹配会漏掉后者 —— 三条前端约束共用一个标题(「前端三条约束」),
+ * 区分它们的标记只在明细里。
+ *
+ * @param {string} output
+ * @returns {string[]}
+ */
+function violationBlocks(output) {
+  /** @type {string[]} */
+  const blocks = []
+  /** @type {string | null} */
+  let cur = null
+  for (const line of output.split(String.fromCharCode(10))) {
+    const t = line.trimStart()
+    if (t.startsWith(VIOLATION)) {
+      if (cur !== null) blocks.push(cur)
+      cur = line
+    } else if (cur !== null) {
+      if (t.startsWith(PASSED)) {
+        blocks.push(cur)
+        cur = null
+      } else {
+        cur += String.fromCharCode(10) + line
+      }
+    }
+  }
+  if (cur !== null) blocks.push(cur)
+  return blocks
+}
+
+/**
+ * ★ **这条守卫报了违规没有** —— 正向对照唯一该用的判据。
+ *
+ * ## 为什么不能用 `r.ok`(整条门禁的退出码)
+ *
+ * `r.ok` 是**整条门禁**的结论,而正向对照问的是**这一条守卫**的结论。
+ * 两者在基线全绿时碰巧相同 —— 而那个「碰巧」正是问题:
+ *
+ * - 任何一条**无关**守卫此刻是红的(开发中间态、另一个夹具没清干净、
+ *   甚至夹具包自己没有 tsconfig 撞上了别的守卫),这条正向对照就失败;
+ * - 它报出来的话是「守卫把合法写法也拦了」——
+ *   **一个看起来完全像被测对象坏了的红**,而被测对象好好的。
+ *
+ * ⚠️ 这一族在本仓踩过四次,37b 的注释里记着第三次:
+ * 「判据打在**约束 1 自己的标记**上,不是 `r.ok`」。
+ * 那次只修了那一处,**没有回头扫全集** —— 而没回头扫,本身就是第四次。
+ *
+ * @param {string} output check-guards 的完整输出
+ * @param {RegExp} marker 这条守卫自己的标记(标题或明细里的字样)
+ * @param {RegExp} [fixture] 可选:再要求同一个违规块里点名了这个夹具
+ * @returns {boolean} 这条守卫是否报了(与夹具有关的)违规
+ */
+function flaggedBy(output, marker, fixture) {
+  return violationBlocks(output).some(
+    (block) => marker.test(block) && (fixture === undefined || fixture.test(block)),
+  )
+}
+
 /**
  * ★ **顺路批量,失败时逐条回落。**
  *
@@ -352,18 +422,25 @@ try {
       ].join('\n'),
     )
 
+    // 判据打在**这条规则自己的结论**上:ESLint 报的是 no-restricted-imports。
+    // 用 `lint.ok` 的话,夹具文件里任何一个无关的 lint 错误都会让这条失败,
+    // 而它报出来的是「adapters 豁免失效」—— 指向一个不存在的问题。
     const lint = runEslint(fixture)
+    const restricted = /no-restricted-imports/.test(lint.output)
     expect(
       '4a adapters/ 的深链被 ESLint 放行(豁免有效)',
-      lint.ok,
-      lint.ok ? undefined : `adapters 豁免失效,Session 7 将无法落地:\n${lint.output.slice(0, 300)}`,
+      !restricted,
+      restricted
+        ? `adapters 豁免失效,Session 7 将无法落地:\n${lint.output.slice(0, 300)}`
+        : undefined,
     )
 
     const guards = runGuards()
+    const flagged = flaggedBy(guards.output, /深链/, /__guard_fixture__/)
     expect(
       '4b adapters/ 的深链不触发 grep 守卫',
-      guards.ok,
-      guards.ok ? undefined : 'check-guards 误伤了 adapters/',
+      !flagged,
+      flagged ? 'check-guards 误伤了 adapters/' : undefined,
     )
 
     rmSync(p('adapters/__guard_fixture__'), { recursive: true, force: true })
@@ -852,13 +929,95 @@ try {
       {
         restore()
         const r = runDocsGuard()
+        // 判据打在**这条守卫自己的标题**上,不是整条门禁的退出码 —— 见 flaggedBy。
+        const flagged = flaggedBy(r.output, /Session 标 . 但产物缺失/)
         expect(
           '34c 正向对照:合规的任务书被放行(规则不是「见到 ✅ 就红」)',
-          r.ok,
-          r.ok ? undefined : `守卫把合规的任务书也拦了:\n${r.output.slice(0, 300)}`,
+          !flagged,
+          flagged ? `守卫把合规的任务书也拦了:\n${r.output.slice(0, 300)}` : undefined,
         )
       }
     })
+  }
+
+  // ---------------------------------------------------------------------
+  // 44. 正向对照必须点名自己那条守卫:三向(V0.9.0 Session 6 收尾)
+  //
+  //     正向对照问的是「**这一条守卫**放行了这个合法写法吗」,
+  //     而 `r.ok` 答的是「**整条门禁**绿不绿」。基线全绿时两者碰巧相同 ——
+  //     而任何一条**无关**守卫此刻红,这些正向对照就报
+  //     「守卫把合法写法也拦了」:一个看起来完全像被测对象坏了的红。
+  //
+  //     ⚠️ 这一族踩过四次。37b 的注释里记着第三次(「判据打在约束 1 自己的
+  //     标记上,不是 r.ok」),而那次**只修了那一处**。这条守卫落地时
+  //     当场又扫出 16 条 —— 比手工数出来的 12 条多 4 条,
+  //     多出来的正是我按 `r`/`listed` 几个变量名去 grep 时漏掉的
+  //     (`lint.ok` / `guards.ok` / `baseline.ok`)。
+  //     **完备性清单要从源头现取,不能手抄** —— 这条守卫就是那个源头。
+  //
+  //     三向:
+  //       a 判据写成整条退出码   → 红
+  //       b ★ 判据点名自己的守卫 → 放行
+  //       c ★ 标签里写「基线」   → 放行(那一条问的本来就是整条门禁)
+  // ---------------------------------------------------------------------
+  {
+    const HEADER = /正向对照拿整条门禁的退出码当判据/
+    const FIXTURE = /verify-__meta_fixture__/
+    const FIXTURE_PATH = 'scripts/verify-__meta_fixture__.mjs'
+    const dropMeta = () => rmSync(p(FIXTURE_PATH), { force: true })
+
+    const META_CASES = [
+      {
+        label: '44a 正向对照拿 r.ok 当判据 → 守卫变红',
+        blocked: true,
+        body: ['expect(', "  '99z 正向对照:合法写法被放行',", '  r.ok,', '  undefined,', ')', ''],
+        hint: '一条无关守卫的红会把它带成「守卫把合法写法也拦了」,而人会顺着去改一条正确的守卫',
+      },
+      {
+        label: '44b ★ 反向对照:判据点名自己那条守卫 → 放行',
+        blocked: false,
+        body: [
+          'expect(',
+          "  '99y 正向对照:合法写法被放行',",
+          '  !flaggedBy(r.output, /密码体系/),',
+          '  undefined,',
+          ')',
+          '',
+        ],
+        hint: '',
+      },
+      {
+        label: '44c ★ 反向对照:标签写明「基线」的那一条 → 放行',
+        blocked: false,
+        body: [
+          'expect(',
+          "  '99x 夹具已清理干净,守卫回到基线',",
+          '  guards.ok && version.ok,',
+          '  undefined,',
+          ')',
+          '',
+        ],
+        hint: '',
+      },
+    ]
+
+    for (const c of META_CASES) {
+      dropMeta()
+      writeFixture(FIXTURE_PATH, c.body.join('\n'))
+      const r = runGuards()
+      const hit = HEADER.test(r.output) && FIXTURE.test(r.output)
+      const passed = c.blocked ? hit : !hit
+      expect(
+        c.label,
+        passed,
+        passed
+          ? undefined
+          : c.blocked
+            ? `守卫放行了一条拿整条退出码当判据的正向对照 —— ${c.hint}`
+            : '守卫把一个合法判据判成了违规 —— 这类误报会让人学会给它加豁免',
+      )
+      dropMeta()
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -1236,50 +1395,14 @@ try {
      *
      * @param {string} output
      */
-    const VIOLATION = String.fromCharCode(36829, 35268) // 「违规」
-    const PASSED = String.fromCharCode(36890, 36807) // 「通过」
-
-    /**
-     * 输出里所有的违规**块** —— 标题行 + 其后的缩进明细行。
-     *
-     * ⚠️ 必须按块,不能按行。守卫名与子规则标记落在**不同的行**上:
-     *
-     * | 落在哪 | 例 |
-     * | --- | --- |
-     * | 标题行 | `违规  ANONYMOUS 越界  (1 处)` |
-     * | 明细行 | `        [约束1 路由] history.pushState(…)` |
-     *
-     * 按行匹配会漏掉后者 —— 三条前端约束共用一个标题(「前端三条约束」),
-     * 区分它们的标记只在明细里。
-     *
-     * ⚠️ **这是本条判据的第三次修正**,前两次都错在同一件事上:
-     *   1. 匹配整份输出 → 命中守卫**自己的通过行**,7 条被误判成「惩罚了记录」;
-     *   2. 只看含夹具目录名的行 → 标题行不含文件名,6 条真违规被误判成漏报。
-     *
-     * ⇒ CLAUDE.md:**判据要打在真正的结论上**,而结论是「这条守卫报没报违规」。
-     */
-    const violationLines = (/** @type {string} */ output) => {
-      /** @type {string[]} */
-      const blocks = []
-      /** @type {string | null} */
-      let cur = null
-      for (const line of output.split(String.fromCharCode(10))) {
-        const t = line.trimStart()
-        if (t.startsWith(VIOLATION)) {
-          if (cur !== null) blocks.push(cur)
-          cur = line
-        } else if (cur !== null) {
-          if (t.startsWith(PASSED)) {
-            blocks.push(cur)
-            cur = null
-          } else {
-            cur += String.fromCharCode(10) + line
-          }
-        }
-      }
-      if (cur !== null) blocks.push(cur)
-      return blocks
-    }
+    // ⚠️ **这是本条判据的第三次修正**,前两次都错在同一件事上:
+    //   1. 匹配整份输出 → 命中守卫**自己的通过行**,7 条被误判成「惩罚了记录」;
+    //   2. 只看含夹具目录名的行 → 标题行不含文件名,6 条真违规被误判成漏报。
+    //
+    // ⇒ 按**块**匹配。实现已提到模块级的 `violationBlocks()`(V0.9.0 Session 6
+    //   收尾时提上去的:另外 12 条正向对照当时还在用 `r.ok`,而它们要的
+    //   正是同一个判据)。
+    const violationLines = violationBlocks
     const dropRec = () => {
       rmSync(p('packages/__record_fixture__'), { recursive: true, force: true })
       for (const ext of ['ts', 'tsx']) {
@@ -1961,6 +2084,7 @@ try {
         'Session 标 ✅ 的交付产物都真的存在(任务书自身的诚实性)', // 34a–34c
         '没有人自带「币种 → 指数」对照表(指数随金额从契约来)', // 42a–42c
         '将发布的包,import 的东西都在 dependencies 里(出厂装得上)', // 43a–43c
+        '正向对照都点名了自己那条守卫(判据不是整条门禁的退出码)', // 44a–44c
       ]
 
       const accounted = new Set([...HARD_RULE_FIXTURES.map((f) => f.guard), ...VERIFIED_ELSEWHERE])
@@ -2224,16 +2348,19 @@ try {
       rmSync(p('packages/__oss_legal__'), { recursive: true, force: true })
       for (const [path, body] of c.files) writeFixture(path, body)
       const r = runOss()
+      // 判据:有没有**点名这个夹具**的违规块。用 `r.ok` 的话,
+      // 别处任何一条无关违规都会让这四条正向对照失败,
+      // 而它们报出来的是「拦住了一个合法形态」—— 指向一个不存在的问题。
+      const flagged = flaggedBy(r.output, /__oss_legal__/)
       expect(
         c.label,
-        r.ok,
-        r.ok
-          ? undefined
-          : `开源纯净度检查拦住了一个合法形态 —— ${c.why}\n${r.output
-              .split('\n')
-              .filter((l) => /违规/.test(l))
+        !flagged,
+        flagged
+          ? `开源纯净度检查拦住了一个合法形态 —— ${c.why}\n${violationBlocks(r.output)
+              .filter((b) => /__oss_legal__/.test(b))
               .slice(0, 3)
-              .join('\n')}`,
+              .join('\n')}`
+          : undefined,
       )
     }
     rmSync(p('packages/__oss_legal__'), { recursive: true, force: true })
@@ -3024,10 +3151,12 @@ try {
         '',
       ].join('\n'),
     )
+    // 判据打在**前端三条约束自己的标题**上,不是整条门禁的退出码。
+    const flagged = flaggedBy(r.output, /前端三条约束/)
     expect(
       '24e 正向对照:合规的前端写法被放行(规则不是「见到前端就红」)',
-      r.ok,
-      r.ok ? undefined : `守卫误伤了合规写法,前端将无法编写:\n${r.output.slice(0, 300)}`,
+      !flagged,
+      flagged ? `守卫误伤了合规写法,前端将无法编写:\n${r.output.slice(0, 300)}` : undefined,
     )
   }
 }
@@ -3074,10 +3203,11 @@ try {
   // 23c 基线里 verify-guards.mjs 本来就在造 __guard_fixture__ 目录、
   // 并用 writeFileSync 篡改真文件 —— 而基线是绿的,放行成立。
   const baseline = runGuards()
+  const flagged = flaggedBy(baseline.output, /守卫脚本越权写仓库/)
   expect(
     '23c verify-* 造一次性夹具与经受控通路篡改仍被放行(第 3 档)',
-    baseline.ok,
-    baseline.ok ? undefined : '守卫误伤了正当的夹具创建 —— 那会让本脚本自己无法通过',
+    !flagged,
+    flagged ? '守卫误伤了正当的夹具创建 —— 那会让本脚本自己无法通过' : undefined,
   )
 }
 
@@ -3110,10 +3240,11 @@ try {
   // 22b 基线本身就含三个 include: [] 的根解决方案文件,而上面一跑就绿 ——
   // 说明放行是成立的。这里显式记一条,免得将来有人把守卫改成「见空就红」。
   const baseline = runGuards()
+  const flagged = flaggedBy(baseline.output, /登记了却编译零个文件|被登记了却编译/)
   expect(
     '22b 根解决方案的 include: [] 被放行(它是转发器,不是漏检)',
-    baseline.ok,
-    baseline.ok ? undefined : '守卫误伤了根解决方案文件 —— 它们本来就该只有 references',
+    !flagged,
+    flagged ? '守卫误伤了根解决方案文件 —— 它们本来就该只有 references' : undefined,
   )
 }
 
@@ -3147,10 +3278,11 @@ try {
       pkg.scripts['check:all'] = `${pkg.scripts['check:all']} && pnpm check:probe`
       writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`, 'utf8')
       const r = runGuards()
+      const flagged = flaggedBy(r.output, /第二份|CI 与 check:all/)
       expect(
         '21a 往 check:all 加一条新检查 → 守卫仍绿(CI 天然跑得到,不需要同步)',
-        r.ok,
-        r.ok ? undefined : '守卫报红了 —— 说明它在要求 ci.yml 同步,那正是要消灭的东西',
+        !flagged,
+        flagged ? '守卫报红了 —— 说明它在要求 ci.yml 同步,那正是要消灭的东西' : undefined,
       )
       writeFileSync(pkgPath, pkgSrc, 'utf8')
     }
@@ -3236,10 +3368,11 @@ try {
         'utf8',
       )
       const r = runGuards()
+      const flagged = flaggedBy(r.output, /自己拉起 vitest/)
       expect(
         '25b 正向对照:经 lib/mutate.mjs 的调用被放行(规则不是「见到 vitest 就红」)',
-        r.ok,
-        r.ok ? undefined : '守卫把受控通路自己也拦了 —— 那样没人能跑变异验证',
+        !flagged,
+        flagged ? '守卫把受控通路自己也拦了 —— 那样没人能跑变异验证' : undefined,
       )
     }
   })
@@ -3293,10 +3426,11 @@ try {
     {
       writeFileSync(ciPath, ciSrc, 'utf8')
       const r = runGuards()
+      const flagged = flaggedBy(r.output, /job 恒绿或未登记/)
       expect(
         '26c 正向对照:合规的 job 被放行(规则不是「见到 job 就红」)',
-        r.ok,
-        r.ok ? undefined : '守卫把现有的合规 job 也拦了',
+        !flagged,
+        flagged ? '守卫把现有的合规 job 也拦了' : undefined,
       )
     }
   })
@@ -3379,15 +3513,18 @@ try {
     {
       writeFileSync(costPath, costSrc, 'utf8')
       const r = runCost([])
+      // 判据打在**这个工具自己的结论**上(它没有「违规」块,失败时印「超出阈值」),
+      // 不是退出码 —— 退出码会被任何一个无关的失败路径带偏。
+      const exceeded = /超出阈值/.test(r.output)
       expect(
         '27e 正向对照:真实阈值下不红(阈值不能定得让正常波动就超标)',
-        r.ok,
-        r.ok
-          ? undefined
-          : `本机实测已经超过内置阈值 —— 要么这台机器不适合当基线,要么阈值该重新量:\n${r.output
+        !exceeded,
+        exceeded
+          ? `本机实测已经超过内置阈值 —— 要么这台机器不适合当基线,要么阈值该重新量:\n${r.output
               .split('\n')
-              .filter((l) => /超过阈值/.test(l))
-              .join('\n')}`,
+              .filter((l) => /超出阈值/.test(l))
+              .join('\n')}`
+          : undefined,
       )
     }
 
@@ -3523,10 +3660,15 @@ try {
     {
       writeFileSync(tasksPath, tasksSrc, 'utf8')
       const r = runDocs()
+      // check:docs 只有三条校验,失败时同样印「违规  <名字>」——
+      // 于是判据是「有没有违规块」,而不是这个进程的退出码。
+      const flagged = flaggedBy(r.output, /./)
       expect(
         '28c 正向对照:合规的文件被放行(规则不是「见到文件就红」)',
-        r.ok,
-        r.ok ? undefined : 'check:docs 把合规的文件也拦了',
+        !flagged,
+        flagged
+          ? `check:docs 把合规的文件也拦了:\n${violationBlocks(r.output).join('\n')}`
+          : undefined,
       )
     }
   })
@@ -3587,10 +3729,11 @@ try {
   // 29c 正向对照 —— 三个真实 SDK 必须被放行
   {
     const r = runGuards()
+    const flagged = flaggedBy(r.output, /SDK 缺同步断言/)
     expect(
       '29c 正向对照:三个真实 SDK 被放行(规则不是「见到 sdk 目录就红」)',
-      r.ok,
-      r.ok ? undefined : '守卫把合规的 SDK 也拦了',
+      !flagged,
+      flagged ? '守卫把合规的 SDK 也拦了' : undefined,
     )
   }
 }
@@ -3665,10 +3808,11 @@ try {
       ].join('\n'),
     )
     const r = runGuards()
+    const flagged = flaggedBy(r.output, /primaryColor 被兜底/)
     expect(
       '30c 正向对照:原样传递 null 的写法被放行(规则不是「见到 primaryColor 就红」)',
-      r.ok,
-      r.ok ? undefined : '守卫把正确的写法也拦了 —— 那样没人能读这个字段',
+      !flagged,
+      flagged ? '守卫把正确的写法也拦了 —— 那样没人能读这个字段' : undefined,
     )
     rmSync(p('packages/__guard_fixture__'), { recursive: true, force: true })
   }

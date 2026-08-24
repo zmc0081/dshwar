@@ -1598,6 +1598,77 @@ function checkPrimaryColorHasNoFallback() {
 }
 
 /**
+ * ★ **正向对照的判据不得是整条门禁的退出码。**
+ *
+ * ## 它防的是「一个看起来完全像被测对象坏了的红」
+ *
+ * 正向对照问的是「**这一条守卫**放行了这个合法写法吗」,
+ * 而 `r.ok` 答的是「**整条门禁**绿不绿」。基线全绿时两者碰巧相同 ——
+ * 而那个「碰巧」正是问题:
+ *
+ * - 任何一条**无关**守卫此刻红(开发中间态、别的夹具没清干净、
+ *   夹具包自己没有 tsconfig 撞上了另一条守卫),这条正向对照就失败;
+ * - 它报出来的话是「守卫把合法写法也拦了」——
+ *   指向一个**根本不存在的问题**,而人会顺着它去改一条本来正确的守卫。
+ *
+ * ⚠️ **这一族在本仓踩过四次。** 37b 的注释里记着第三次:
+ * 「判据打在**约束 1 自己的标记**上,不是 `r.ok`」——
+ * 而那次只修了那一处,**没有回头扫全集**。
+ * V0.9.0 Session 6 收尾扫出另外 12 条同形的,这条守卫是那次收敛的棘轮。
+ *
+ * ## 判据
+ *
+ * `scripts/verify-*.mjs` 里,`expect()` 的第二个参数(判据)若整行是
+ * `x.ok` 或 `a.ok && b.ok` 这种**整条门禁的退出码**,即违规 ——
+ * 除非它的标签里写着「基线」。
+ *
+ * ⚠️ 「基线」那一条是**真的**该用整条退出码:收尾时确认夹具清干净了、
+ * 守卫回到全绿,问的本来就是整条门禁。判据要给它留门,
+ * 但要求它把理由写在标签里 —— 于是豁免是**自解释**的,不需要第二张清单。
+ *
+ * @returns {{file: string, line: number, text: string}[]}
+ */
+function checkPositiveControlsNameTheirGuard() {
+  /** @type {{file: string, line: number, text: string}[]} */
+  const out = []
+  /** 整行只有一个(或几个 && 起来的)`.ok` —— 那就是整条门禁的退出码。 */
+  const WHOLE_GATE = /^\s*[\w$]+(?:\.[\w$]+)*\.ok(?:\s*&&\s*[\w$]+(?:\.[\w$]+)*\.ok)*,\s*$/
+  const files = collectFiles(join(REPO, 'scripts'), (f) => /verify-[\w-]+\.mjs$/.test(f))
+
+  for (const file of files) {
+    const rel = repoPath(REPO, file)
+    const lines = readFileSync(file, 'utf8').split(/\r?\n/)
+    for (const [i, line] of lines.entries()) {
+      if (!WHOLE_GATE.test(line)) continue
+      // 往回找最近的非空行 —— `expect(` 的第一个参数是标签,判据紧跟其后。
+      let label = ''
+      for (let k = i - 1; k >= 0 && k > i - 6; k -= 1) {
+        const prev = (lines[k] ?? '').trim()
+        if (prev === '') continue
+        label = prev
+        break
+      }
+      if (/基线/.test(label)) continue
+      out.push({
+        file: rel,
+        line: i + 1,
+        text: `${rel}:${String(i + 1)}  判据是整条门禁的退出码 —— 标签:${label.slice(0, 60)}`,
+      })
+    }
+  }
+
+  // ★ 出口计数:一个 verify-*.mjs 都没扫到 = 空集扫描,而它显示为「通过」。
+  if (files.length === 0) {
+    out.push({
+      file: 'scripts',
+      line: 0,
+      text: 'scripts/ 下一个 verify-*.mjs 都没有 —— 本条退化成空集扫描,永远绿',
+    })
+  }
+  return out
+}
+
+/**
  * ★ **将发布的包,src 里 import 的每个包名都必须在 `dependencies` 里。**
  *
  * ## 它防的是「在 monorepo 里一切正常,装出来是坏的」(V0.9.0 Session 6)
@@ -2247,6 +2318,21 @@ if (colorFallback.length === 0) {
   console.log('        类型上仍分开,行为上又合并,而且没有任何东西会变红。')
   console.log('        判空收敛在派生入口一处(derive(seed: string | null)),不在调用点判。')
   for (const h of colorFallback) console.log(`        ${h.text}`)
+}
+
+const wholeGateCriteria = checkPositiveControlsNameTheirGuard()
+if (wholeGateCriteria.length === 0) {
+  console.log('  通过  正向对照都点名了自己那条守卫(判据不是整条门禁的退出码)')
+} else {
+  failed += 1
+  console.log(`  违规  正向对照拿整条门禁的退出码当判据  (${wholeGateCriteria.length} 处)`)
+  console.log('        任何一条**无关**守卫此刻红,这些正向对照就会失败,')
+  console.log('        而它们报出来的是「守卫把合法写法也拦了」——')
+  console.log('        一个看起来完全像被测对象坏了的红,指向一个不存在的问题。')
+  console.log('        ⇒ 判据改成「这条守卫自己的标记出现在某个违规块里没有」')
+  console.log('          (verify-guards 的 flaggedBy);真要用整条退出码的,')
+  console.log('          在标签里写明「基线」——那一条问的本来就是整条门禁。')
+  for (const h of wholeGateCriteria) console.log(`        ${h.text}`)
 }
 
 const undeclaredDeps = checkPublishedDepsAreDeclared()
