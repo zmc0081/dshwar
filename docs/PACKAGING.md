@@ -126,3 +126,47 @@ release 构建没有控制台。第一次装出来的包就是「窗口白着、
 不带 `--assert` 的拿数,不要猜),
 ② 把这四条的判据从「压 linux/win32 两个键」改成**压当前平台那一个键**。
 两件事必须一起做:只做 ① 的话,那四条仍然在压两个写死的键。
+
+---
+
+## 六、Linux 只出 `.deb`,不出 AppImage
+
+`src-tauri/tauri.conf.json` 的 `bundle.targets` 里**没有 `appimage`**。
+那个文件是纯 JSON,写不了注释,所以理由记在这里。
+
+### 起因:CI 上第一次真跑 Linux 打包就红在这一步
+
+`deb` 打完了,`appimage` 那一步失败:
+
+```
+Bundling DSHWAR_0.9.0_amd64.deb …                          ← 成功
+Bundling DSHWAR_0.9.0_amd64.AppImage …
+  Downloading …/AppRun-x86_64
+  Downloading …/linuxdeploy-x86_64.AppImage
+  Downloading …/linuxdeploy-plugin-gtk.sh
+  Downloading …/linuxdeploy-plugin-gstreamer.sh
+  Downloading …/linuxdeploy-plugin-appimage-x86_64.AppImage
+Error failed to bundle project: `failed to run linuxdeploy`
+```
+
+`linuxdeploy` 自己就是一个 AppImage,跑它要 **FUSE**;
+`ubuntu-24.04` runner 上没有 `libfuse2`。
+
+### 为什么是「去掉这个产物」,而不是「装上 libfuse2」
+
+|                | 装 libfuse2                                                                                                 | 去掉 appimage |
+| -------------- | ----------------------------------------------------------------------------------------------------------- | ------------- |
+| CI 上多一行    | `apt-get install libfuse2` —— 将来的人会问「这是干什么的」                                                  | 无            |
+| 打包时联网     | 每次打包**下载 5 个第三方二进制**(其中两个来自 `raw.githubusercontent.com` 的 `master` 分支,**没有版本锁**) | 无            |
+| 我们真的发它吗 | **不发**。分发路径是 `.deb`                                                                                 | ——            |
+
+第二行是真正的理由:一个我们不发布的产物,让每次 CI 打包都去
+拉五个不锁版本的外部二进制 —— 那是一条平白多出来的供应链面,
+换来的东西没有人会下载。
+
+### 什么时候该把它加回来
+
+要覆盖非 Debian 系发行版(Fedora / Arch / openSUSE)的那一天。
+到那时**先决定分发方式**再加产物:AppImage 与 `rpm` 是两条不同的路,
+而 Tauri 两个都支持。加回来时记得同步 `.github/workflows/ci.yml`
+的 `upload-artifact` 路径 —— 那里今天只列了 msi / exe / deb。

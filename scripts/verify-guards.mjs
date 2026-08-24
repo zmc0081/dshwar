@@ -4026,6 +4026,126 @@ try {
 }
 
 // ---------------------------------------------------------------------
+// 46 `test:shell` 在 CI 上的「跳过」不是无条件的 —— 它核对代跑方还在
+//
+// 背景:`ubuntu-latest` **自带 Cargo**(实测 1.97.1)。上一版 test-shell.mjs
+// 以为「CI 里没有 Rust」,于是门禁 job 里它走了「真跑」那一档,
+// `cargo test` 去编 Tauri 的 bin 目标,撞上门禁 job 没装的 WebKitGTK ——
+// Node 22 / Node 24 两条一模一样地红,而与被改的代码毫无关系。
+//
+// 修法是 CI 上跳过,把断言交给 desktop-shell job。而「交给别人跑」这句话
+// **会过期** —— 那个 job 被改名、被删、被注释掉,跳过就成了一条谎话,
+// 而谎话在输出上与「已委托」一模一样。所以跳过前要现取 ci.yml 核对。
+//
+// 三条,两个方向:
+//   46a 正向对照:CI 上放行,且**点名代跑方**(判据不是整条脚本的退出码)
+//   46b 负向:代跑方真的不调 cargo test 了 → 必须红
+//   46c 负向(镜像面):只有**注释**在讲 cargo test → 仍然必须红
+//
+// 46c 是「守卫不能惩罚记录」的反面:那条讲说明不该被判成违规,
+// 这条讲说明不该被算成**合规**。同一个根子 —— 判据要分得清「在做」与「在讲」。
+// ---------------------------------------------------------------------
+{
+  const CI_REL = '.github/workflows/ci.yml'
+  const ciPath = p(CI_REL)
+
+  /** 以 CI=true 跑 test:shell,拿退出码与输出。 */
+  const runShellOnCi = () => {
+    try {
+      const stdout = execFileSync(process.execPath, [p('scripts', 'test-shell.mjs')], {
+        cwd: REPO,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, CI: 'true' },
+      })
+      return { ok: true, output: stdout }
+    } catch (error) {
+      const e = /** @type {{stdout?: unknown, stderr?: unknown}} */ (error)
+      return { ok: false, output: `${e.stdout ?? ''}${e.stderr ?? ''}` }
+    }
+  }
+
+  const pristineCi = readFileSync(ciPath, 'utf8')
+
+  // 46a ★ 正向对照:CI 上应当放行 —— 而判据是**点名了代跑方**,
+  //     不是「退出码为 0」。后者会被任何一条无关的早退路径满足
+  //     (比如 Cargo.toml 不存在时的那条 `跳过`),于是这条对照
+  //     在桌面壳被整个删掉之后照样是绿的。
+  {
+    const r = runShellOnCi()
+    const named = /desktop-shell/.test(r.output)
+    expect(
+      '46a ★ 正向对照:CI 上跳过,且点名了代跑方 desktop-shell',
+      r.ok && named,
+      r.ok && named
+        ? undefined
+        : r.ok
+          ? '放行了,但没说谁在跑 —— 一条不点名代跑方的跳过,与恒绿等价'
+          : `CI 上不该红:\n${r.output.slice(-400)}`,
+    )
+  }
+
+  // 46b / 46c 变异 ci.yml。SIGKILL 那一半交给清单落盘 ——
+  // 一份被改坏的 ci.yml 留在工作区,下一次 CI 就真的没人跑 Rust 断言了。
+  const stashedCi = beginMutation(REPO, [CI_REL])
+  try {
+    // 46b:代跑方不再调 cargo test(改成 cargo build,YAML 仍然合法)
+    {
+      const mutated = pristineCi
+        .split(/\r?\n/)
+        .map((line) =>
+          line.trim().startsWith('#')
+            ? line
+            : line.replace(/cargo(\s+)test(\s+--manifest-path)/, 'cargo$1build$2'),
+        )
+        .join('\n')
+
+      // ★ 先证明变异真的改到了东西 —— 锚点失配必须响亮。
+      //   少了这一条,一个 no-op 的变异会被记成「test:shell 漏报」,
+      //   而那是本脚本自己的 bug,修法完全相反。
+      if (mutated === pristineCi) {
+        expect(
+          '46b 代跑方不再跑 cargo test → 必须红',
+          false,
+          '变异没改动 ci.yml —— 锚点失配,本条结论作废(不是 test:shell 漏报)',
+        )
+      } else {
+        writeFileSync(ciPath, mutated, 'utf8')
+        const r = runShellOnCi()
+        expect(
+          '46b 代跑方不再跑 cargo test → 必须红',
+          !r.ok,
+          r.ok ? '仍然放行 —— CI 上没有任何人跑那些 Rust 断言,而输出说「已委托」' : undefined,
+        )
+      }
+    }
+
+    // 46c ★ 镜像面:只有注释在讲 cargo test —— 说明不算合规
+    {
+      const mutated =
+        pristineCi
+          .split(/\r?\n/)
+          .map((line) =>
+            line.trim().startsWith('#')
+              ? line
+              : line.replace(/cargo(\s+)test(\s+--manifest-path)/, 'cargo$1build$2'),
+          )
+          .join('\n') + '\n# 这里本来调 cargo test --manifest-path src-tauri/Cargo.toml\n'
+
+      writeFileSync(ciPath, mutated, 'utf8')
+      const r = runShellOnCi()
+      expect(
+        '46c ★ 只有注释在讲 cargo test → 仍然必须红(说明不算合规)',
+        !r.ok,
+        r.ok ? '注释满足了判据 —— 于是 job 被删光也照样放行,这条核对永远为真' : undefined,
+      )
+    }
+  } finally {
+    stashedCi.restore()
+  }
+}
+
+// ---------------------------------------------------------------------
 // 收尾:确认清理干净,守卫回到基线
 // ---------------------------------------------------------------------
 {

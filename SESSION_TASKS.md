@@ -745,7 +745,8 @@ state 匹配才算回调 / 收完等响应落地再兑现)、
 `scripts/make-icon.mjs`(**生成**的中性图标,不是美术稿 —— 安装包永远中性)、
 `scripts/pack-sidecar.mjs`(Node 运行时 + 生产依赖树 + 原生模块,target-triple 命名)、
 `scripts/pack-desktop.mjs`(三步编排,`pnpm pack:desktop`)、
-`.github/workflows/ci.yml`(新 job `desktop-shell`:Rust 工具链 + 15 条断言 + 真打一次包)、
+`.github/workflows/ci.yml`(新 job `desktop-shell`:Rust 工具链 + 23 条断言 + 真打一次包)、
+`scripts/ci-annotate.mjs`(失败日志 → annotation 的关键行提取,替掉 `tail | tr | cut`)、
 `scripts/check-guards.mjs`(新守卫:将发布的包,import 的东西都在 `dependencies` 里)、
 `docs/DECISIONS/workspace-hides-missing-deps.md`(形状:开发环境比消费方宽松)、
 `docs/PACKAGING.md`(三个只在打包时才显形的坑,逐个写明)。

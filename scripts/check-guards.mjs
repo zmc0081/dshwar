@@ -1510,7 +1510,7 @@ const CI_JOB_VERIFICATION = {
   'process-cost':
     'verify-guards 27a/27b —— 把阈值调到 0 必须红;删掉平台条目 + --require-threshold 必须红',
   'desktop-shell':
-    'cargo test 的 15 条断言(负向验证:去掉 Cargo.toml 的平台 keyring feature,' +
+    'cargo test 的断言(负向验证:去掉 Cargo.toml 的平台 keyring feature,' +
     'round_trip_through_the_real_keychain 立刻红)+ pack:desktop 三步任一失败即红 ——' +
     '其中「运行时依赖躺在 devDependencies 里」由 check-guards 早一步拦,' +
     '这个 job 是它的兜底实证(pnpm deploy --prod 装不上的包会变成 ERR_MODULE_NOT_FOUND)',

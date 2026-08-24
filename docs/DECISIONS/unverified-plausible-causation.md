@@ -187,3 +187,66 @@ CI 上 `CI=true`,pnpm 不会停下来问,会**直接把 devDependencies 删掉**
 
 **文档层还没有等价物,大概也不会有** —— 没法自动检验一句话有没有被验证过。
 所以这份文档就是那个位置上唯一的东西:**靠读到它的人多问一句**。
+
+---
+
+## 例 5:「CI 里没有 Rust,所以 `test:shell` 会走跳过那一档」
+
+**现象**(V0.9.0 Session 6 收尾,首次真跑 CI):门禁 `Node 22` 与 `Node 24`
+两条**一模一样地红**,而那一次改的是打包脚本与守卫,与 Rust 毫无关系。
+
+annotation 里是:
+
+```
+The system library `glib-2.0` required by crate `glib-sys` was not found.
+```
+
+**顺理成章的解释**(写在 `scripts/test-shell.mjs` 的头注释里,V0.9.0 Session 5 起):
+
+> CI 里没有 Rust —— **实测**,`.github/workflows` 里一个 `rust` / `cargo` /
+> `tauri` 字样都没有。所以 `test:shell` 在 CI 上会走「吵着跳过」那一档。
+
+括号里那句**是真的**,当时也确实 grep 过。它顺理成章到从来没人再问一句。
+
+**真相**:`ubuntu-latest` 镜像**自带 Cargo**(实测 1.97.1,见 runner-images 的
+`Ubuntu2404-Readme.md`)。于是门禁 job 里 `test:shell` 走的是**「真跑」**那一档,
+`cargo test` 去编 Tauri 的 bin 目标(`build.rs` 里的 `tauri_build::build()`),
+撞上门禁 job 没装的 WebKitGTK —— 而装它的是另一个 job。
+
+### 这一例的形状:**证据为真,推论为假,而两句话只差一个词**
+
+| 说的                      | 真假               |
+| ------------------------- | ------------------ |
+| 「workflow 里没写 cargo」 | ✅ 真,而且是实测的 |
+| 「CI 里没有 Rust」        | ❌ 假              |
+
+中间省掉的那一步是:**「workflow 没写」= 「机器上没有」**。
+它假得如此不显眼,是因为前半句带着「实测」两个字 ——
+而实测的是前半句,不是结论。
+
+> ⚠️ **「实测」这个词会把它后面的整句话一起镀上可信度。**
+> 下次看到「实测,……,所以……」,要分开看:测的是逗号前面那半句,
+> 而结论在逗号后面。
+
+### 该问的那句话
+
+> **「这台机器上到底有没有 cargo?——`cargo --version` 跑一下。」**
+
+代价是一行 `- run: cargo --version || echo none`,一次 CI 运行。
+而不问的代价是:这个错误前提在仓库里活了两个 Session,
+写进了一份守卫脚本的头注释、一份 `ci.yml` 的注释、一份 `README` ——
+三处互相印证,而它们全部来自同一个没验过的推论。
+
+### 顺带暴露的第二件事:annotation 那一层自己也在骗人
+
+这一次的根因**碰巧**落在了 annotation 的窗口里。做法是
+`tail -n 40 | tr '\n' ' | ' | cut -c1-1500`,三个洞:
+
+1. `tail` 取**末尾**,`cut -c1-N` 取**开头** —— 两个方向相反的截断串起来,
+   留下的是「倒数第 40 行往后数 1500 字符」,信息量最低的一块。
+   那条 annotation 停在 `must contain its parent direc`,结论正好被切掉。
+2. `tr` 的 SET2 会被截成一个字符 —— 想要的 `|` 分隔符**从来没出现过**。
+3. 末 40 行里 7 行是 `cargo:rerun-if-env-changed=` 刷屏。
+
+⇒ 换成 `scripts/ci-annotate.mjs`(**按内容挑,不按位置挑**;截断从头截),
+夹具就是这次的日志形状,负向验证钉的是截断方向。

@@ -76,7 +76,7 @@ jobs:
       # ★ 唯一的门禁入口。要加检查请改 package.json 的 check:all,不要改这里。
       #   契约冻结的基线选择(PR 比目标分支 / push 比上一提交)已经收进
       #   scripts/check-contract.mjs,不需要在这里算 --base。
-      # ⚠️ 失败时把最后几十行**喂进 annotation**。
+      # ⚠️ 失败时把**关键行**喂进 annotation(scripts/ci-annotate.mjs)。
       #
       #   理由不是调试方便:job 的完整日志**只有对仓库有 admin 权限的人下得到**
       #   (API 对其余人返回 403),而 annotation 是公开可读的。
@@ -84,12 +84,19 @@ jobs:
       #   都从「看不到」变成「看得到一段」。
       #
       #   这不是第二份门禁清单:跑的仍然只有 `check:all` 一条命令,
-      #   外面那层只做「把它的尾巴复述一遍」。
+      #   外面那层只做「把失败复述一遍」。
+      #
+      #   ⚠️ 这里曾经是一行 `tail -n 40 | tr | cut -c1-1500`,它的**第一次真实运行**
+      #   就同时露了三个静默的洞(`tail` 取末尾而 `cut -c1-N` 取开头,两个方向相反的
+      #   截断串起来把根因切掉了)。细节与负向验证见那个脚本的头注释。
+      #
+      #   日志落在 `$RUNNER_TEMP` 而不是 `/tmp`:后者在 Windows runner 的 bash 里
+      #   是个 MSYS 虚路径,Node 拿到会去找 `C:\tmp`。
       - name: pnpm check:all
         run: |
           set -o pipefail
-          pnpm check:all 2>&1 | tee /tmp/gate.log || {
-            echo "::error title=check:all 失败::$(tail -n 40 /tmp/gate.log | tr '\n' ' | ' | cut -c1-1500)"
+          pnpm check:all 2>&1 | tee "$RUNNER_TEMP/gate.log" || {
+            node scripts/ci-annotate.mjs "$RUNNER_TEMP/gate.log" "check:all 失败"
             exit 1
           }
 
@@ -207,9 +214,15 @@ jobs:
       #    check:all 里的一项,在 CI 里单列它就成了「第二份门禁清单」
       #    (check-guards 有一条守卫盯着这件事,它当场拦过一次)。
       #
-      #    两者的关系:`test:shell` 是**本机**入口 —— 它在没有 cargo 时吵着跳过。
-      #    这个 job 的前提是 cargo 一定在,而且还要先起一个 keyring 后端,
-      #    那是环境编排,不是门禁项。
+      #    两者的关系:`test:shell` 是**本机**入口,而它在 CI 上**跳过并把这一步
+      #    认作代跑方** —— 它读本文件,确认这里还在调 cargo test,读不到就红。
+      #    所以这一步的名字可以改,命令不能删。
+      #
+      # 🚨 为什么 test:shell 必须在 CI 上跳过:`ubuntu-latest` **自带 Cargo**
+      #    (实测 1.97.1)。上一版以为「CI 里没有 Rust」,于是门禁 job 里的
+      #    test:shell 走了「真跑」那一档,`cargo test` 去编 Tauri 的 bin 目标,
+      #    撞上门禁 job 没装的 WebKitGTK —— Node 22 / Node 24 两条一模一样地红。
+      #    「workflow 里没写 cargo」不等于「机器上没有 cargo」。
       - name: Rust 断言(Linux:先起一个 keyring 后端)
         if: runner.os == 'Linux'
         run: |
@@ -235,25 +248,28 @@ jobs:
       #   守卫(check-guards)是早一步的那道;这一步是它的兜底实证。
       - name: 打包
         shell: bash
-        run: pnpm pack:desktop 2>&1 | tee /tmp/pack.log
+        run: pnpm pack:desktop 2>&1 | tee "$RUNNER_TEMP/pack.log"
 
-      # 与门禁那一步同款:失败原因喂进 annotation。
+      # 与门禁那一步同款:失败的关键行喂进 annotation。
       # 打包这一步尤其需要 —— 它的失败几乎全是环境差异,而看日志要 admin 权限。
-      - name: 失败时把打包的尾巴喂进 annotation
+      - name: 失败时把打包的关键行喂进 annotation
         if: failure()
         shell: bash
-        run: echo "::error title=pack:desktop 失败::$(tail -n 40 /tmp/pack.log | tr '\n' ' | ' | cut -c1-1500)"
+        run: node scripts/ci-annotate.mjs "$RUNNER_TEMP/pack.log" "pack:desktop 失败"
 
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.os }}
           # ⚠️ 这些包**没有签名**:Windows 上装会有 SmartScreen 警告。
           #    签名要外部资源(SignPath Foundation 需先有 release),不在本 Session。
+          #
+          # ⚠️ 没有 `*.AppImage` —— Linux 只出 deb。理由见 docs/PACKAGING.md 第六节
+          #    (一句话:AppImage 不是分发路径,而它的打包步骤要联网下载并运行
+          #    一个需要 FUSE 的 linuxdeploy;tauri.conf.json 是纯 JSON,写不了注释)。
           path: |
             src-tauri/target/release/bundle/**/*.msi
             src-tauri/target/release/bundle/**/*.exe
             src-tauri/target/release/bundle/**/*.deb
-            src-tauri/target/release/bundle/**/*.AppImage
           if-no-files-found: error
 # ════════════════════════════════════════════════════════════════════════
 # ⚠️ 本文件里的每个 job 都必须做**实质检查**,且在守卫里登记。

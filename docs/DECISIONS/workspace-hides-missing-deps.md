@@ -78,7 +78,7 @@ pnpm 的 workspace 把 `devDependencies` 也铺进 `node_modules`。于是:
 | -------------------------------------------- | ----------------------- | ----------------------------------------------------------------- |
 | workspace 铺平 devDependencies               | 只装 dependencies       | ✅ 本次加的守卫                                                   |
 | 仓库里有 `dist/`(tsc -b 产出)                | 只有 `files` 白名单里的 | ✅ `check-oss-purity` 的 files 检查                               |
-| 本机装着 cargo / rustc                       | CI 上不一定             | ✅ `test:shell` 吵着跳过 + CI 的 desktop-shell job                |
+| 本机装着 cargo / rustc                       | **CI 上也有**(镜像自带) | ✅ CI 的 desktop-shell job(`test:shell` 在 CI 上跳过并核对它还在) |
 | 本机的 Node 版本                             | 安装包里钉死的那个      | ⚠️ **只靠 CI 的 `node-version: 22` 一处**,没有断言                |
 | 本机装着某个平台的原生模块                   | 装到的是另一个平台的    | ⚠️ `pack-sidecar.mjs` 只断言「有 `.node`」,不断言「是这个平台的」 |
 | **本机有 `.tsbuildinfo` 与上一次的 `dist/`** | 新克隆的仓库两样都没有  | ⚠️ **只有 CI 是冷的** —— 见下                                     |

@@ -89,17 +89,34 @@ scheme、host、port 全不同 —— 浏览器引擎按同源策略拦下,而�
 | Node 22 运行时与三个原生模块的打包       | 同上                           |
 | 图标、`bundle.active: true`              | 同上                           |
 | sidecar 进程编排(拉起 / 守护 / 端口协商) | 同上 —— 它依赖打包好的 sidecar |
-| CI 上跑 Rust 测试                        | **今天没有** —— 见下           |
+| CI 上跑 Rust 测试                        | ✅ desktop-shell job —— 见下   |
 
-### ⚠️ CI 里没有 Rust
+### CI 上谁跑这些断言:`desktop-shell` job
 
-`.github/workflows` 里一个 `rust` / `cargo` / `tauri` 字样都没有(实测)。
-于是这 15 条断言**只在开发机上跑过**。
+`.github/workflows/ci.yml` 的 **desktop-shell** job(ubuntu + windows 矩阵)
+装 WebKitGTK、起 keyring 后端、真跑 `cargo test`,然后真打一次包。
 
-`pnpm test:shell` 在没有 cargo 时**吵着跳过** —— 它会印出跳过了什么、
-谁在别处跑过、以及怎么补。安静跳过等于给自己发一个永久有效的绿勾。
+`pnpm test:shell` 是**本机**入口,三条路径各自说清「谁在别处跑」:
 
-补法是给 CI 加 Rust 工具链,**不是删掉断言**。
+| 环境           | 做什么                     | 谁跑那些断言                 |
+| -------------- | -------------------------- | ---------------------------- |
+| 本机有 cargo   | **真跑**,失败就是失败      | 自己                         |
+| 本机没有 cargo | 跳过,并印出一段刺眼的说明  | 只有 CI 的 desktop-shell job |
+| **CI 上**      | 跳过 —— 但先**核对**有人跑 | desktop-shell job            |
+
+⚠️ 第三行不是无条件跳过:它从 `ci.yml` 里现取,确认那个 job 还在调
+`cargo test --manifest-path`,**读不到就红**。因为「交给别人跑」这句话会过期,
+而过期之后它与「已委托」在输出上一模一样。
+负向验证在 `scripts/verify-guards.mjs` 的 46a/46b/46c —— 其中 46c 钉的是
+**注释里提到不算数**:说明不该被算成合规。
+
+> 🚨 **上一版这里写着「CI 里没有 Rust(实测)」,那是错的。**
+> `ubuntu-latest` 镜像自带 Cargo(实测 1.97.1)。实测过的是
+> 「workflow 里没写 cargo」,而结论说的是「机器上没有 cargo」——
+> 两句话只差一个词。后果是门禁 job 里 `test:shell` 走了「真跑」那一档,
+> 撞上它没装的 WebKitGTK,`Node 22` / `Node 24` 一模一样地红。
+> 完整复盘见 `docs/DECISIONS/unverified-plausible-causation.md` 例 5。
+
 ⚠️ 无头环境里没有 Secret Service,round-trip 那条会红;
-正解是起一个 keyring 后端,不是加 `#[ignore]` 把它藏起来 ——
-藏起来之后就再也没人验过了。
+正解是起一个 keyring 后端(job 里用 `dbus-run-session` + `gnome-keyring-daemon`),
+不是加 `#[ignore]` 把它藏起来 —— 藏起来之后就再也没人验过了。
