@@ -19,6 +19,10 @@
   "references": [
     { "path": "../packages/console-contract" },
     { "path": "../packages/design-system" },
+    // V0.9.0 Session 5.5 起直接 import 它的 readCost —— 钱的判断规则只有一份。
+    // ⚠️ 少了这条 reference,**增量构建照样绿**(dist/*.d.ts 已经在那儿),
+    //    而**冷构建红**:tsc -b 不知道要先建 metering。CI 上就是这么红的。
+    { "path": "../packages/metering" },
     { "path": "../sdk/typescript" }
   ]
 }

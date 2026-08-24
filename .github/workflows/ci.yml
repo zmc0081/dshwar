@@ -167,7 +167,24 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # ★ 15 条 Rust 断言,其中一条**真的读写系统钥匙串**。
+      # 🚨 **打包的前两步必须排在 `cargo test` 之前** —— 这不是优化,是硬依赖。
+      #
+      # `cargo test` 会编 bin 目标,而 bin 的 `build.rs` 跑 `tauri_build::build()`,
+      # 它**校验配置里承诺的东西真的在**:`frontendDist` 指的目录、
+      # `externalBin` 指的 `binaries/dshwar-gateway-<triple>`。少一个就编译失败:
+      #
+      #     resource path `binaries/dshwar-gateway-x86_64-…` doesn't exist
+      #
+      # ⚠️ 这条在开发机上**永远不出现** —— 那里两样都是上一次打包留下的。
+      # 本 job 第一次真跑就在这里红,而且**两个平台一模一样地红**。
+      # (先想到的解释是「keychain 在无头环境里不可用」—— 顺理成章,但错了:
+      #  测试根本没跑到,编译就停了。两个平台同样地红本该是第一个线索。)
+      - name: 打包前置(前端产物 + sidecar)
+        run: |
+          pnpm --filter @dshwar/workbench-web build
+          node scripts/pack-sidecar.mjs
+
+      # ★ 23 条 Rust 断言,其中一条**真的读写系统钥匙串**。
       #
       # ⚠️ 无头 Linux 上没有 Secret Service,那一条会红。正解是**起一个后端**,
       #    不是给它加 `#[ignore]` —— 藏起来之后就再也没人验过了

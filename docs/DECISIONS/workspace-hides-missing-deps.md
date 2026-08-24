@@ -74,12 +74,38 @@ pnpm 的 workspace 把 `devDependencies` 也铺进 `node_modules`。于是:
 
 写在这里,免得下一次又是打包时才发现:
 
-| 更宽松的地方                   | 消费方那里              | 今天有没有人盯着                                                  |
-| ------------------------------ | ----------------------- | ----------------------------------------------------------------- |
-| workspace 铺平 devDependencies | 只装 dependencies       | ✅ 本次加的守卫                                                   |
-| 仓库里有 `dist/`(tsc -b 产出)  | 只有 `files` 白名单里的 | ✅ `check-oss-purity` 的 files 检查                               |
-| 本机装着 cargo / rustc         | CI 上不一定             | ✅ `test:shell` 吵着跳过 + CI 的 desktop-shell job                |
-| 本机的 Node 版本               | 安装包里钉死的那个      | ⚠️ **只靠 CI 的 `node-version: 22` 一处**,没有断言                |
-| 本机装着某个平台的原生模块     | 装到的是另一个平台的    | ⚠️ `pack-sidecar.mjs` 只断言「有 `.node`」,不断言「是这个平台的」 |
+| 更宽松的地方                                 | 消费方那里              | 今天有没有人盯着                                                  |
+| -------------------------------------------- | ----------------------- | ----------------------------------------------------------------- |
+| workspace 铺平 devDependencies               | 只装 dependencies       | ✅ 本次加的守卫                                                   |
+| 仓库里有 `dist/`(tsc -b 产出)                | 只有 `files` 白名单里的 | ✅ `check-oss-purity` 的 files 检查                               |
+| 本机装着 cargo / rustc                       | CI 上不一定             | ✅ `test:shell` 吵着跳过 + CI 的 desktop-shell job                |
+| 本机的 Node 版本                             | 安装包里钉死的那个      | ⚠️ **只靠 CI 的 `node-version: 22` 一处**,没有断言                |
+| 本机装着某个平台的原生模块                   | 装到的是另一个平台的    | ⚠️ `pack-sidecar.mjs` 只断言「有 `.node`」,不断言「是这个平台的」 |
+| **本机有 `.tsbuildinfo` 与上一次的 `dist/`** | 新克隆的仓库两样都没有  | ⚠️ **只有 CI 是冷的** —— 见下                                     |
 
-后两行是已知的空缺,写明了,没有假装它们被盖住。
+前两条 ⚠️ 是已知的空缺,写明了,没有假装它们被盖住。
+
+---
+
+## ⚠️ 增量状态是这一族里最会骗人的那一个
+
+V0.9.0 Session 6 推第一次 CI 时,**三个 job 同时红**,而本机 `pnpm check:all`
+刚刚全绿。原因是 `console-web` 在 Session 5.5 加了 `@dshwar/metering` 依赖,
+却**没加对应的 tsconfig project reference**:
+
+| 环境       | 结果                                                                  |
+| ---------- | --------------------------------------------------------------------- |
+| 本机(增量) | ✅ 绿 —— `packages/metering/dist/*.d.ts` 上一次就建好了               |
+| CI(冷)     | 🚨 `Cannot find module '@dshwar/metering'` —— `tsc -b` 不知道要先建它 |
+
+同一天里这个形状还咬过第二次:`pnpm typecheck:test` 报清白,而
+`tsc -b <同一个项目> --force` 当场报两个类型错 —— 增量图**慢了一拍**。
+
+⇒ 判据:**「本机绿」在有构建缓存时不是一个结论**。
+真要在本地确认,得 `pnpm clean && pnpm build`(或 `tsc -b --force`)。
+
+⚠️ **不要为此加一条「import 了 workspace 包就必须有 project reference」的守卫。**
+实测:那条规则今天会报 **11 个项目**(gateway 一个产品项目 + 10 个 test/scripts 项目),
+而它们**冷构建全都是绿的** —— references 的传递闭包已经把顺序排对了。
+一条会报 11 处误报的规则,人学会的是绕过它,不是遵守它
+(CLAUDE.md:误报比漏报更贵)。真正的检查是**冷构建本身**,而 CI 天生是冷的。
