@@ -76,6 +76,28 @@ interface SchemaNode {
   readonly $ref?: string
 }
 
+/**
+ * 一个 schema 会不会出一个具名模型 —— **本模块唯一的判据**。
+ *
+ * ⚠️ 必须只有这一处。上一版 {@link extractModels} 与 {@link objectSchemaNames}
+ * 各写了一份**内容相同**的谓词,而后者的注释说它们「分开实现是刻意的」,
+ * 理由是「共用同一段过滤逻辑会让两边一起漏掉」。
+ *
+ * 🚨 **分开写同一条规则不叫独立** —— 它只是把同一个判据抄了两遍,
+ * 而两遍会一起对、一起错。JobStatus 就是这么同时逃出「应出模型」与
+ * 「已出模型」两个集合的:覆盖断言拿两个都排除了它的集合互相印证,全绿。
+ *
+ * ⇒ 现在共用一处,而**真正的独立断言换成了另一件事**:
+ * IR 里的每个引用都必须指向一个真的出了模型的名字(见 extractModels 末尾)。
+ * 那一条问的是「引用 ⊆ 声明」,与「object ⊆ 模型」不是同一个问题 ——
+ * 前者才是当时坏掉的那个。
+ */
+function isModelSchema(
+  s: SchemaNode | undefined,
+): s is SchemaNode & { readonly properties: Record<string, SchemaNode> } {
+  return s !== undefined && s.type === 'object' && s.properties !== undefined
+}
+
 /** `#/components/schemas/Foo` → `Foo`。 */
 function refName(ref: string): string {
   const name = ref.split('/').pop()
@@ -89,9 +111,39 @@ function refName(ref: string): string {
  * ⚠️ **认不出就抛**(见 {@link UnsupportedSchemaError})。回落到「字符串」
  * 之类的默认值是本模块最不该做的事:它把一个契约问题变成三个运行时问题。
  */
-function readType(node: SchemaNode, where: string): { type: IrType; nullable: boolean } {
-  if (node.$ref !== undefined)
-    return { type: { kind: 'ref', name: refName(node.$ref) }, nullable: false }
+function readType(
+  node: SchemaNode,
+  where: string,
+  schemas: Record<string, SchemaNode>,
+  seen: readonly string[] = [],
+): { type: IrType; nullable: boolean } {
+  if (node.$ref !== undefined) {
+    const name = refName(node.$ref)
+    const target = schemas[name]
+
+    // 契约自己就悬空 —— 抛,不猜。这与本函数「认不出就抛」是同一条。
+    if (target === undefined) throw new UnsupportedSchemaError(where, `$ref → ${name}(找不到)`)
+
+    // 🚨 **只有会出模型的 schema 才配得上一个 ref。**
+    //
+    // 上一版无条件返回 `{kind:'ref'}`,于是指向**非 object** 的 `$ref`
+    // 会生成一个**引用了不存在类型**的字段。实测代价:`Job.status` 指向
+    // 顶层字符串枚举 `JobStatus`,而 `extractModels` 只给 object 出模型 ——
+    // Kotlin 与 Swift 的产物里 `JobStatus` 被引用却从未声明,
+    // 两种语言都编译不过,而这件事**两个版本里没有任何东西发现**:
+    // 三道同步断言比的是文本(引用被忠实地生成了),覆盖断言两侧用的是
+    // 同一个谓词(JobStatus 被同时排除在「应出模型」与「已出模型」之外)。
+    //
+    // ⇒ 指向非 object 的 `$ref` 按**别名**处理:递归读目标本身。
+    //   顶层字符串枚举于是与内联枚举走同一条路(渲染成 String + 取值注释),
+    //   与「SDK 不因为契约加一个枚举值就变成破坏性升级」那个既定决定一致。
+    if (isModelSchema(target)) return { type: { kind: 'ref', name }, nullable: false }
+
+    // 别名链成环时停下 —— object 目标不递归,所以成环只可能发生在非 object 之间。
+    if (seen.includes(name))
+      throw new UnsupportedSchemaError(where, `$ref 成环:${[...seen, name].join(' → ')}`)
+    return readType(target, `${where} → ${name}`, schemas, [...seen, name])
+  }
 
   // **空 schema `{}` = 无约束**。这是 JSON Schema 的定义,不是猜测 ——
   // 契约里它来自 `z.unknown()`(如 AuditEntry 的 before/after:审计记录的
@@ -113,7 +165,7 @@ function readType(node: SchemaNode, where: string): { type: IrType; nullable: bo
     const nonNull = node.anyOf.filter((v) => v.type !== 'null')
     const hasNull = node.anyOf.length !== nonNull.length
     if (nonNull.length !== 1) throw new UnsupportedSchemaError(where, `anyOf[${node.anyOf.length}]`)
-    const inner = readType(nonNull[0] as SchemaNode, where)
+    const inner = readType(nonNull[0] as SchemaNode, where, schemas, seen)
     return { type: inner.type, nullable: hasNull || inner.nullable }
   }
 
@@ -140,7 +192,10 @@ function readType(node: SchemaNode, where: string): { type: IrType; nullable: bo
       return { type: { kind: 'boolean' }, nullable: false }
     case 'array': {
       if (node.items === undefined) throw new UnsupportedSchemaError(where, 'array without items')
-      return { type: { kind: 'array', items: readType(node.items, where).type }, nullable: false }
+      return {
+        type: { kind: 'array', items: readType(node.items, where, schemas, seen).type },
+        nullable: false,
+      }
     }
     case 'object':
       // 有 properties 的内联对象没有名字,发射器无从命名 —— 按不透明处理
@@ -160,20 +215,20 @@ export function extractModels(document: Record<string, unknown>): IrModel[] {
   const components = document['components'] as { schemas?: Record<string, SchemaNode> } | undefined
   const schemas = components?.schemas ?? {}
 
-  return Object.keys(schemas)
+  const models = Object.keys(schemas)
     .sort()
     .flatMap((name) => {
       const schema = schemas[name] as SchemaNode
-      // 顶层不是 object 的(如判别联合)不出模型 —— 但**不静默跳过**:
-      // 覆盖断言会数它,数不上就红。
-      if (schema.type !== 'object' || schema.properties === undefined) return []
+      // 顶层不是 object 的(如判别联合、顶层枚举)不出模型。
+      // 它们被**引用**时不会悬空:readType 把那种 $ref 当别名展开。
+      if (!isModelSchema(schema)) return []
 
       const required = new Set(schema.required ?? [])
       const fields: IrField[] = Object.keys(schema.properties)
         .sort()
         .map((field) => {
           const node = (schema.properties as Record<string, SchemaNode>)[field] as SchemaNode
-          const { type, nullable } = readType(node, `${name}.${field}`)
+          const { type, nullable } = readType(node, `${name}.${field}`, schemas)
           return {
             name: field,
             type,
@@ -184,22 +239,62 @@ export function extractModels(document: Record<string, unknown>): IrModel[] {
 
       return [{ name, fields, description: schema.description }]
     })
+
+  assertRefsResolve(models)
+  return models
+}
+
+/** 一个类型里出现的全部模型引用名(数组会嵌套)。 */
+function refNamesIn(type: IrType): string[] {
+  if (type.kind === 'ref') return [type.name]
+  if (type.kind === 'array') return refNamesIn(type.items)
+  return []
+}
+
+/**
+ * ★ **引用完整性:IR 里每个 ref 都必须指向一个真的出了模型的名字。**
+ *
+ * 这是 JobStatus 那次的直接教训,而它是一条**与覆盖断言方向不同**的断言:
+ *
+ * | 断言 | 问的是 | JobStatus 那次 |
+ * | --- | --- | --- |
+ * | 覆盖断言 | 每个 object schema 都出模型了吗 | ✅ 绿(JobStatus 两边都不在) |
+ * | **本条** | 每个被引用的名字都声明了吗 | ❌ 会红 |
+ *
+ * 生成期抛,而不是等编译期 —— 生成的人立刻看到位置,
+ * 而不是把一份编不过的产物提交上去,等 CI 的 sdk-compile job 去发现。
+ */
+function assertRefsResolve(models: readonly IrModel[]): void {
+  const declared = new Set(models.map((m) => m.name))
+  for (const m of models) {
+    for (const f of m.fields) {
+      for (const ref of refNamesIn(f.type)) {
+        if (!declared.has(ref)) {
+          throw new UnsupportedSchemaError(
+            `${m.name}.${f.name}`,
+            `引用了 ${ref},而它不出模型 —— 生成的代码会引用一个不存在的类型`,
+          )
+        }
+      }
+    }
+  }
 }
 
 /**
  * 契约里**应当**出模型的 schema 名 —— 覆盖断言的对照基准。
  *
- * 与 {@link extractModels} 分开实现是刻意的:若两者共用同一段过滤逻辑,
- * 「漏掉一个 schema」会让两边**一起**漏掉,而覆盖断言照样绿。
- * 这里直接数契约,不经 IR。
+ * ⚠️ ~~与 {@link extractModels} 分开实现是刻意的~~ —— **那句话被证伪过**。
+ * 上一版这里抄了一份与 extractModels 内容相同的谓词,而注释说这样能防住
+ * 「两边一起漏掉」。**抄一遍不是独立**:JobStatus 同时逃出了两个集合,
+ * 覆盖断言拿两个都排除了它的集合互相印证,绿了两个版本。
+ *
+ * 现在共用 {@link isModelSchema},而真正独立的那条断言是**引用完整性**
+ * (extractModels 末尾)—— 它问的是另一个问题,所以才独立。
  */
 export function objectSchemaNames(document: Record<string, unknown>): string[] {
   const components = document['components'] as { schemas?: Record<string, SchemaNode> } | undefined
   const schemas = components?.schemas ?? {}
   return Object.keys(schemas)
-    .filter((n) => {
-      const s = schemas[n] as SchemaNode
-      return s.type === 'object' && s.properties !== undefined
-    })
+    .filter((n) => isModelSchema(schemas[n]))
     .sort()
 }

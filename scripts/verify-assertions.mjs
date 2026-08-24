@@ -926,6 +926,39 @@ console.log('DSHWAR · 断言有效性探针\n')
   )
 }
 
+// 30. ★ $ref 无条件当成 ref —— 「引用 ⊆ 声明」那条断言必须变红(V0.9.0 收尾)
+//
+//     这是 V0.9.0 里唯一一个「生成得出来、编译不过」的洞,而它活了两个版本:
+//     `Job.status` 指向顶层字符串枚举 `JobStatus`,`extractModels` 只给 object
+//     出模型,于是 Kotlin / Swift 的产物里 `JobStatus` 被引用却从未声明。
+//
+//     🚨 当时已有的断言看起来很密,一条都没红:
+//       · 三道「与契约同步」断言比的是**文本** —— 那个引用被忠实地生成了
+//       · 覆盖断言两侧用**同一个谓词**,JobStatus 被同时排除在两个集合之外
+//       · TS SDK 的 tsc 没这个洞(openapi-typescript 发射全部 components)
+//
+//     变异把 $ref 分支改回「无条件 ref」,于是 JobStatus 又变成悬空引用。
+//     ⚠️ 目标只挂 model-ir 那一个测试文件 —— 「一条探针一个目标」:
+//     多目标时红是「或」,一个目标的红会盖住另一个的空跑。
+{
+  const r = withMutation(
+    'packages/api-contract/src/model-ir.ts',
+    (s) =>
+      s.replace(
+        "if (isModelSchema(target)) return { type: { kind: 'ref', name }, nullable: false }",
+        "return { type: { kind: 'ref', name }, nullable: false }",
+      ),
+    ['packages/api-contract/test/model-ir.test.ts'],
+  )
+  expect(
+    '30 $ref 无条件当成 ref → 「引用 ⊆ 声明」的断言变红',
+    r.red,
+    r.unchanged
+      ? '锚点没匹配上 —— readType 的 $ref 分支换了形状,先修锚点(本条结论作废)'
+      : '★ JobStatus 又成了悬空引用,而断言竟然还是绿的 —— 那正是它活两个版本的样子',
+  )
+}
+
 console.log('')
 const failed = results.filter((x) => !x.passed)
 console.log(`共 ${results.length} 条,通过 ${results.length - failed.length},失败 ${failed.length}`)

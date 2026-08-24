@@ -385,7 +385,8 @@ public struct Job: Codable, Sendable {
     public let finishedAt: String?
     public let id: String
     public let kind: String
-    public let status: JobStatus
+    /// 取值:queued | running | succeeded | failed | interrupted | cancelled
+    public let status: String
     public let subjectId: String
     public let tenantId: String
     public let updatedAt: String
@@ -397,7 +398,7 @@ public struct Job: Codable, Sendable {
         finishedAt: String? = nil,
         id: String,
         kind: String,
-        status: JobStatus,
+        status: String,
         subjectId: String,
         tenantId: String,
         updatedAt: String,

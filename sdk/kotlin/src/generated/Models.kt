@@ -265,8 +265,9 @@ data class Job(
     val id: String,
     @SerialName("kind")
     val kind: String,
+    // 取值:queued | running | succeeded | failed | interrupted | cancelled
     @SerialName("status")
-    val status: JobStatus,
+    val status: String,
     @SerialName("subjectId")
     val subjectId: String,
     @SerialName("tenantId")
