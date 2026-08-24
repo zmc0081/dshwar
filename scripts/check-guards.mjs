@@ -1509,6 +1509,11 @@ const CI_JOB_VERIFICATION = {
   gate: 'check:all 本体 —— 其下每一项各自有守卫(check-guards)或探针(verify-assertions)',
   'process-cost':
     'verify-guards 27a/27b —— 把阈值调到 0 必须红;删掉平台条目 + --require-threshold 必须红',
+  'sdk-compile':
+    'job 自己的第二个 step —— `compile-sdks.mjs --self-check`:往生成的模型副本里' +
+    '植入一处语法错误必须编译失败,而**原样的副本必须编得过**(反向对照,' +
+    '否则一个「永远失败」的调用也能显示为通过)。' +
+    '两个 step 都在由 check-guards 的 checkSdkCompileJobIntact 守着(负向验证 47b–47d)',
   'desktop-shell':
     'cargo test 的断言(负向验证:去掉 Cargo.toml 的平台 keyring feature,' +
     'round_trip_through_the_real_keychain 立刻红)+ pack:desktop 三步任一失败即红 ——' +
@@ -1868,6 +1873,73 @@ function checkNoCurrencyExponentTable() {
  * ⚠️ 这个改动**不放宽真正的判据**:一个有 `package.json` 却没有
  * `render.ts` 的新 SDK 照样红。负向验证见 `verify-guards.mjs` 的 35a/35b。
  */
+/**
+ * ★ **`sdk-compile` job 的两个 step 都必须还在。**
+ *
+ * ## 它防的是什么
+ *
+ * `scripts/compile-sdks.mjs` 有两个入口,判的是两件不同的事:
+ *
+ * | step | 判什么 | 没了会怎样 |
+ * | --- | --- | --- |
+ * | `--require-toolchains` | 真实产物编不编得过 | **没人编** Kotlin / Swift 了,而面板照样绿 |
+ * | `--self-check` | 这条检查认不认得出坏代码 | 上一条**恒绿了也没人知道** |
+ *
+ * 第二行是关键:一条检查可以跑一条真命令,却从来测不到任何东西
+ * (glob 空了、退出码被管道吃了)。`--self-check` 是它的负向验证,
+ * 而负向验证被删掉时,留下的是一条看起来完全正常的绿勾。
+ *
+ * ⚠️ 本机跑不了那两个 step(没有 kotlinc / swift),所以**这条守卫是它们在
+ * 本机的唯一代表** —— 它守的不是「编译对不对」,是「那两条命令还在不在」。
+ *
+ * ⚠️ 跳过注释行:ci.yml 里有一段注释在**讲**这两个 step。
+ * 让说明满足判据,等于这条守卫永远为真 —— 与「守卫不能惩罚记录」同根,
+ * 方向相反(那条讲说明不该被判成违规,这条讲说明不该被算成合规)。
+ *
+ * 谁验证它:`verify-guards.mjs` 的 47b/47c(逐条删掉 → 必须红)、
+ * 47d(正向对照:原样必须放行,且点名自己那条标记)。
+ */
+function checkSdkCompileJobIntact() {
+  /** @type {{file: string, line: number, text: string}[]} */
+  const out = []
+  const ciPath = p('.github/workflows/ci.yml')
+  if (!existsSync(ciPath)) return out
+
+  const executable = readFileSync(ciPath, 'utf8')
+    .split(/\r?\n/)
+    .filter((line) => !line.trim().startsWith('#'))
+    .join('\n')
+
+  // 清单从脚本自己那里现取的替代品:这两个开关是 compile-sdks.mjs 的全部入口。
+  // ⚠️ 加第三个入口时要同时加进这里 —— 否则新入口没人盯着。
+  const REQUIRED = [
+    { flag: '--require-toolchains', why: '真实产物编不编得过' },
+    { flag: '--self-check', why: '这条检查认不认得出坏代码(它的负向验证)' },
+  ]
+
+  let asserted = 0
+  for (const r of REQUIRED) {
+    asserted += 1
+    const re = new RegExp(`compile-sdks\\.mjs[^\\n]*\\${r.flag}`)
+    if (!re.test(executable)) {
+      out.push({
+        file: '.github/workflows/ci.yml',
+        line: 0,
+        text: `[sdk-compile] 找不到 \`compile-sdks.mjs \${r.flag}\` —— 没人判\${r.why}了`,
+      })
+    }
+  }
+  // ★ 出口计数:REQUIRED 空了的话上面的循环一次都不执行,而这条守卫会「通过」。
+  if (asserted === 0) {
+    out.push({
+      file: 'scripts/check-guards.mjs',
+      line: 0,
+      text: '[sdk-compile] REQUIRED 是空的 —— 这条守卫一个入口都没检查,本次通过不算数',
+    })
+  }
+  return out
+}
+
 function checkSdkHasSyncAssertion() {
   /** @type {{file: string, line: number, text: string}[]} */
   const out = []
@@ -2384,6 +2456,17 @@ if (sdkSync.length === 0) {
   console.log('        「改了契约没重新生成」在 V0.5.0 抓到过一次,那时只有 TS SDK。')
   console.log('        每多一种语言,漏洞面就多一份 —— 断言也必须多一份。')
   for (const h of sdkSync) console.log(`        ${h.file}  ${h.text}`)
+}
+
+const sdkCompile = checkSdkCompileJobIntact()
+if (sdkCompile.length === 0) {
+  console.log('  通过  sdk-compile 的两个 step 都在(真编 + 自检)')
+} else {
+  failed += 1
+  console.log(`  违规  sdk-compile job 少了 step  (${sdkCompile.length} 处)`)
+  console.log('        Kotlin / Swift 的模型是生成的,而「生成出来」与「编译得过」是两件事。')
+  console.log('        本机没有这两套工具链 —— 这条守卫是那两个 step 在本机的唯一代表。')
+  for (const h of sdkCompile) console.log(`        ${h.file}  ${h.text}`)
 }
 
 const ciHollow = checkCiJobsAreSubstantive()

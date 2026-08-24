@@ -141,6 +141,39 @@ jobs:
       - name: 五次采样,与 V0.4.5 的 Windows 口径对齐
         run: node scripts/measure-process-cost.mjs --assert --require-threshold
 
+  # SDK 产物编译 —— 把「生成 → 断言」补成「生成 → 断言 → **编译得过**」。
+  #
+  # 为什么值一个 job:Kotlin / Swift 的模型是生成的,有三道断言盯着
+  # (探针 17 / 18),而那三道比的是**文本**。三种 SDK 里 TypeScript 那份
+  # 每次门禁都被 tsc 编一遍,另外两份**在此之前从未被任何编译器读过**。
+  # 而本仓已经付过一次学费:`dist/generated/` 那次,类型坏成 `never` 之后
+  # 消费方代码反而「编译通过」—— 坏掉的类型能完美满足所有文本比对。
+  #
+  # 为什么在开发机上跑没有意义(这是进这一节的判据):本机没有 kotlinc / swift。
+  # 🚨 而 **CI 上有** —— `ubuntu-24.04` 自带 Kotlin 2.4.10 与 Swift 6.3.3,
+  #    所以这里不装任何工具链。M0.8.0 曾写着「本机与 CI 都没有」,
+  #    后半句是假的,见 docs/DECISIONS/unverified-plausible-causation.md 例 5。
+  #
+  # ⚠️ 两个 step 是两件不同的事,缺一不可:
+  #    第一个判**产物**编不编得过;第二个判**这条检查自己**认不认得出坏代码。
+  #    只有第一个的话,一条恒绿的检查与真的通过在面板上一模一样。
+  #    check-guards 有一条守卫盯着这两个 step 都还在(负向验证 47a–47d)。
+  sdk-compile:
+    name: SDK 产物编译(Kotlin / Swift)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # 不需要 pnpm install:这个脚本只用 Node 内置模块 + curl。
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 真实产物必须编得过
+        run: node scripts/compile-sdks.mjs --require-toolchains
+
+      - name: 自检 —— 植入语法错误必须变红,原样副本必须编得过
+        run: node scripts/compile-sdks.mjs --self-check
+
   # 桌面壳:Rust 断言 + 真的打一次包(V0.9.0 Session 6)。
   #
   # 为什么值一个 job:Session 5 交付 `src-tauri` 时,**CI 里一个 rust / cargo /

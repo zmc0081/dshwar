@@ -31,7 +31,7 @@
  *
  * 退出码:全绿 0,任一守卫没拦住 1。
  */
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import {
   existsSync,
   mkdirSync,
@@ -2211,6 +2211,7 @@ try {
         '没有人自带「币种 → 指数」对照表(指数随金额从契约来)', // 42a–42c
         '将发布的包,import 的东西都在 dependencies 里(出厂装得上)', // 43a–43c
         '正向对照都点名了自己那条守卫(判据不是整条门禁的退出码)', // 44a–44c
+        'sdk-compile 的两个 step 都在(真编 + 自检)', // 47b–47d
       ]
 
       const accounted = new Set([...HARD_RULE_FIXTURES.map((f) => f.guard), ...VERIFIED_ELSEWHERE])
@@ -4142,6 +4143,157 @@ try {
     }
   } finally {
     stashedCi.restore()
+  }
+}
+
+// ---------------------------------------------------------------------
+// 47 SDK 产物编译检查 —— 两个 step 与「没工具链时不许静默通过」
+//
+// 背景:Kotlin / Swift 的模型是生成的,有三道断言盯着,而那三道比的是**文本**。
+// 「生成出来」与「编译得过」是两件事,本仓付过一次学费:dist/generated/ 那次,
+// 类型坏成 never 之后消费方代码反而「编译通过」。
+//
+// ⚠️ 本机没有 kotlinc / swift(实测),所以「植入语法错误 → 编译失败」那条
+// 负向验证跑在 **CI 的 sdk-compile job 自己**(--self-check step)——
+// 工具链在哪,验证就得在哪。这里验的是本机验得动的那几件:
+//
+//   47a 没工具链 + --require-toolchains → 必须红(不许静默通过)
+//   47b 删掉「真编」那条命令 → 守卫必须红
+//   47c 删掉「自检」那条命令 → 守卫必须红
+//   47d ★ 正向对照:原样放行,且**点名自己那条标记**
+//   47e ★ 只有注释在讲那两条命令 → 仍然必须红(说明不算合规)
+//   47f 整个 job 没了 → 脚本自己的「谁在别处跑」核对必须红
+// ---------------------------------------------------------------------
+{
+  const CI_REL = '.github/workflows/ci.yml'
+  const ciPath = p(CI_REL)
+  const SDK_MARKER = /sdk-compile/
+
+  /** 跑 compile-sdks.mjs,拿退出码与输出。 */
+  const runCompileSdks = (/** @type {string[]} */ args) =>
+    run([p('scripts', 'compile-sdks.mjs'), ...args])
+
+  // 47a 没工具链时,--require-toolchains 必须红。
+  //
+  // ⚠️ 判据带一句「本机确实没有工具链」的前置 —— 否则在一台装了 kotlinc 的
+  //    机器上这条会因为「真的编过了」而绿,而那种绿证明不了任何事。
+  //    这是「负向验证不得依赖仓库当前碰巧处于的状态」的同族:
+  //    依赖的不是仓库状态,是**这台机器的状态**,而它同样会变。
+  {
+    const hasKotlin = spawnSync('kotlinc', ['-version'], { shell: true }).status === 0
+    const hasSwift = spawnSync('swiftc', ['--version'], { shell: true }).status === 0
+    if (hasKotlin && hasSwift) {
+      expect(
+        '47a 没工具链 + --require-toolchains → 必须红',
+        true,
+        '这台机器两套工具链都有 —— 本条不适用,由 CI 的 sdk-compile job 覆盖',
+      )
+    } else {
+      const r = runCompileSdks(['--require-toolchains'])
+      expect(
+        '47a 没工具链 + --require-toolchains → 必须红(不许静默通过)',
+        !r.ok,
+        r.ok ? '工具链不在却退出 0 —— CI 上这条检查会变成一个恒绿的绿勾' : undefined,
+      )
+    }
+  }
+
+  const pristineCi = readFileSync(ciPath, 'utf8')
+  const stashedCi = beginMutation(REPO, [CI_REL])
+  try {
+    /**
+     * 把 ci.yml 里**可执行行**上的某段文字换掉(注释行不动)。
+     * @param {RegExp} re
+     * @param {string} to
+     */
+    const mutateExecutable = (re, to) =>
+      pristineCi
+        .split(/\r?\n/)
+        .map((line) => (line.trim().startsWith('#') ? line : line.replace(re, to)))
+        .join('\n')
+
+    /** 写入并断言真的改到了 —— 锚点失配必须响亮,不能被记成「守卫漏报」。 */
+    const applyOrFail = (/** @type {string} */ mutated, /** @type {string} */ name) => {
+      if (mutated === pristineCi) {
+        expect(name, false, '变异没改动 ci.yml —— 锚点失配,本条结论作废(不是守卫漏报)')
+        return false
+      }
+      writeFileSync(ciPath, mutated, 'utf8')
+      return true
+    }
+
+    // 47b 删掉「真编」那条命令
+    {
+      const name = '47b 删掉 compile-sdks --require-toolchains → 守卫必须红'
+      if (applyOrFail(mutateExecutable(/--require-toolchains/, '--dry-run'), name)) {
+        const r = runGuards()
+        const hit = flaggedBy(r.output, SDK_MARKER)
+        expect(name, hit, hit ? undefined : '守卫放行了 —— 没人编 Kotlin / Swift 而面板照样绿')
+      }
+    }
+
+    // 47c 删掉「自检」那条命令
+    {
+      const name = '47c 删掉 compile-sdks --self-check → 守卫必须红'
+      if (applyOrFail(mutateExecutable(/--self-check/, '--dry-run'), name)) {
+        const r = runGuards()
+        const hit = flaggedBy(r.output, SDK_MARKER)
+        expect(name, hit, hit ? undefined : '守卫放行了 —— 那条检查的负向验证没了,它恒绿也没人知道')
+      }
+    }
+
+    // 47e ★ 只有注释在讲那两条命令 → 仍然必须红
+    {
+      const name = '47e ★ 只有注释在讲那两条命令 → 仍然必须红(说明不算合规)'
+      const mutated =
+        mutateExecutable(/compile-sdks\.mjs/, 'compile-sdks-DISABLED.mjs') +
+        '\n# 这里本来跑 node scripts/compile-sdks.mjs --require-toolchains 与 --self-check\n'
+      if (applyOrFail(mutated, name)) {
+        const r = runGuards()
+        const hit = flaggedBy(r.output, SDK_MARKER)
+        expect(
+          name,
+          hit,
+          hit ? undefined : '注释满足了判据 —— 于是 job 被删光也照样放行,这条守卫永远为真',
+        )
+      }
+    }
+
+    // 47f 整个 job 没了 → compile-sdks.mjs 自己的核对必须红。
+    //     这一条与 47b/47c 不同:它验的是**脚本**,不是守卫。
+    {
+      const name = '47f 整个 sdk-compile job 没了 → 脚本自己的「谁在别处跑」核对必须红'
+      if (applyOrFail(mutateExecutable(/compile-sdks\.mjs/, 'nothing-here.mjs'), name)) {
+        const r = runCompileSdks([])
+        expect(
+          name,
+          !r.ok,
+          r.ok
+            ? '脚本仍然放行 —— 它印着「CI 的 sdk-compile job 在跑它」,而那句话已经是假的'
+            : undefined,
+        )
+      }
+    }
+  } finally {
+    stashedCi.restore()
+  }
+
+  // 47d ★ 正向对照:原样必须放行,而判据是**这条守卫点名了自己**,
+  //     不是整条门禁的退出码 —— 任何一条无关守卫此刻红,都会让退出码判据失效,
+  //     并报出「守卫把合法写法也拦了」这个完全错误的结论。
+  {
+    const r = runGuards()
+    const named = /sdk-compile 的两个 step 都在/.test(r.output)
+    const flagged = flaggedBy(r.output, SDK_MARKER)
+    expect(
+      '47d ★ 正向对照:原样的 ci.yml 被放行,且守卫点名了自己',
+      named && !flagged,
+      named
+        ? flagged
+          ? '守卫把原样的 ci.yml 也报成违规了 —— 规则不是「见到 sdk-compile 就红」'
+          : undefined
+        : '输出里找不到这条守卫的通过行 —— 它可能根本没跑,本条结论作废',
+    )
   }
 }
 

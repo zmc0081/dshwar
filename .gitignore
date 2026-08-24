@@ -37,3 +37,6 @@ src-tauri/binaries/
 # 它是**产物**:改 capabilities/default.json 之后重新生成即可,
 # 提交它只会让每次构建都产生一份与代码无关的 diff。
 src-tauri/gen/schemas/
+
+# SDK 编译检查下载的依赖 jar(钉版本 + 钉哈希,见 scripts/compile-sdks.mjs)
+.sdk-toolchain/
