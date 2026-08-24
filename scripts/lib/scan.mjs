@@ -156,12 +156,81 @@ export function isWholeLineComment(line) {
 }
 
 /**
+ * 这一段字符串内容是**说明**,还是一个**标识符**?
+ *
+ * 判据只有一条:**带空格或非 ASCII 字符的是说明**。
+ *
+ * | 内容 | 判定 | 为什么 |
+ * | --- | --- | --- |
+ * | `浏览器里的 localStorage 对任何脚本可读` | 说明 | 有空格、有中文 |
+ * | `不要把 refreshToken 放进 localStorage` | 说明 | 同上 |
+ * | `localStorage` | **标识符** | `window['localStorage']` 的下标就长这样 |
+ * | `@deepseek-ai/dsh-fs/lib/x.js` | **标识符** | import 的模块名不带空格 |
+ *
+ * ⚠️ 判据必须窄成这样,否则会开出一条真实的绕过路径:
+ * 「字符串里的一律不算」会让 `window['localStorage']` 与
+ * `require('@dshwar/billing-hosted')` 一起变成合法写法 ——
+ * 那不是少报一次误报,那是把守卫拆了。
+ *
+ * @param {string} body 引号之间的内容
+ */
+function isProse(body) {
+  return /\s/.test(body) || /[^ -~]/.test(body)
+}
+
+/**
+ * 把一行里**说明性字符串**的内容抹成空格,其余原样。
+ *
+ * ## 为什么要有这一步 —— CLAUDE.md「守卫不能惩罚记录」的第二种载体
+ *
+ * {@link isWholeLineComment} 覆盖的是「整行是注释」。但同一段说明还有
+ * 第二种写法:**它是一句抛出去的错误信息**。
+ *
+ * V0.9.0 Session 5 实测:`workbench-web/src/hosts.ts` 里
+ * `hostSecrets('remote-web', …)` 抛的那句话解释「浏览器里为什么不能存长效凭据」,
+ * 而约束 2 的守卫把它判成了「在用浏览器存储」。两者文本一模一样、语义相反,
+ * 与 CodeRef.tsx 那次 JSDoc 是同一个形状,只是换了个载体。
+ *
+ * 这一族误报的代价见 CLAUDE.md:**人不会绕过它,人会照它说的改** ——
+ * 而唯一能改的就是把那句解释删掉,或者更糟:给一条**安全守卫**开豁免标记。
+ *
+ * ## ⚠️ 模板串里的 `${…}` 不抹
+ *
+ * `` `${localStorage.getItem(k)} 条` `` 的插值段是**真代码**。
+ * 整段抹掉的话,一个带中文的模板串就成了藏违规的地方。
+ *
+ * ## 已知边界(写出来,免得被读成「都盖住了」)
+ *
+ * `eval("localStorage.setItem('k', v)")` 这类**把代码写在带空格的字符串里**的
+ * 写法会被放过。判据认不出它 —— 而这一族本来也不该由文本形状守卫来拦。
+ *
+ * @param {string} line
+ */
+export function withoutStringProse(line) {
+  return line.replace(
+    /(['"`])((?:\\[\s\S]|(?!\1)[^\\])*)\1/g,
+    (/** @type {string} */ whole, /** @type {string} */ quote, /** @type {string} */ body) => {
+      if (quote !== '`') return isProse(body) ? `${quote}${' '.repeat(body.length)}${quote}` : whole
+      const kept = body.replace(/\$\{[^}]*\}|(?:(?!\$\{)[\s\S])+/g, (chunk) =>
+        chunk.startsWith('${') || !isProse(chunk) ? chunk : ' '.repeat(chunk.length),
+      )
+      return `${quote}${kept}${quote}`
+    },
+  )
+}
+
+/**
  * 在若干文件中查找匹配行。
  *
- * 两类行会被跳过:
+ * 三类命中会被跳过:
  *
  * 1. **整行是注释**的 —— 见 {@link isWholeLineComment}。守卫不能惩罚记录。
- * 2. 带 `dshwar-guard-allow: <理由>` 标记的,理由为空则**不算豁免**。
+ * 2. 只落在**说明性字符串**里的 —— 见 {@link withoutStringProse}。同一条规则,
+ *    换了个载体(错误信息、文案、任务书里的引文)。
+ * 3. 带 `dshwar-guard-allow: <理由>` 标记的,理由为空则**不算豁免**。
+ *
+ * ⚠️ 第 2 条只跳过**说明**,不跳过字符串本身:`window['localStorage']` 与
+ * `from '@deepseek-ai/dsh-fs/lib/x'` 里的字符串不带空格,照旧红。
  *
  * @param {string[]} files 绝对路径
  * @param {RegExp} pattern 需带 g 标志的正则
@@ -179,6 +248,10 @@ export function grepFiles(files, pattern, repoRoot) {
       pattern.lastIndex = 0
       if (!pattern.test(text)) continue
       if (isWholeLineComment(text)) continue
+      // ⚠️ 判定用抹掉说明的那一份,报告仍然用原行 —— 报出来的要是被抹过的行,
+      //   人对着一串空格没法判断这条红对不对。
+      pattern.lastIndex = 0
+      if (!pattern.test(withoutStringProse(text))) continue
       if (ALLOW_MARKER.test(text) || ALLOW_MARKER.test(lines[i - 1] ?? '')) continue
       hits.push({ file: repoPath(repoRoot, file), line: i + 1, text: text.trim() })
     }

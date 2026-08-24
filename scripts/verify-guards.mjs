@@ -862,6 +862,104 @@ try {
   }
 
   // ---------------------------------------------------------------------
+  // 41. 说明性字符串不算违规:四向(V0.9.0 Session 5)
+  //
+  //     ## 它补的是什么
+  //
+  //     37 让 grepFiles 跳过**整行注释**。同一段说明还有第二种载体:
+  //     **它是一句抛出去的错误信息**。V0.9.0 Session 5 实测:
+  //     `workbench-web/src/hosts.ts` 里解释「浏览器为什么不能存长效凭据」的
+  //     那句 throw,被约束 2 判成了「在用浏览器存储」。
+  //
+  //     那一轮的处理是**绕开**(把 API 名字从错误信息里拿掉)—— 而 CLAUDE.md
+  //     说的正是这个:人不会绕过守卫,人会照它说的改,于是解释被删干净,
+  //     而门禁全程绿。这一块把绕开换成修好。
+  //
+  //     ## ⚠️ 放宽必须验四向,少一向就是开了一条绕过路径
+  //
+  //       a 真违规仍然红                —— 否则整条守卫失效
+  //       b 说明性字符串放行            —— 本次改动要的效果(反向对照)
+  //       c ★ `window['localStorage']` 仍然红
+  //             判据是「带空格或中文的才算说明」。退化成「字符串里的一律不算」,
+  //             下标写法就成了合法绕过 —— 那不是少报一次误报,是把守卫拆了
+  //       d ★ 模板串 `${…}` 里的真违规仍然红
+  //             整段抹掉的话,一个带中文的模板串就成了藏违规的地方
+  // ---------------------------------------------------------------------
+  {
+    const dropProse = () =>
+      rmSync(p('packages/__prose_fixture__'), { recursive: true, force: true })
+    const proseFixture = (/** @type {string} */ body) => {
+      writeFixture(
+        'packages/__prose_fixture__/package.json',
+        JSON.stringify(
+          {
+            name: '@dshwar/prose-fixture',
+            version: '0.9.0',
+            private: true,
+            devDependencies: { react: '19.2.0' },
+          },
+          null,
+          2,
+        ) + '\n',
+      )
+      writeFixture('packages/__prose_fixture__/src/store.tsx', body)
+    }
+    // ⚠️ 判据打在**约束 2 自己的标记 + 夹具名同一行**上,不是 `r.ok`:
+    //   夹具包没有 tsconfig.json,会撞上一条无关守卫,那时 `r.ok` 恒为 false,
+    //   反向对照就永远「失败」而与被测规则无关(37b 踩过这个坑)。
+    const MARK =
+      /\[约束2 浏览器专有 API\][^\n]*__prose_fixture__|__prose_fixture__[^\n]*\[约束2 浏览器专有 API\]/
+
+    const PROSE_CASES = [
+      {
+        label: '41a 真的用了 localStorage → 守卫变红(放宽没把真判据放掉)',
+        blocked: true,
+        body: "export const save = (v: string) => localStorage.setItem('k', v)\n",
+        hint: '一次放宽把整条约束放掉了 —— 浏览器存储在 Tauri 里语义不同',
+      },
+      {
+        label: '41b ★ 反向对照:解释「为什么不能用它」的错误信息 → 放行(守卫不能惩罚记录)',
+        blocked: false,
+        body:
+          'export const refuse = (): never => {\n' +
+          "  throw new Error('浏览器里的 localStorage 对任何同源脚本可读 —— 长效凭据不能放这儿')\n" +
+          '}\n',
+        hint: '',
+      },
+      {
+        label: "41c ★ window['localStorage'] 仍然红(不带空格的字符串是标识符,不是说明)",
+        blocked: true,
+        body: "export const sneak = (): unknown => window['localStorage']\n",
+        hint: '判据退化成「字符串里的一律不算」—— 下标写法成了合法绕过,守卫等于拆了',
+      },
+      {
+        label: '41d ★ 模板串插值段里的真违规仍然红(带中文的模板串不是藏违规的地方)',
+        blocked: true,
+        body: 'export const n = (k: string): string => `${localStorage.getItem(k) ?? ""} 条记录`\n',
+        hint: '整段模板串被当成说明抹掉了 —— 插值段是真代码,不能跟着抹',
+      },
+    ]
+
+    for (const c of PROSE_CASES) {
+      dropProse()
+      proseFixture(c.body)
+      const r = runGuards()
+      const hit = MARK.test(r.output)
+      const passed = c.blocked ? hit : !hit
+      expect(
+        c.label,
+        passed,
+        passed
+          ? undefined
+          : c.blocked
+            ? `守卫放行了这种形态 —— ${c.hint}`
+            : '守卫把一句「解释为什么不能这么写」的错误信息判成了违规',
+      )
+      dropProse()
+    }
+  }
+
+  // ---------------------------------------------------------------------
   // 40. 前端不持有长效凭据:四向(V0.9.0 Session 4)
   //
   //     判据是「浏览器存储 × refresh」的**组合**,不是任何一半。

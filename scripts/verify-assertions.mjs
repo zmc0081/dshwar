@@ -500,6 +500,168 @@ console.log('DSHWAR · 断言有效性探针\n')
   )
 }
 
+// 22. ★ 未配置的主色被兜底成一个颜色(V0.9.0 Session 5)
+//
+//     运行期主题是白牌的落点:安装包中性,租户配置由服务端下发、前端写进
+//     CSS 自定义属性。而这条链上最容易悄悄坏掉的是**未配置态**:
+//     `applyAccent(null, …)` 只要随手派生一个兜底色,V0.8.0 那次
+//     「哨兵默认色 → string | null」的类型层区分就被完全抵消 ——
+//     类型上仍然分开,渲染上又合并了。
+//
+//     ⚠️ 它坏掉时**没有任何现成信号**:界面上只是多了一点颜色,而客户会以为
+//     那就是平台的样子。`check-guards.mjs` 那条 `primaryColor ??` 守卫按文本形状扫,
+//     拦不住「判空判在函数里、但判完还是派生了」这种形态。
+//
+//     变异后 `derive(seed ?? '', …)`:空种子经 derive 自己的兜底回落到 #3A5CCC,
+//     于是「未配置时一个属性都不写」那条断言必须变红。
+{
+  const r = withMutation(
+    'packages/design-system/src/accent/apply.ts',
+    (s) =>
+      s.replace(
+        "  if (seed === null || seed === '') {\n" +
+          '    clearAccent(el)\n' +
+          '    return null\n' +
+          '  }\n' +
+          '  const d = derive(seed, 4.5, theme)',
+        "  const d = derive(seed ?? '', 4.5, theme)",
+      ),
+    ['packages/design-system/test/apply-accent.test.ts'],
+  )
+  expect(
+    '22 未配置的主色被兜底成一个颜色 → 「一个属性都不写」的断言变红',
+    r.red,
+    r.unchanged
+      ? '锚点没匹配上 —— applyAccent 里的判空块换了形状,先修锚点'
+      : '★ 客户没配主色,界面上却出现了一个他没选过的颜色,而断言竟然还是绿的',
+  )
+}
+
+// 23. ★ 给 Tauri 一个别的宿主没有的开关(V0.9.0 Session 5)
+//
+//     Session 5 的验收原话是「同一份前端产物在三个宿主下跑通,**差别只有 baseURL**」。
+//     那句话本身不可执行 —— 它描述的是一个不变式,而不变式若没有落点,
+//     只会在某次「给 Tauri 加个开关」的提交里悄悄失效:三个宿主分家的过程
+//     没有任何一步是显眼的,每一步都只是「这里特殊一点」。
+//
+//     ⚠️ 这条探针问的**不是**「hostConfig 返回值对不对」——
+//     那是 `hosts.test.ts` 里别的用例的事。它问的是那条**同构断言**
+//     在真的分家时会不会红。没有它,「三份配置逐字段相同」与
+//     「三个对象碰巧长得一样」在输出上没有区别。
+//
+//     变异挑 `authScopes` 而不是塞一个新字段:新字段会撞上 TS 的
+//     多余属性检查,变成一条**类型层**的红 —— 那证明的是 tsc 在工作,
+//     不是那条断言在工作。多要一个 scope 类型完全合法,
+//     而它恰恰是「桌面端多需要一点权限」这个最容易被写出来的分家形态。
+{
+  const r = withMutation(
+    'workbench-web/src/hosts.ts',
+    (s) =>
+      s.replace(
+        '      return { ...HOST_INVARIANT, baseUrl: tauriBaseUrl(runtime.gatewayPort) }',
+        '      return {\n' +
+          '        ...HOST_INVARIANT,\n' +
+          '        baseUrl: tauriBaseUrl(runtime.gatewayPort),\n' +
+          "        authScopes: [...HOST_INVARIANT.authScopes, 'tauri.updater'],\n" +
+          '      }',
+      ),
+    ['workbench-web/test/hosts.test.ts'],
+  )
+  expect(
+    '23 Tauri 多要一个 scope → 三宿主同构断言变红',
+    r.red,
+    r.unchanged
+      ? '锚点没匹配上 —— hostConfig 的 tauri 分支换了形状,先修锚点'
+      : '★ 三个宿主的差别已经不只是 baseURL,而验收那条断言竟然还是绿的',
+  )
+}
+
+// 24. ★ loopback 回调监听绑到 0.0.0.0(V0.9.0 Session 5)
+//
+//     `listen(port, '127.0.0.1')` 与 `listen(port)` 在开发机上**行为完全一样**:
+//     浏览器照样回来、测试照样绿、日志照样干净。差别只在局域网上够不够得着 ——
+//     而那正是「授权码暴露给整个局域网」与「没暴露」的全部区别。
+//
+//     ⚠️ 这类改动最可能以「顺手清理一个参数」的形式发生,而且**没有任何现成信号**:
+//     它不报错、不变慢、不改任何返回值。所以判据必须落在
+//     `server.address()` 的观测值上,而不是源码里的字面量 ——
+//     后者被 `listen(port)`(省掉 host = 绑全网卡)完整绕过。
+//
+//     变异挑「把回环字面量换成通配地址」,那是这个 bug 真实的长相。
+{
+  const r = withMutation(
+    'packages/auth-pkce/src/loopback.ts',
+    (s) => s.replace("? '127.0.0.1' : '::1'", "? '0.0.0.0' : '::'"),
+    ['packages/auth-pkce/test/loopback.test.ts'],
+  )
+  expect(
+    '24 loopback 绑到 0.0.0.0 → 「绑的是回环地址」的断言变红',
+    r.red,
+    r.unchanged
+      ? '锚点没匹配上 —— openLoopbackAt 里挑绑定地址那一行换了形状,先修锚点'
+      : '★ 回调端口绑上了全网卡,局域网里谁都够得着那个授权码,而断言竟然还是绿的',
+  )
+}
+
+// 25. ★ 收到回调之后不关服务器(V0.9.0 Session 5)
+//
+//     登录**完全正常**:码收到了、页面出来了、token 换到了。唯一的差别是
+//     那个回环端口继续听着 —— 一个持续存在的、能被再打一次的回调面。
+//
+//     ⚠️ 与 24 同一族「坏了也没人看得见」:没有报错、没有性能变化,
+//     而且**功能测试全绿**,因为功能确实没坏。能看见它的只有一条
+//     「事后再连一次,必须连不上」的断言,而那条断言本身没有任何自然的
+//     失败方式 —— 不专门验一次,它是绿是空分不出来。
+{
+  const r = withMutation(
+    'packages/auth-pkce/src/loopback.ts',
+    (s) => s.replace('    server.close()\n', ''),
+    ['packages/auth-pkce/test/loopback.test.ts'],
+  )
+  expect(
+    '25 收到回调后不关服务器 → 「端口收完就没了」的断言变红',
+    r.red,
+    r.unchanged
+      ? '锚点没匹配上 —— 回调处理里那句 server.close() 换了位置,先修锚点'
+      : '★ 回调端口在登录成功后继续听着,而断言竟然还是绿的 —— 那是一个持续的重放面',
+  )
+}
+
+// 26. ★ 有人从网关这一头解决跨源(V0.9.0 Session 5)
+//
+//     桌面壳的跨源有两个解法,代价差得很远:Tauri 侧的允许清单只影响桌面壳,
+//     而给网关加 CORS 响应头影响**每一个部署** —— 包括本来就同源的远端 Web。
+//
+//     ⚠️ 它最可能发生的方式不是有人权衡后选了它。调壳的时候被
+//     `TypeError: Failed to fetch` 卡住 —— 那句话**不提 CORS**,与「网关没起来」
+//     长得一模一样 —— 于是顺手加一行中间件,当场就通了,然后就留在那儿了。
+//
+//     变异挑的正是那一行的真实长相(`app.use('*', …)` 打上 Allow-Origin),
+//     而不是 import 一个 cors 包:后者会被「源码里有没有 cors 字样」的判据抓到,
+//     那证明的是 grep 在工作,不是那条断言在工作。
+{
+  const r = withMutation(
+    'gateway/src/app.ts',
+    (s) =>
+      s.replace(
+        "  app.use('*', requestIdMiddleware())",
+        "  app.use('*', requestIdMiddleware())\n" +
+          "  app.use('*', async (c, next) => {\n" +
+          '    await next()\n' +
+          "    c.header('Access-Control-Allow-Origin', '*')\n" +
+          '  })',
+      ),
+    ['gateway/test/shipped-assembly.test.ts'],
+  )
+  expect(
+    '26 网关发 CORS 头 → 「跨源在 Tauri 侧解决」的断言变红',
+    r.red,
+    r.unchanged
+      ? '锚点没匹配上 —— app.ts 里第一条中间件换了形状,先修锚点'
+      : '★ 网关给所有部署开了跨源的口子,而断言竟然还是绿的 —— 收益归桌面壳一家,风险归所有人',
+  )
+}
+
 // 9. console 契约与领域模型的一致性(V0.5.0)—— **类型层面的探针**
 //
 //    前八条都靠「跑 vitest 看红不红」。这一条不行:它断言的是**类型**

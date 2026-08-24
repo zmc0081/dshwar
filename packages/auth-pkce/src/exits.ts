@@ -67,6 +67,11 @@ export const STALL_AFTER_MS = 45_000
  * 也一样,只是把 45 秒变成 75 分钟。
  *
  * 一次之后就进 `stalled`,把出口交给用户。
+ *
+ * 🚨 **别把「偶发 / 恒定」直接读成某个 errno。** 具体哪个 errno 落在哪一边
+ * 由 `loopback.ts` 的 `classifyBindError` 裁决,而它的第一版就把 `EACCES`
+ * 归错了边(Windows 的保留端口段给的正是 `EACCES`,那是**逐端口**的)。
+ * 上面这句话说的是两类失败的性质,不是一张 errno 对照表。
  */
 export const AUTO_RETRY_PORTS = 1
 

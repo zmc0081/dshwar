@@ -15,6 +15,10 @@
  *
  * @module @dshwar/design-system
  */
+// 运行期主题:安装包永远中性,品牌由服务端下发、前端在运行时打到 DOM 上。
+// `clearAccent` 与 `applyAccent` 成对 —— 前者是「重置为中性外观」的落点。
+export { ACCENT_PROPERTIES, applyAccent, clearAccent, type AccentTarget } from './accent/apply.ts'
+
 export {
   clampC,
   contrast,

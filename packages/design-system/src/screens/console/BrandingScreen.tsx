@@ -5,8 +5,12 @@
  *
  * 1. 第一行的 `window.DSHWARDesignSystem_264a5f` 解构换成 ES import。
  * 2. **第二个 window 全局**:kit 里还有 `window.DshwarAccent`(`tokens/derive-accent.js`)。
- *    它的 `derive` 在本仓已经是 `accent/derive.ts` 的公开导出,直接换成 import;
- *    `applyAccent` **本仓没有对应导出**,见下方那个函数的注释。
+ *    它的 `derive` 与 `applyAccent` 在本仓都是 `accent/` 的公开导出,直接换成 import。
+ *
+ *    ⚠️ **V0.9.0 Session 5:`applyAccent` 已提到 `accent/apply.ts`。** 移植时它落在
+ *    本文件内部,注释里写着「之后若有第二个消费方,应当提到 `accent/` 去」——
+ *    第二个消费方(三个宿主的应用外壳)现在有了,这里是那条 TODO 的兑现:
+ *    本文件删掉那份私有实现,改从 `accent/apply.ts` 引。
  * 3. 一次性布局的 `style={{}}` 原样保留;本屏没有 hover / active / focus 的 JS 状态,
  *    因此也没有对应的 `styles/screens/*.css`。
  * 4. **V0.9.0 Session 3:两个 `useState` 提成受控 props。** 移植时(Session 1)它们是
@@ -26,7 +30,8 @@
  */
 import type * as React from 'react'
 import { useEffect, useRef } from 'react'
-import { derive, type DeriveResult, type RoleRow, type Theme } from '../../accent/derive.ts'
+import { applyAccent } from '../../accent/apply.ts'
+import { derive, type RoleRow } from '../../accent/derive.ts'
 import { Button } from '../../components/Button.tsx'
 import { Card } from '../../components/Card.tsx'
 import { CodeRef } from '../../components/CodeRef.tsx'
@@ -38,41 +43,6 @@ import { Select } from '../../components/Select.tsx'
 import { Tag } from '../../components/Tag.tsx'
 import { Wordmark } from '../../components/Wordmark.tsx'
 import { PageHead } from './Shell.tsx'
-
-/**
- * 把派生结果写进 CSS 自定义属性 —— kit 的
- * `tokens/derive-accent.js#applyAccent` 逐行搬过来,写哪些属性、写什么值都没有改。
- *
- * ⚠️ **它落在这里是移植的将就,不是设计决定。** 本仓的 `accent/derive.ts` 只导出了
- * `derive`,没有 `applyAccent`;而本屏的「Logo 槽位与回落」卡片要把派生出来的主色
- * 真的打到那块 DOM 上,少了它预览就永远是中性外观 —— 那会让这一屏的主要用途失效。
- * 本轮的任务边界是「不碰 accent/ 与 index.ts」,所以先原样落在屏幕里。
- * 之后若有第二个消费方(kit 的 `ui_kits/auth` 外壳就已经在用),应当提到 `accent/` 去。
- *
- * ⚠️ 一律走 `setProperty`,不给内联样式属性直接赋值 —— 后者是
- * `check-guards.mjs` 明禁的写法(那条守卫按正则扫,**注释里也算**),
- * 何况自定义属性本来就只能经 `setProperty` 写。
- *
- * kit 原注释:theme 'light'(默认)或 'dark' —— 暗主题必须传,否则亮主题派生的文字色
- * 落在 n-950 画布上只有 2 点几比一。
- */
-function applyAccent(seedHex: string, el: HTMLElement, theme: Theme = 'light'): DeriveResult {
-  const d = derive(seedHex, 4.5, theme)
-  const t = el.style
-  t.setProperty('--seed', d.seed)
-  for (const r of d.ramp) t.setProperty(`--a-${r.step}`, r.hex)
-  t.setProperty('--accent-solid', d.solid)
-  t.setProperty('--accent-on', d.on)
-  t.setProperty('--accent-hover', d.hover)
-  t.setProperty('--accent-active', d.active)
-  t.setProperty('--accent-text', d.text)
-  t.setProperty('--accent-text-strong', d.strong)
-  t.setProperty('--accent-border', d.border)
-  t.setProperty('--accent-surface', d.surface)
-  t.setProperty('--link-underline', 'none')
-  el.setAttribute('data-brand', 'configured')
-  return d
-}
 
 /**
  * 品牌配置的**表现层形状**。
@@ -135,9 +105,14 @@ export function BrandingScreen({
   const d = seed === null || seed === '' ? null : derive(seed, 4.5)
   const scope = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (scope.current !== null && seed !== null && seed !== '') {
-      applyAccent(seed, scope.current)
-    }
+    // 🚨 未配置时**也要调** —— `applyAccent(null, …)` 会清掉上一次写进去的那 20 个属性。
+    //    原先这里是 `seed !== null && seed !== ''` 才调:清空主色之后,上一次的
+    //    ramp 与角色令牌原样留在这块 DOM 上,预览卡片继续显示旧品牌色,
+    //    而同一屏上就写着「留空 = 未配置 = 中性外观」。
+    //    判空已经收敛在 applyAccent 里,这里不该再判一次(判两次总有一次判错)。
+    //
+    // 本屏的预览画布是亮主题,所以显式传 'light' —— `applyAccent` 不给默认值。
+    if (scope.current !== null) applyAccent(seed, scope.current, 'light')
   }, [seed])
   const roleRow = (r: RoleRow): React.JSX.Element => (
     <div

@@ -25,3 +25,5 @@ feasibility-v2/node_modules/
 # 变异型负向验证的清单 —— 进程被强杀时用来自愈(scripts/lib/mutation-journal.mjs)
 # 正常跑完不会留下它;留下了说明上一次被杀过。
 .mutation-journal/
+
+src-tauri/target/

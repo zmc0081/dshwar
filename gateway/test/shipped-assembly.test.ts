@@ -213,4 +213,83 @@ describe('出厂装配 —— startServer 挂了契约承诺的每条路由', ()
         failures.join('\n'),
     ).toEqual([])
   })
+
+  /**
+   * ★ 出厂网关**不发** CORS 头 —— 桌面壳的跨源在 Tauri 侧解决。
+   *
+   * ## 为什么这条断言的落点在网关,而不在 Tauri 那边
+   *
+   * Tauri 里前端的 origin 是 `tauri://localhost`,网关在 `http://127.0.0.1:<port>`,
+   * 那是**真跨源**。解法有两个,而它们的代价差得很远:
+   *
+   * | 解法 | 谁承担 |
+   * | --- | --- |
+   * | Tauri 侧 HTTP 允许清单 | **只有桌面壳**(`src-tauri/src/allowlist.rs`) |
+   * | 给网关加 CORS 响应头 | **每一个部署** —— 包括本来就同源的远端 Web |
+   *
+   * 收益归一家,风险归所有人。而这件事最可能发生的方式不是有人权衡后选了它,
+   * 是有人在调桌面壳时被 `TypeError: Failed to fetch` 卡住 —— 那句话**不提 CORS**,
+   * 与「网关没起来」长得一模一样 —— 于是顺手在网关上加一行中间件,当场就通了。
+   *
+   * ⇒ 注释拦不住那一行,**一条会红的断言才拦得住**。它在这里的意义是:
+   * 从**另一头**证明没人绕过去(`workbench-web/src/hosts.ts` 的 JSDoc 记的是归属,
+   * `src-tauri/README.md` 记的是理由,这里是唯一会变红的那一处)。
+   *
+   * ⚠️ 判据看的是**响应头**,不是源码里有没有 `cors` 字样:
+   * 后者被任何一个自己写的两行中间件绕过,而那正是最可能出现的写法。
+   */
+  it('★ 出厂网关不发 CORS 头(跨源在 Tauri 侧解决,不是给所有部署开口子)', async () => {
+    const DESKTOP_ORIGIN = 'tauri://localhost'
+    /** 只要出现任何一个,就说明有人从网关这一头解决了跨源。 */
+    const CORS_HEADERS = [
+      'access-control-allow-origin',
+      'access-control-allow-credentials',
+      'access-control-allow-methods',
+      'access-control-allow-headers',
+    ]
+
+    // 两种探法各打一次:预检(OPTIONS)与实际请求(GET)。
+    // 只探其中一种是不够的 —— 常见的 CORS 中间件对两者的处理是分开的,
+    // 只加预检而不加实际响应头(或反过来)都是真实存在的写法。
+    const probes = [
+      { method: 'OPTIONS', path: '/v1/sessions', label: '预检' },
+      { method: 'GET', path: '/v1/sessions', label: '实际请求' },
+    ]
+
+    const found: string[] = []
+    let asserted = 0
+    for (const { method, path, label } of probes) {
+      const response = await fetch(`${server.url}${path}`, {
+        method,
+        headers: {
+          ...headersFor('runtime'),
+          origin: DESKTOP_ORIGIN,
+          ...(method === 'OPTIONS'
+            ? {
+                'access-control-request-method': 'GET',
+                'access-control-request-headers': 'authorization',
+              }
+            : {}),
+        },
+      })
+      for (const header of CORS_HEADERS) {
+        asserted += 1
+        const value = response.headers.get(header)
+        if (value !== null) found.push(`${label} ${method} ${path} → ${header}: ${value}`)
+      }
+    }
+
+    // 出口计数:探不到任何响应头时,上面的循环与「没有断言」等价,而它显示为通过。
+    expect(asserted, '一个响应头都没检查到 —— 本条空跑了').toBe(probes.length * CORS_HEADERS.length)
+
+    expect(
+      found,
+      '出厂网关发了 CORS 头。\n' +
+        '⚠️ 若这是为了让 Tauri 壳能连上网关 —— 那个问题的解法在壳那一侧:\n' +
+        '   src-tauri 的 HTTP 允许清单(见 src-tauri/README.md 第三节)。\n' +
+        '   在网关上开口子等于让每一个部署替桌面壳承担风险,而远端 Web 本来就同源。\n' +
+        '实际发出的头:\n' +
+        found.join('\n'),
+    ).toEqual([])
+  })
 })

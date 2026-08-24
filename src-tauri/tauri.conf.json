@@ -1,0 +1,38 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "DSHWAR",
+  "version": "0.9.0",
+  "identifier": "com.dshwar.desktop",
+  "build": {
+    "frontendDist": "../workbench-web/dist",
+    "devUrl": "http://localhost:4322"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "DSHWAR",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1100,
+        "minHeight": 700
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:*; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:"
+    }
+  },
+  "bundle": {
+    "active": false,
+    "targets": "all",
+    "icon": []
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": ["https://updates.dshwar.com/{{target}}/{{arch}}/{{current_version}}"],
+      "pubkey": "",
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}

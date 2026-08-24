@@ -377,7 +377,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 | 2       | Web 工作台(workbench kit)                            | ✅   |
 | 3       | 运营后台(console kit)                                | ✅   |
 | 4       | 认证:系统浏览器 + PKCE + loopback + 钥匙串           | ✅   |
-| 5       | Tauri 壳:一份 React 三宿主 + 运行期主题 + updater    | ⬜   |
+| 5       | Tauri 壳:一份 React 三宿主 + 运行期主题 + updater    | ✅   |
 | 5.5     | `costMinorUnits` 的两个洞(语义折叠 + 单位假设)       | ⬜   |
 | 6       | 打包(单独两周,不混功能)                              | ⬜   |
 
@@ -581,13 +581,49 @@ state 先比 / 回环 IP 字面量)、
 
 ---
 
-### Session 5 · Tauri 壳
+### Session 5 · Tauri 壳 ✅
 
-**交付**:一份 React 三宿主(远端 Web / 本地 sidecar / Tauri)、运行期主题、
-Tauri updater + 自托管源、频道分离(前端资源热更 / sidecar 随大版本)。
+**交付**:`src-tauri/src/keychain.rs`(系统钥匙串读写,15 条 cargo 断言里
+唯一真的碰钥匙串的那条在这儿)、
+`src-tauri/src/allowlist.rs`(跨源允许清单,**逐维相等**而非前缀匹配)、
+`src-tauri/tauri.conf.json`(updater 自托管源 + 频道分离,`pubkey` 刻意留空)、
+`src-tauri/README.md`(明写没做的:打包 / 图标 / sidecar 编排 / CI 上的 Rust)、
+`scripts/test-shell.mjs`(进 `check:all`,没有 cargo 时**吵着跳过**)、
+`packages/auth-pkce/src/loopback.ts`(回环监听的 Node 实现:绑定 IP 字面量 /
+state 匹配才算回调 / 收完等响应落地再兑现)、
+`packages/design-system/src/accent/apply.ts`(运行期主题从 `BrandingScreen` 提出来,
+写与清的清单同源)、
+`workbench-web/src/hosts.ts`(三宿主接线:除 `baseUrl` 外逐字段相同)、
+`workbench-web/src/bootstrap.tsx`(**出厂装配**:入口真的走 `hostConfig` 与 `applyAccent`)、
+`workbench-web/test/shipped-entry.test.ts`(调出厂入口的断言,不自己拼装)、
+`scripts/lib/scan.mjs`(守卫跳过**说明性字符串**,判据窄到「带空格或中文的才算说明」)。
 
 **验收**:同一份前端产物在三个宿主下跑通,**差别只有 baseURL**;
 安装包永远中性(白牌走运行期主题)。
+
+> ✅ **验收怎么验到的**:真实浏览器 + 真实网关(`gateway.config.example.json`)。
+> 出厂入口按 `hostKind: 'remote-web'` 算出 `/`,`/v1/workspaces` 与 `/v1/sessions`
+> 双 200;`primaryColor: '#2F6FEB'` + `theme: 'dark'` 时 DOM 上写满 **20** 条属性,
+> `--accent-text` = `#4685FF` = **暗**主题派生值(亮主题是 `#2F6FEB`,两者不等 ——
+> 这一条钉住「属性说暗、派生用亮」那种只掉对比度不报错的坏法);
+> 改回 `null` 后 **0** 条内联属性、`data-brand` 消失、`--link-underline`
+> 由层叠回落成 `underline` —— 未配置态用**形态**接替颜色,而不是一套写死的中性值。
+
+> ⚠️ **本 Session 只做壳与接线,打包不在内。** `src-tauri` 是 lib 不是 app:
+> `bundle.active: false`、图标为空、没有 `tauri build`。
+> Node 22 运行时与 node-pty / sharp / @vscode/ripgrep 三个原生模块是 Session 6。
+>
+> ⚠️ **CI 里没有 Rust**(实测:`.github/workflows` 里无 rust / cargo / tauri 字样)。
+> 那 15 条断言今天只在开发机上跑过,`scripts/test-shell.mjs` 会把这件事吵出来。
+> 补法是给 CI 加工具链,不是删断言。
+
+> 🚨 **顺带修掉一条守卫的「惩罚记录」**:约束 2 第一次跑就报了
+> `workbench-web/src/hosts.ts` 里一句**解释「浏览器为什么不能存长效凭据」的错误信息**。
+> 第一反应是绕开(把 API 名字从那句话里拿掉,门禁就绿)—— 那正是
+> CLAUDE.md 说的那种失败:守卫生效了,解释被删了,全程没有一道红。
+> 改成给判据补一维(`scripts/lib/scan.mjs` 的 `withoutStringProse`),
+> 负向验证 41a–d 在 `scripts/verify-guards.mjs`,
+> 而 `hostSecrets` 那句话现在是这条判据的**活夹具**。
 
 ---
 

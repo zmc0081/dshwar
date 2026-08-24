@@ -19,11 +19,20 @@
     -->
     <script>
       window.__DSHWAR_CONFIG__ = {
-        // 开发期指向 dev server 自己 —— vite 把 /v1 代理到本地网关,于是浏览器看到的是同源。
-        baseUrl: 'http://localhost:4322',
+        // ⚠️ 注入的是「我是谁」,不是「你去连哪」。baseUrl 由 hostKind
+        //    (Tauri 另加 gatewayPort)在 src/hosts.ts 里算出来 ——
+        //    那里有「三宿主除 baseUrl 外逐字段相同」的断言,而三份部署配置各自
+        //    手写 baseUrl 时,它们分家的过程没有任何一步会红。
+        //
+        // 开发期是远端 Web 那一档:vite 把 /v1 代理到本地网关,浏览器看到的是同源。
+        hostKind: 'remote-web',
         token: 'dev-alice',
         productName: 'DSHWAR',
         legalEntityName: '',
+        // null = 未配置 = 中性外观。**不要在这里填一个色**:填了就等于
+        // 开发期看到的永远是某个租户的品牌,而中性那条路没人走过。
+        primaryColor: null,
+        theme: 'light',
       }
     </script>
     <script type="module" src="./src/main.tsx"></script>

@@ -1,0 +1,48 @@
+[package]
+name = "dshwar-shell"
+version = "0.9.0"
+edition = "2021"
+description = "DSHWAR 桌面壳。本 crate 只做宿主能力:系统钥匙串、跨源允许清单、sidecar 编排。"
+license = "MIT"
+publish = false
+
+# ⚠️ 本 crate 刻意**先做成 lib**,而不是一个完整的 Tauri 二进制。
+#
+# 理由:打包(Node 22 运行时 + node-pty / sharp / @vscode/ripgrep 三个原生模块)
+# 是**单独两周**,不进本 Session。而一个完整的 Tauri app crate 要跑 tauri-build
+# 的 codegen,那一步要前端产物、要图标、要签名配置 —— 全是打包那一档的东西。
+#
+# 拆成 lib 之后,**安全关键的那部分现在就能编译、能测**:
+# 钥匙串读写是这一版唯一碰长效凭据的代码,它不该等到打包那两周才第一次跑起来。
+[lib]
+name = "dshwar_shell"
+path = "src/lib.rs"
+
+# 系统钥匙串:Windows Credential Manager / macOS Keychain / Linux Secret Service。
+# ⚠️ 选它而不是自己写,是因为「把密钥存到系统安全存储」这件事在三个平台上
+#    是三套完全不同的 API,而自己写的那一份会在其中两个平台上没人测过。
+#
+# 🚨 **平台 feature 必须显式开,而且这不是可选的优化。**
+#
+# keyring 3 在**一个 store feature 都没开**时回落到一个 **mock 后端**:
+#   set_password() → Ok(())        ← 报告成功
+#   get_password() → NoEntry       ← 而东西不在那儿
+#
+# 那是一条标准的**假成功回执** —— 登录之后「记住我」显示成功,
+# 下次启动却要重新登录,而没有任何错误。
+#
+# ⚠️ 本仓实测撞上过:`round_trip_through_the_real_keychain` 那条测试
+#   第一次跑就红了(写了读不回来),而另外四条纯字符串断言全绿 ——
+#   **结构上的绿证明不了行为**,那条真的碰钥匙串的测试是唯一的捕手。
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# linux-native 用 kernel keyutils —— 它**不跨重启**,所以再加 secret-service。
+# 两者的差别是真实的:keyutils 的条目在重启后消失,而 refresh token 要活过重启。
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
+
+[dev-dependencies]

@@ -23,6 +23,16 @@
  * ⇒ 远端 Web 宿主的 `SecretStore` **一律拒绝**存 refresh token
  * (见 {@link WEB_SECRETS_REFUSE}),它只拿短效 access token。
  *
+ * ## ⚠️ 这个入口里**不许出现 `node:` 的东西**
+ *
+ * 本文件是三个宿主共用的入口,远端 Web 那一份要进浏览器打包。
+ * loopback 回调监听(`loopback.ts`)import 了 `node:http`,所以它
+ * **刻意不从这里再导出** —— 要用它走子路径 `@dshwar/auth-pkce/loopback`。
+ *
+ * 从这里再导出一次的后果不是立刻报错:Vite 会在构建期打一行
+ * 「externalized for browser compatibility」然后照样出包,运行到那行才炸。
+ * 判据落在 `test/loopback.test.ts` 的「入口不拖 node 依赖」那一条上。
+ *
  * @module @dshwar/auth-pkce
  */
 

@@ -11,6 +11,7 @@
     "dev": "vite"
   },
   "dependencies": {
+    "@dshwar/auth-pkce": "workspace:*",
     "@dshwar/design-system": "workspace:*",
     "@dshwar/sdk": "workspace:*"
   },
