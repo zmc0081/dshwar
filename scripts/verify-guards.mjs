@@ -45,6 +45,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 import { runTestsUnderMutation, withRestoredFiles } from './lib/mutate.mjs'
 import { collectFiles, isPackageJson } from './lib/scan.mjs'
+import { reclaimMutations } from './lib/mutation-journal.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 /** @param {...string} seg */
@@ -137,6 +138,10 @@ function reclaimOrphanedStashes() {
 }
 
 reclaimOrphanedStashes()
+// ⚠️ 第二种残骸:变异型负向验证改坏过、而进程被强杀时没还原的文件。
+//   与上面那条是同一族(finally 挡不住 SIGKILL),但机制不同 ——
+//   那条搬目录,这条改文件内容。两者都要吵着还原,不要悄悄修好。
+reclaimMutations(REPO)
 
 /** @type {string[]} */
 const created = []

@@ -272,3 +272,49 @@ function finalRestore(saved) {
   // 非零退出。安静地结束,等于把一个坏仓库交给下一个人。
   process.exitCode = 1
 }
+
+/**
+ * 跑 vitest,**超时即杀** —— 给「预期结果是挂住」的那一类验证用。
+ *
+ * ## 为什么受控通路要多这一个能力
+ *
+ * `runVitest` 是同步的(`execFileSync`)。而**上限类**守卫的负向验证
+ * 预期结果是「不终止」——同步调用**阻塞事件循环**,任何 `setTimeout`
+ * 都没有机会触发,于是「加个超时」这个想法在同步版本上根本不成立。
+ *
+ * ⚠️ V0.9.0 收尾实测过一次:第一版就是把 `execFileSync` 包进一个 Promise,
+ * 结果等了 **600 秒以上**,然后报出「它终止了」——**一个假的结论**。
+ * 判据观测不到真正的结论,与「判据打在输出的某个片段上」是同一族。
+ *
+ * ## ⚠️ 超时之后必须杀掉子进程
+ *
+ * 不杀的话它会一直跑到内存耗尽,而调用方已经退出 ——
+ * 那是一个**没有主人的死循环**,只能靠人去任务管理器里找。
+ *
+ * @param {readonly string[]} targets
+ * @param {number} timeoutMs 要**明显小于**框架与 CI 的超时
+ * @returns {Promise<{ timedOut: boolean }>} `timedOut: true` = 它没有终止
+ */
+export async function spawnVitestWithTimeout(targets, timeoutMs) {
+  const { spawn } = await import('node:child_process')
+  /** @type {import('node:child_process').ChildProcess | undefined} */
+  let child
+  /** @type {NodeJS.Timeout | undefined} */
+  let timer
+  try {
+    const outcome = await new Promise((resolve) => {
+      child = spawn(process.execPath, [VITEST, 'run', ...targets], {
+        cwd: REPO,
+        stdio: 'ignore',
+      })
+      // 红了也算「终止了」—— 对这一类验证,终止本身就是要报的问题。
+      child.on('exit', () => resolve('terminated'))
+      child.on('error', () => resolve('terminated'))
+      timer = setTimeout(() => resolve('timeout'), timeoutMs)
+    })
+    return { timedOut: outcome === 'timeout' }
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+    child?.kill('SIGKILL')
+  }
+}
