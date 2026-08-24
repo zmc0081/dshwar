@@ -6,6 +6,7 @@
  */
 import {
   aggregateDaily,
+  costToWire,
   InMemoryMeteringStore,
   safeRecord,
   type PriceTable,
@@ -23,6 +24,7 @@ import { AUTH_ENTRIES, createTestHarness, readSSE } from './harness.ts'
 
 const prices: PriceTable = {
   currency: 'CNY',
+  currencyExponent: 2,
   prices: { 'fake/fake-1': { inputPerMTokenMinor: 200, outputPerMTokenMinor: 800 } },
 }
 
@@ -87,7 +89,11 @@ async function boot(breakMetering = false): Promise<void> {
       credentialRefs: [],
       subjects: { find: async () => undefined },
       usageReader: {
-        daily: async (filter) => aggregateDaily(await metering.query(filter), prices),
+        daily: async (filter) =>
+          aggregateDaily(await metering.query(filter), prices).map((row) => ({
+            ...row,
+            cost: costToWire(row.cost),
+          })),
       },
     }),
   })
@@ -153,7 +159,7 @@ describe('红线 1:计量挂了,会话照常', () => {
 })
 
 describe('/v1/admin/usage 转正', () => {
-  it('聚合行是契约 UsageRecord 的九个字段,不多不少', async () => {
+  it('聚合行是契约 UsageRecord 的八个字段,不多不少', async () => {
     await runTurn()
 
     const res = await app.request('/v1/admin/usage', { headers: ADMIN })
@@ -161,8 +167,7 @@ describe('/v1/admin/usage 转正', () => {
     const body = (await res.json()) as { data: Record<string, unknown>[] }
     expect(body.data.length).toBeGreaterThan(0)
     expect(Object.keys(body.data[0]!).sort()).toEqual([
-      'costMinorUnits',
-      'currency',
+      'cost',
       'date',
       'inputTokens',
       'model',
@@ -171,6 +176,48 @@ describe('/v1/admin/usage 转正', () => {
       'subjectId',
       'tenantId',
     ])
+    // ★ 成本那一格也要逐字段比:少一个 currencyExponent,消费方就只能猜 ÷100,
+    //   而那正是 V0.9.0 Session 5.5 修掉的洞。少一个 kind,「算不出来」与
+    //   「不计费」又会坍缩回同一个 0。
+    expect(Object.keys(body.data[0]!['cost'] as object).sort()).toEqual([
+      'amountMinor',
+      'currency',
+      'currencyExponent',
+      'kind',
+    ])
+  })
+
+  /**
+   * ★ 这个部署的价格表里**没有** `fake/fake-1` —— 于是成本算不出来。
+   *
+   * 判据刻意落在「**不是** 0」上:折叠回 0 的话,一个没配价的模型在账面上
+   * 会显示成「这笔消耗不收费」,而那两件事对账的人的处理完全相反。
+   */
+  it('★ 没配价的模型出 unpriced,而不是一个看起来像钱的 0', async () => {
+    // 直接写一条明细:这一条验的是**定价那一步**,不是采集链路
+    // (采集链路上面已经验过了,再跑一遍只会让失败时多一个可疑的方向)。
+    await metering.record({
+      subjectId: AUTH_ENTRIES[0]!.id,
+      tenantId: 'acme',
+      sessionId: 's-unpriced',
+      turn: 1,
+      step: 1,
+      provider: 'nowhere',
+      model: 'not-in-the-price-table',
+      usage: { inputTokens: 1000, outputTokens: 2000 },
+      unreported: false,
+      at: new Date().toISOString(),
+    })
+
+    const res = await app.request('/v1/admin/usage', { headers: ADMIN })
+    const body = (await res.json()) as {
+      data: { provider: string; cost: Record<string, unknown> }[]
+    }
+    const row = body.data.find((r) => r.provider === 'nowhere')
+    expect(row, '没找到那一行 —— 本条空跑了').toBeDefined()
+    expect(row!.cost['kind']).toBe('unpriced')
+    expect(row!.cost['amountMinor']).toBeNull()
+    expect(row!.cost['amountMinor']).not.toBe(0)
   })
 
   it('跨租户的 Admin Key 看不到 acme 的用量', async () => {

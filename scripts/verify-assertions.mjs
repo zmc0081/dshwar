@@ -627,6 +627,80 @@ console.log('DSHWAR · 断言有效性探针\n')
   )
 }
 
+// 27. ★ 把币种指数写死回 2 —— 用量页那一条(V0.9.0 Session 5.5)
+//
+//     这是本 Session 验收 ④ 的落点:指数一旦写死,JPY(0)与 KWD(3)
+//     的金额各自差 10 的整数次幂,而**显示出来的串完全正常** ——
+//     `382.04` 与 `38,204` 都不像错的,只有对着真实账目才看得出来。
+//
+//     ⚠️ 变异挑的是 `10 ** currencyExponent → 100`,那正是这个 bug 的原貌:
+//     它不是「忘了传参数」(那会编译不过),是「参数收下了但没用」。
+{
+  const r = withMutation(
+    'console-web/src/view/usage.ts',
+    (s) => s.replace('const divisor = 10 ** currencyExponent', 'const divisor = 100'),
+    ['console-web/test/cost.test.ts'],
+  )
+  expect(
+    '27 用量页把指数写死回 2 → JPY / KWD 的金额断言变红',
+    r.red,
+    r.unchanged
+      ? '锚点没匹配上 —— formatMinorUnits 里算除数那一行换了形状,先修锚点'
+      : '★ 日元被按 ÷100 显示(差 100 倍),而断言竟然还是绿的',
+  )
+}
+
+// 28. ★ 把币种指数写死回 2 —— 概览页那一条(V0.9.0 Session 5.5)
+//
+//     与 27 **同一个 bug 的第二个实现**。分成两条探针而不是合并,
+//     是因为「一条探针一个目标」:合并之后红是「或」,
+//     一处的红会盖住另一处的空跑。
+//
+//     ⚠️ 这两处历史上真的分过家:改动前 overview.ts 有一张 11 条的币种表
+//     (JPY 算对),而 usage.ts 写死 ÷100(JPY 差 100 倍)——
+//     同一个前端里的两个事实源,对同一笔钱给出两个答案。
+{
+  const r = withMutation(
+    'console-web/src/view/overview.ts',
+    (s) => s.replace('const divisor = 10 ** currencyExponent', 'const divisor = 100'),
+    ['console-web/test/cost.test.ts'],
+  )
+  expect(
+    '28 概览页把指数写死回 2 → 预估账单的 JPY / KWD 断言变红',
+    r.red,
+    r.unchanged
+      ? '锚点没匹配上 —— formatMoney 里算除数那一行换了形状,先修锚点'
+      : '★ 预估账单按 ÷100 显示日元(差 100 倍),而断言竟然还是绿的',
+  )
+}
+
+// 29. ★ 「算不出来」被折回 0(V0.9.0 Session 5.5)
+//
+//     这是验收 ① 的落点。语义折叠的具体长相是:定价查不到时给一个 0,
+//     于是「没配价」与「不计费」在账面上变成同一句话 ——
+//     而拿账单对账的人对这两者的处理**完全相反**。
+//
+//     ⚠️ 变异后**功能仍然正常**:页面照样渲染、发票照样出得来、
+//     总额照样是个数。这一族坏法没有任何现成信号,只有断言能看见。
+{
+  const r = withMutation(
+    'packages/metering/src/cost.ts',
+    (s) =>
+      s.replace(
+        "  if (price === undefined) return { kind: 'unpriced' }",
+        "  if (price === undefined)\n    return { kind: 'priced', amountMinor: 0, currency: table.currency, currencyExponent: table.currencyExponent }",
+      ),
+    ['packages/metering/test/metering.test.ts'],
+  )
+  expect(
+    '29 没配价折回「零元」→ 「unpriced 不是 0」的断言变红',
+    r.red,
+    r.unchanged
+      ? '锚点没匹配上 —— costFor 里查不到价那一行换了形状,先修锚点'
+      : '★ 一张把「算不出来」印成「零元」的账单又回来了,而断言竟然还是绿的',
+  )
+}
+
 // 26. ★ 有人从网关这一头解决跨源(V0.9.0 Session 5)
 //
 //     桌面壳的跨源有两个解法,代价差得很远:Tauri 侧的允许清单只影响桌面壳,

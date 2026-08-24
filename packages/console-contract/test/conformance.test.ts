@@ -29,7 +29,7 @@
  * 而那个红是关于「变量没用」的,不是关于「类型对不上」的 —— 会误导人。
  */
 import type { AuditRecord } from '@dshwar/audit'
-import type { DailyUsageRow } from '@dshwar/metering'
+import { costToWire, readCost, type Cost, type DailyUsageRow } from '@dshwar/metering'
 import type { QuotaState } from '@dshwar/policy'
 import type { Subject } from '@dshwar/subject'
 import { describe, expect, it } from 'vitest'
@@ -84,8 +84,9 @@ export function usageRowOf(row: DailyUsageRow): ConsoleUsageRow {
     model: row.model,
     inputTokens: row.inputTokens,
     outputTokens: row.outputTokens,
-    costMinorUnits: row.costMinorUnits,
-    currency: row.currency,
+    // ★ 成本走 costToWire —— 领域侧是判别联合,线上是扁平形状。
+    //   这一行的返回类型标着 ConsoleUsageRow,所以两个形状对不上时**编译不过**。
+    cost: costToWire(row.cost),
   }
 }
 
@@ -143,6 +144,46 @@ describe('线上类型与领域模型一致', () => {
     })
     expect(member.emails).not.toBe(emails)
     expect(member.emails[0]).not.toBe(emails[0])
+  })
+
+  /**
+   * ★ 成本的**往返**:领域 → 线上 → 领域,三个分支各走一次。
+   *
+   * 这一条盯的是本 Session 的整个理由:线上形状是扁平的(为了让
+   * Kotlin / Swift 拿到类型),而扁平形状**允许**非法组合。
+   * 往返相等证明两件事:投影没丢信息,读回来也没猜。
+   *
+   * ⚠️ 判据是「三个分支都走过」的**出口计数**,不是「循环跑完了」——
+   * 三个分支里少写一个,而 `expect` 照样全绿。
+   */
+  it('★ 成本三个分支往返不丢信息,也不互相坍缩', () => {
+    const cases: readonly Cost[] = [
+      { kind: 'priced', amountMinor: 38204, currency: 'CNY', currencyExponent: 2 },
+      { kind: 'unpriced' },
+      { kind: 'unbilled' },
+    ]
+    const seen = new Set<Cost['kind']>()
+    let asserted = 0
+    for (const domain of cases) {
+      const wire = costToWire(domain)
+      expect(readCost(wire)).toEqual(domain)
+      seen.add(domain.kind)
+      asserted += 1
+    }
+    expect(asserted, '一个分支都没断言到 —— 本条空跑了').toBe(cases.length)
+    expect([...seen].sort()).toEqual(['priced', 'unbilled', 'unpriced'])
+  })
+
+  it('★ 「算不出来」与「不收费」在线上仍然分得开 —— 它们曾经是同一个 0', () => {
+    const unpriced = costToWire({ kind: 'unpriced' })
+    const unbilled = costToWire({ kind: 'unbilled' })
+    // 两者的载荷都是 null,唯一的区别是 kind —— 而那正是区别所在。
+    expect(unpriced.kind).not.toBe(unbilled.kind)
+    // 🚨 关键:两者都**不是** 0。把它们渲染成 0 是这个 Session 要拆掉的那句谎。
+    expect(unpriced.amountMinor).toBeNull()
+    expect(unbilled.amountMinor).toBeNull()
+    expect(unpriced.amountMinor).not.toBe(0)
+    expect(unbilled.amountMinor).not.toBe(0)
   })
 
   it('配额 tokenLimit 的 null 语义原样保留 —— null 是「不限」,不是 0', () => {

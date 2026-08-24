@@ -45,7 +45,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 import { runTestsUnderMutation, withRestoredFiles } from './lib/mutate.mjs'
 import { collectFiles, isPackageJson } from './lib/scan.mjs'
-import { reclaimMutations } from './lib/mutation-journal.mjs'
+import { beginMutation, reclaimMutations } from './lib/mutation-journal.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 /** @param {...string} seg */
@@ -859,6 +859,77 @@ try {
         )
       }
     })
+  }
+
+  // ---------------------------------------------------------------------
+  // 42. 没人自带「币种 → 指数」对照表:三向(V0.9.0 Session 5.5)
+  //
+  //     minor → major 的指数不都是 2(JPY 是 0,KWD 是 3)。自带一张表 =
+  //     第二个事实源,与服务端的计价口径迟早分家,而分家的表现是账目差
+  //     10 的整数次幂 —— 且没人知道该信哪一边。
+  //
+  //     ⚠️ 改动前 console-web 里**已经有两处**各自解决了这件事,
+  //     而它们对 JPY 的答案不一样(一处有表算对,一处写死 ÷100 差 100 倍)。
+  //     这条守卫是那次收敛的棘轮。
+  //
+  //     三向:
+  //       a 真的写一张表        → 红
+  //       b ★ `currency: 'JPY'` → 放行(币种是**值**,不是键)
+  //       c ★ `currencyExponent: 2` → 放行(那正是从契约收下来的那个数)
+  //
+  //     ⚠️ 判据打在**守卫自己的标题**加**夹具路径**上,不打在 `r.ok`:
+  //     夹具目录会撞上别的无关守卫,那时 r.ok 恒为 false(37b 踩过这个坑)。
+  // ---------------------------------------------------------------------
+  {
+    const HEADER = /有人自带了币种指数表/
+    const FIXTURE = /__fx_fixture__[\\/]src[\\/]money\.ts/
+    const dropFx = () => rmSync(p('packages/__fx_fixture__'), { recursive: true, force: true })
+    const fxFixture = (/** @type {string} */ body) => {
+      writeFixture('packages/__fx_fixture__/src/money.ts', body)
+    }
+
+    const FX_CASES = [
+      {
+        label: '42a 真的写一张币种 → 指数表 → 守卫变红',
+        blocked: true,
+        body:
+          'export const EXPONENT: Readonly<Record<string, number>> = {\n' +
+          '  CNY: 2,\n' +
+          '  JPY: 0,\n' +
+          '}\n',
+        hint: '一张自带的表与服务端口径分家时,账目差 10 的整数次幂,而两边看起来都正常',
+      },
+      {
+        label: "42b ★ 反向对照:currency: 'JPY' 是**值**不是键 → 放行",
+        blocked: false,
+        body: "export const sample = { currency: 'JPY', amountMinor: 38204 }\n",
+        hint: '',
+      },
+      {
+        label: '42c ★ 反向对照:从契约收下来的 currencyExponent → 放行',
+        blocked: false,
+        body: 'export const fromContract = { currencyExponent: 2, amountMinor: 38204 }\n',
+        hint: '',
+      },
+    ]
+
+    for (const c of FX_CASES) {
+      dropFx()
+      fxFixture(c.body)
+      const r = runGuards()
+      const hit = HEADER.test(r.output) && FIXTURE.test(r.output)
+      const passed = c.blocked ? hit : !hit
+      expect(
+        c.label,
+        passed,
+        passed
+          ? undefined
+          : c.blocked
+            ? `守卫放行了一张真的币种表 —— ${c.hint}`
+            : '守卫把一个合法写法判成了「自带币种表」—— 这类误报会让人学会给它加豁免',
+      )
+      dropFx()
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -1807,6 +1878,7 @@ try {
         'eslint 的分域规则覆盖了每一个前端包', // 38a / 38b
         '前端不持有长效凭据(refresh token 不进浏览器存储)', // 40a–40d
         'Session 标 ✅ 的交付产物都真的存在(任务书自身的诚实性)', // 34a–34c
+        '没有人自带「币种 → 指数」对照表(指数随金额从契约来)', // 42a–42c
       ]
 
       const accounted = new Set([...HARD_RULE_FIXTURES.map((f) => f.guard), ...VERIFIED_ELSEWHERE])
@@ -2405,48 +2477,95 @@ try {
       },
     ]
 
-    withRestoredFiles([target], (restore) => {
-      const pristine = readFileSync(target, 'utf8')
+    // ---------------------------------------------------------------------
+    // 🚨 **跑这一族之前必须把已有的 major changeset 挪开。**
+    //
+    //     `check-contract` 的规则是「破坏性变更 + 点名契约包的 major changeset
+    //     = 放行」。于是仓库里**只要有一份这样的声明**,下面十八条负向验证
+    //     就全部失效:它们植入真实的破坏性变更,而门禁一律放行。
+    //
+    //     ⚠️ 这不是假设 —— V0.9.0 Session 5.5 是本仓**第一次**真的有这样一份
+    //     声明(`UsageRecord` 换成本字段的形状),而它一进 `.changeset/`,
+    //     这十八条当场全红。也就是说:在此之前它们从未在「有声明」的状态下
+    //     跑过,而那个状态迟早会出现。
+    //
+    //     ⇒ 挪开 → 跑 → 还原。挡不住 SIGKILL 的那一半交给 `beginMutation`
+    //     的清单落盘(下次启动时 `reclaimMutations` 自愈并吵出来)——
+    //     一份被吃掉的破坏性声明会让下一次门禁**静默放行**,
+    //     那正是最不该悄悄发生的事。
+    // ---------------------------------------------------------------------
+    const declarations = readdirSync(p('.changeset'))
+      .filter((n) => n.endsWith('.md') && n.toLowerCase() !== 'readme.md')
+      .map((n) => `.changeset/${n}`)
+    const stashed = beginMutation(REPO, declarations)
+    for (const rel of declarations) rmSync(p(rel), { force: true })
 
-      for (const c of CONTRACT_CASES) {
-        restore()
-        const doc = JSON.parse(readFileSync(target, 'utf8'))
-        c.mutate(doc)
-        const mutated = JSON.stringify(doc, null, 2) + '\n'
+    try {
+      withRestoredFiles([target], () => {
+        // 🚨 **基线取 HEAD 的那一份,不取工作区的那一份。**
+        //
+        //   `check-contract --base HEAD` 比的是「HEAD ↔ 工作区文件」。
+        //   若工作区自己就带着一次真实的契约改动(正在做的那个版本),
+        //   那么每一条负向验证比的都是「我的改动 + 植入的变更」——
+        //   于是 additive 那九条会因为**别人的**破坏性变更而红,
+        //   而它们报出来的是「相容变更被拦住了」,指向一个根本不存在的问题。
+        //
+        //   ⚠️ 这不是假设:V0.9.0 Session 5.5 改了 `UsageRecord` 的成本字段,
+        //   这九条当场全红。**在此之前它们从未在「工作区已有契约改动」的
+        //   状态下跑过** —— 而那个状态正是契约演进时的常态。
+        //
+        //   ⇒ 每条用例先把文件写回 HEAD 的内容,再植入变异。
+        //   于是「基线 ↔ 文件」之间只剩下这一次植入,与工作区无关。
+        const pristine = execFileSync('git', ['show', `HEAD:packages/api-contract/openapi.json`], {
+          cwd: REPO,
+          encoding: 'utf8',
+          maxBuffer: 64 * 1024 * 1024,
+        })
 
-        // ★ 先证明变异真的改到了东西。少了这一条,一个 no-op 的变异会被记成
-        //   「门禁漏报」——而那是本脚本自己的 bug,不是被测工具的。
-        //   锚点失配必须响亮,不能静默(CLAUDE.md 第三节根因 2 的同一条教训)。
-        if (mutated === pristine) {
+        for (const c of CONTRACT_CASES) {
+          writeFileSync(target, pristine, 'utf8')
+          const doc = JSON.parse(pristine)
+          c.mutate(doc)
+          const mutated = JSON.stringify(doc, null, 2) + '\n'
+
+          // ★ 先证明变异真的改到了东西。少了这一条,一个 no-op 的变异会被记成
+          //   「门禁漏报」——而那是本脚本自己的 bug,不是被测工具的。
+          //   锚点失配必须响亮,不能静默(CLAUDE.md 第三节根因 2 的同一条教训)。
+          if (mutated === pristine) {
+            expect(
+              `8/9 [${c.code}] 负向验证`,
+              false,
+              `变异没改动 openapi.json —— 锚点失配,本条结论作废(不是门禁漏报)`,
+            )
+            continue
+          }
+
+          writeFileSync(target, mutated, 'utf8')
+          const r = runContract()
+          const mentions = r.output.includes(c.code)
+          const reactedRight = c.blocked ? !r.ok : r.ok
+
+          const passed = reactedRight && mentions
           expect(
-            `8/9 [${c.code}] 负向验证`,
-            false,
-            `变异没改动 openapi.json —— 锚点失配,本条结论作废(不是门禁漏报)`,
+            `8/9 [${c.code}] ${c.blocked ? '被拦住' : '被放行'}`,
+            passed,
+            passed
+              ? undefined
+              : !reactedRight
+                ? c.blocked
+                  ? `契约冻结检查**放行**了这种破坏性变更 —— 门禁输出的「破坏性 0 处」对它不成立`
+                  : `契约冻结检查**拦住**了相容变更 —— 规则变成了「禁止一切演进」:\n${r.output.slice(0, 300)}`
+                : `门禁反应对了,但输出里没有 ${c.code} —— 分类打到了别的码上,诊断会指错方向`,
           )
-          continue
         }
-
-        writeFileSync(target, mutated, 'utf8')
-        const r = runContract()
-        const mentions = r.output.includes(c.code)
-        const reactedRight = c.blocked ? !r.ok : r.ok
-
-        const passed = reactedRight && mentions
-        expect(
-          `8/9 [${c.code}] ${c.blocked ? '被拦住' : '被放行'}`,
-          passed,
-          passed
-            ? undefined
-            : !reactedRight
-              ? c.blocked
-                ? `契约冻结检查**放行**了这种破坏性变更 —— 门禁输出的「破坏性 0 处」对它不成立`
-                : `契约冻结检查**拦住**了相容变更 —— 规则变成了「禁止一切演进」:\n${r.output.slice(0, 300)}`
-              : `门禁反应对了,但输出里没有 ${c.code} —— 分类打到了别的码上,诊断会指错方向`,
-        )
-      }
-
-      restore()
-    })
+        // 工作区那一份由 withRestoredFiles 在出口还原 —— 这里不再自己写一次:
+        // 循环里写进去的是 **HEAD 的内容**,自己还原等于把工作区的改动抹掉。
+      })
+    } finally {
+      // 还原被挪开的声明。⚠️ 这一步比上面那十八条更要紧:
+      //   丢一份破坏性声明,下一次门禁会**静默放行**一个真实的破坏性变更。
+      stashed.restore()
+    }
 
     // ★ 完备性:每个 ContractChangeCode 都必须在上表里。
     //

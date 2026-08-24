@@ -581,6 +581,13 @@ export interface components {
         UpdateQuotaRequest: {
             tokenLimit: number | null;
         };
+        Cost: {
+            /** @enum {string} */
+            kind: "priced" | "unpriced" | "unbilled";
+            amountMinor: number | null;
+            currency: string | null;
+            currencyExponent: number | null;
+        };
         UsageRecord: {
             /** @description 主体标识。必须是 IdP 的不可变主键(OIDC sub / SCIM id / 目录 object id),不得使用邮箱 */
             subjectId: string;
@@ -591,8 +598,7 @@ export interface components {
             model: string;
             inputTokens: number;
             outputTokens: number;
-            costMinorUnits: number;
-            currency: string;
+            cost: components["schemas"]["Cost"];
         };
         ListUsageResponse: {
             data: components["schemas"]["UsageRecord"][];

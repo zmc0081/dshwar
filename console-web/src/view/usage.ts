@@ -18,15 +18,15 @@
  * | --- | --- | --- |
  * | `summary.tokens` | ✅ ∑`inputTokens` + ∑`outputTokens` | 千分位;附注拆出输入 / 输出两段 |
  * | 附注里的「上周期 / 环比」 | ❌ | **不写**。`api.usage()` 不带账期参数,取不到另一个账期的数 |
- * | `summary.cost` | ✅ ∑`costMinorUnits` | ÷100 并带币种代码,见下「⚠️ 换算比例」 |
+ * | `summary.cost` | ✅ ∑`cost.amountMinor` | 按 `cost.currencyExponent` 换算并带币种代码;**有算不出来的行就显示 `'—'`** |
  * | `summary.runs` | ❌ | `'—'`,附注说明为什么 |
  * | `summary.perRun` | ❌(它 = 消耗 ÷ 运行次数) | `'—'` —— 被除数缺了,商就不存在 |
  * | `rows.key` | ✅ | 模型维度取 `provider/model`,租户维度取 `tenantId` |
  * | `rows.runs` | ❌ | `'—'`,同上 |
  * | `rows.share` | ✅ | 合计为 0 时 `'—'`,不写 `0.0%`(见下) |
- * | `rows.cost` | ✅ | **整数分**算完再拼小数点,不进浮点 |
+ * | `rows.cost` | ✅ | **整数**算完再拼小数点,不进浮点;这一组里有一格算不出来就整组 `'—'` |
  * | `trend` | ✅ 按 `date` × 维度键聚合 | 某天某维度没有记录 = 那天真的是 0,填 0 |
- * | `currency` | ✅ | 混币**抛**,不求和 |
+ * | `currency` | ✅ | 混币**抛**,不求和;一行都没算出钱来时是 `null`(没有金额就没有币种) |
  * | `range` / `rangeOptions` | ⚠️ 只有「这批数据实际覆盖的日期范围」 | 单选项 = 实际范围;不列做不到的「近 7 天」 |
  * | `tenant` / `tenantOptions` | ✅ 数据里的 distinct | 过滤**真的生效**(在这一层做) |
  * | `period`(空态里写作「计费周期」) | ❌ | `'—'`,见下「⚠️ 账期」 |
@@ -43,16 +43,18 @@
  * ⇒ 同一个事实**换一个名实相符的位置说**:它作为「时间范围」下拉的当前值出现,
  * 那个标签说的正好就是它的含义。事实保住了,错误的标签没有被喂数。
  *
- * ## ⚠️ 换算比例 100 没有来源,是契约注释写死的
+ * ## ✅ 换算比例已经有来源了(V0.9.0 Session 5.5)
  *
- * `costMinorUnits` 的契约注释是「以最小货币单位计(**分**)」,于是这里 ÷100。
- * 但 ISO 4217 的最小单位指数**不都是 2**:JPY 是 0(1 円 = 1 minor unit),
- * KWD 是 3。真收到 JPY 的行,这里会把 100 円显示成 `1.00`。
+ * 这里曾经写死 `÷ 100`,理由是契约注释说「以最小货币单位计(**分**)」。
+ * 而 ISO 4217 的指数**不都是 2**:JPY 是 0(1 円 = 1 minor unit),KWD 是 3 ——
+ * 真收到 JPY 的行,那一版会把 100 円显示成 `1.00`。
  *
- * 自己带一张「币种 → 指数」表是**第二个事实源** —— 服务端的计价用的是它自己的口径,
- * 两张表迟早分家,而分家的表现是账目差 100 倍。⇒ 正确的修法是让契约把指数
- * 与金额一起给出来(`currencyExponent`),不是在前端猜。这里先照契约的口径算,
- * 并把这段话留在这里。
+ * ⚠️ 同一时期 `view/overview.ts` 自带了一张 11 条的币种表,于是**同一个前端里
+ * 有两个事实源**,对 JPY 的答案已经不一样。
+ *
+ * ⇒ 指数现在随金额一起从契约来(`cost.currencyExponent`),
+ * 而服务端的指数与它的价格出自同一段配置 —— 不存在分家的路径。
+ * 那张表已删除,`check-guards.mjs` 有一条守卫钉住「谁也不许再自带一张」。
  *
  * ## ⚠️ 「部门」维度没有数据来源 —— 认出来就抛
  *
@@ -77,6 +79,7 @@
  *
  * @module @dshwar/console-web/view/usage
  */
+import { readCost, type Cost } from '@dshwar/metering'
 import type { UsageChartGroup } from '@dshwar/design-system/screens/console/UsageChart'
 import type {
   UsageBarDensity,
@@ -121,8 +124,13 @@ export const INITIAL_USAGE_VIEW_STATE: {
   readonly barDensity: UsageBarDensity
 } = { dimension: 'model', tenant: ALL_TENANTS, seriesLimit: 6, barDensity: 'regular' }
 
-/** 契约注释写死的最小货币单位换算。⚠️ 它对 JPY / KWD 不成立 —— 见模块注释。 */
-const MINOR_UNITS_PER_MAJOR = 100
+/**
+ * 「这一格不计费」的显示串。
+ *
+ * ⚠️ **它是一个词,不是一个数。** 显示 `0.00` 会让「部署方不收这笔钱」
+ * 与「这笔钱是零」长得一样,而后者在账面上是一句更强的话。
+ */
+const UNBILLED = '不计费'
 
 /**
  * 某天某维度**没有记录**时,趋势图那一格填什么。
@@ -181,18 +189,140 @@ export function groupDigits(value: number): string {
  * ⚠️ 不带币种符号:符号 / 代码由调用点决定(表头带一次,指标卡各带一次),
  * 在这里拼死会让明细表的每一格都重复一遍币种。
  *
- * @throws 非整数或负数 —— 契约声明的是 `int().min(0)`,两者都意味着上游违约,
+ * ## 🚨 指数**由契约给**,这里不认识任何币种
+ *
+ * 换算比例曾经写死 100,而 ISO 4217 的指数不都是 2:JPY 是 0(1 円 = 1 minor),
+ * KWD 是 3。写死 100 的话,100 円会显示成 `1.00` —— 一个**看起来完全正常**的错数。
+ *
+ * ⚠️ 修法**不是**在这里放一张币种表:那是第二个事实源,与服务端的计价口径
+ * 迟早分家,而分家的表现同样是账目差 100 倍,只是那时没人知道该信哪一边。
+ * 指数与金额一起从 `cost` 里来,而服务端的指数与它的价格出自同一段配置。
+ *
+ * @param currencyExponent 契约给的指数。`0` → 没有小数部分(整数直接显示)
+ * @throws 非整数或负数金额 —— 契约声明的是 `int().min(0)`,两者都意味着上游违约,
  *   而负数在这里会被 `%` 与 `trunc` 拆成 `-1.-50` 这种读不出来的串。
+ * @throws 指数不在 0–4 —— 那是契约声明的范围,越界意味着上游违约
  */
-export function formatMinorUnits(minorUnits: number): string {
+export function formatMinorUnits(minorUnits: number, currencyExponent: number): string {
   if (!Number.isInteger(minorUnits) || minorUnits < 0) {
     throw new RangeError(
-      `成本必须是非负整数分,收到 ${minorUnits} —— 契约声明 costMinorUnits 是 int().min(0)`,
+      `成本必须是最小货币单位的非负整数,收到 ${minorUnits} —— 契约声明 amountMinor 是 int().min(0)`,
     )
   }
-  const major = Math.trunc(minorUnits / MINOR_UNITS_PER_MAJOR)
-  const minor = minorUnits % MINOR_UNITS_PER_MAJOR
-  return `${groupDigits(major)}.${String(minor).padStart(2, '0')}`
+  if (!Number.isInteger(currencyExponent) || currencyExponent < 0 || currencyExponent > 4) {
+    throw new RangeError(
+      `币种指数必须是 0–4 的整数,收到 ${currencyExponent} —— 契约声明 currencyExponent 是 int().min(0).max(4)。\n` +
+        '⚠️ 不要在这里回落到 2:那正是这个字段存在的原因(JPY 是 0,KWD 是 3)。',
+    )
+  }
+  const divisor = 10 ** currencyExponent
+  const major = Math.trunc(minorUnits / divisor)
+  // 指数 0 的币种没有小数部分 —— 给日元补一个 `.00` 是在编一个不存在的精度。
+  if (currencyExponent === 0) return groupDigits(major)
+  const minor = minorUnits % divisor
+  return `${groupDigits(major)}.${String(minor).padStart(currencyExponent, '0')}`
+}
+
+/**
+ * 一批成本的汇总 —— **三种情况分开数**,不合并成一个金额。
+ *
+ * 这是本文件对「语义折叠」那个洞的落点:`unpriced`(算不出来)与
+ * `unbilled`(不收费)各有一个计数,于是「合计能不能算」这件事**有答案**,
+ * 而不是靠一个 0 蒙混过去。
+ */
+export interface CostRollup {
+  /** 已算出来的那部分之和(最小货币单位)。 */
+  readonly minor: number
+  /** 有几格是算出来的。 */
+  readonly priced: number
+  /** 有几格**算不出来**(模型没配价)。> 0 时合计不成立。 */
+  readonly unpriced: number
+  /** 有几格是**不收费**的。它们对合计的贡献是真的 0。 */
+  readonly unbilled: number
+  /** 币种;没有任何 `priced` 时为 `null`。 */
+  readonly currency: string | null
+  /** 指数;没有任何 `priced` 时为 `null`。 */
+  readonly currencyExponent: number | null
+}
+
+/**
+ * 汇总一批成本。
+ *
+ * @throws 混币,或同一币种给了两个不同的指数。后者尤其要抛:
+ *   那意味着服务端中途改过计价配置,而两段数据的金额**不在同一个刻度上** ——
+ *   相加得到的数没有意义,却与正常的数长得一模一样。
+ */
+export function rollupCost(costs: readonly Cost[]): CostRollup {
+  let minor = 0
+  let priced = 0
+  let unpriced = 0
+  let unbilled = 0
+  const currencies = new Set<string>()
+  const exponents = new Set<number>()
+
+  for (const cost of costs) {
+    switch (cost.kind) {
+      case 'priced':
+        minor += cost.amountMinor
+        priced += 1
+        currencies.add(cost.currency)
+        exponents.add(cost.currencyExponent)
+        break
+      case 'unpriced':
+        unpriced += 1
+        break
+      case 'unbilled':
+        unbilled += 1
+        break
+    }
+  }
+
+  if (currencies.size > 1) {
+    throw new Error(
+      `这批用量记录里有 ${currencies.size} 种货币(${[...currencies].sort(byCodeUnit).join(' / ')})——\n` +
+        '混币求和得到的数没有意义,而它看起来和别的数一样正常。\n' +
+        '请按币种分开取数再分别渲染,不要在这里挑一个当代表。',
+    )
+  }
+  if (exponents.size > 1) {
+    throw new Error(
+      `同一种货币给了 ${exponents.size} 个不同的指数(${[...exponents].sort((a, b) => a - b).join(' / ')})——\n` +
+        '两段数据的金额不在同一个刻度上,相加得到的数没有意义。\n' +
+        '这通常意味着服务端中途改过 governance.pricing 的 currencyExponent。',
+    )
+  }
+
+  return {
+    minor,
+    priced,
+    unpriced,
+    unbilled,
+    currency: [...currencies][0] ?? null,
+    currencyExponent: [...exponents][0] ?? null,
+  }
+}
+
+/**
+ * 一批成本该显示成什么。
+ *
+ * | 情况 | 显示 | 为什么 |
+ * | --- | --- | --- |
+ * | 有算不出来的 | `'—'` | **合计不成立**。给一个「只算了一部分」的数是最糟的:它看起来是全部 |
+ * | 全部不计费 | `'不计费'` | 一个词,不是 `0.00` |
+ * | 一格都没有 | `'—'` | 没有数据不是 0 |
+ * | 其余 | 金额 | 按契约给的指数换算 |
+ *
+ * ⚠️ 第一行是这个 Session 的核心:宁可显示 `'—'`,也不给一个**看起来像钱**的数。
+ * 与 `billing-local` 遇到没配价的模型时拒绝出票是同一条纪律。
+ */
+export function formatCost(rollup: CostRollup): string {
+  if (rollup.unpriced > 0) return NOT_AVAILABLE
+  if (rollup.priced === 0) return rollup.unbilled > 0 ? UNBILLED : NOT_AVAILABLE
+  // priced > 0 时 currencyExponent 必然非空(它们在同一个分支里被写入)——
+  // 但 `noUncheckedIndexedAccess` 与可空类型下要显式收窄,不用断言。
+  const exponent = rollup.currencyExponent
+  if (exponent === null) throw new Error('不可达:有 priced 却没有指数')
+  return formatMinorUnits(rollup.minor, exponent)
 }
 
 /**
@@ -254,7 +384,13 @@ interface Aggregate {
   readonly key: string
   inputTokens: number
   outputTokens: number
-  costMinorUnits: number
+  /**
+   * 这一组里每一格的成本,**原样收着**。
+   *
+   * ⚠️ 不在这里边加边求和:一旦加成一个 number,「其中三格算不出来」这件事
+   * 就没地方放了 —— 那正是这个字段原来的形状,也正是本 Session 要拆的东西。
+   */
+  costs: Cost[]
 }
 
 function totalTokensOf(a: Aggregate): number {
@@ -300,29 +436,49 @@ export function dataRangeOf(records: readonly UsageRecord[]): string {
 }
 
 /**
- * 这批记录的币种。
+ * 这批记录的币种 —— **只看算出了钱的那些行**。
  *
- * @throws 混币。一张表里两种货币求和得到的是一个**没有意义的数**,而它与正常的数
- *   长得一模一样。`UsageScreen` 的 `currency` 注释点名了这件事该由调用方处理 ——
- *   处理的方式是筛掉或分开聚合,不是在这里挑一个当代表。
- *   ⚠️ 一把 Admin Key 只覆盖一个租户、一个部署的价格表只有一个 `currency`,
- *   所以混币在今天意味着**中途改过计价配置**,那正是该有人看一眼的时候。
+ * ⚠️ 返回 `null` 而不是 `'—'`:没有任何一行算出钱来时,这批数据**没有币种**,
+ * 而不是「币种是一个横杠」。表头据此显示成「成本」而不是「成本 (—)」。
+ *
+ * ⚠️ 一把 Admin Key 只覆盖一个租户、一个部署的价格表只有一个 `currency`,
+ * 所以混币在今天意味着**中途改过计价配置** —— 那正是该有人看一眼的时候,
+ * 于是它由 {@link rollupCost} 抛出,不在这里挑一个当代表。
  */
-export function currencyOf(records: readonly UsageRecord[]): string {
-  const seen = new Set<string>()
-  for (const record of records) seen.add(record.currency)
-  if (seen.size === 0) return NOT_AVAILABLE
-  if (seen.size > 1) {
-    throw new Error(
-      `这批用量记录里有 ${seen.size} 种货币(${[...seen].sort(byCodeUnit).join(' / ')})——\n` +
-        '混币求和得到的数没有意义,而它看起来和别的数一样正常。\n' +
-        '请按币种分开取数再分别渲染,不要在这里挑一个当代表。',
-    )
+export function currencyOf(records: readonly UsageRecord[]): string | null {
+  return rollupCost(records.map((r) => readCost(r.cost))).currency
+}
+
+/**
+ * 成本指标卡的**值**。带币种代码,或者一个说明性的词。
+ *
+ * 与 {@link formatCost} 的分工:那个出的是纯金额串(表格里每格都带币种会很吵),
+ * 这里是指标卡,币种要露出来。
+ */
+function costMetricValue(rollup: CostRollup): string {
+  const formatted = formatCost(rollup)
+  // ⚠️ 判据是「**这个串是不是一个金额**」,不是「有没有 priced 的行」。
+  //   按后者写会拼出 `CNY —` —— 一个既说了币种、又说算不出来的串。
+  //   (这不是假想:本文件第一版就是那么写的,由 test/cost.test.ts 当场抓到。)
+  const isAmount = rollup.unpriced === 0 && rollup.priced > 0 && rollup.currency !== null
+  return isAmount ? `${rollup.currency} ${formatted}` : formatted
+}
+
+/**
+ * 成本指标卡的**附注** —— 「为什么这一格不是一个数」要说出来。
+ *
+ * ⚠️ 一个光秃秃的 `'—'` 会被读成「系统没算」,而真相是「有几行算不出来」,
+ * 那是一句**可以行动**的话:去把那些模型配上价。
+ */
+function costMetricNote(rollup: CostRollup, recordCount: number): string {
+  const scope = `${groupDigits(recordCount)} 条日聚合记录`
+  if (rollup.unpriced > 0) {
+    return `有 ${groupDigits(rollup.unpriced)} 格没配价,合计算不出来 · ${scope}`
   }
-  // Set 非空且只有一个元素 —— 但 noUncheckedIndexedAccess 下要显式收窄。
-  const only = [...seen][0]
-  if (only === undefined) throw new Error('不可达:非空 Set 取不到首元素')
-  return only
+  if (rollup.priced === 0 && rollup.unbilled > 0) {
+    return `这些模型部署方声明了不计费 · ${scope}`
+  }
+  return `估算 · ${scope}`
 }
 
 /** 宿主传进来的东西:一批记录 + 四个界面状态 + 若干回调。 */
@@ -406,10 +562,11 @@ export function toUsageProps(input: UsageViewInput): UsageScreenProps {
   for (const record of visible) {
     const key = dimensionKey(record, input.dimension)
     const found = byKey.get(key)
-    const aggregate = found ?? { key, inputTokens: 0, outputTokens: 0, costMinorUnits: 0 }
+    const aggregate = found ?? { key, inputTokens: 0, outputTokens: 0, costs: [] }
     aggregate.inputTokens += record.inputTokens
     aggregate.outputTokens += record.outputTokens
-    aggregate.costMinorUnits += record.costMinorUnits
+    // ★ 唯一入口:线上是扁平形状,非法组合在这里抛,不猜。
+    aggregate.costs.push(readCost(record.cost))
     if (found === undefined) byKey.set(key, aggregate)
   }
 
@@ -422,7 +579,7 @@ export function toUsageProps(input: UsageViewInput): UsageScreenProps {
 
   const totalInput = aggregates.reduce((sum, a) => sum + a.inputTokens, 0)
   const totalOutput = aggregates.reduce((sum, a) => sum + a.outputTokens, 0)
-  const totalCost = aggregates.reduce((sum, a) => sum + a.costMinorUnits, 0)
+  const totalCost = rollupCost(aggregates.flatMap((a) => a.costs))
   const totalTokens = totalInput + totalOutput
 
   const rows: UsageRow[] = aggregates.map((a) => ({
@@ -437,7 +594,9 @@ export function toUsageProps(input: UsageViewInput): UsageScreenProps {
     outputTokens: groupDigits(a.outputTokens),
     totalTokens: groupDigits(totalTokensOf(a)),
     share: formatShare(totalTokensOf(a), totalTokens),
-    cost: formatMinorUnits(a.costMinorUnits),
+    // 这一组里只要有一格算不出来,整组的合计就不成立 —— 显示 '—' 而不是
+    // 「已算出来的那部分」。后者最糟:它看起来是全部。
+    cost: formatCost(rollupCost(a.costs)),
   }))
 
   // ---- 趋势:X 轴 = 日期,序列 = 维度键(与表格同序)----
@@ -482,8 +641,11 @@ export function toUsageProps(input: UsageViewInput): UsageScreenProps {
     cost: {
       // 币种用契约给的三字母代码,**不映射成 ¥ / $**:一张自带的映射表是第二个
       // 事实源,而它对没收录的币种要么崩、要么标错一个看起来很正常的符号。
-      value: hasData ? `${currency} ${formatMinorUnits(totalCost)}` : NOT_AVAILABLE,
-      note: hasData ? `估算 · ${groupDigits(visible.length)} 条日聚合记录` : '',
+      //
+      // 🚨 有算不出来的行时,这一格是 '—' 而不是「已算出来的那部分」——
+      //    后者是一个**看起来是全部**的数,而它少了几行谁也不知道。
+      value: hasData ? costMetricValue(totalCost) : NOT_AVAILABLE,
+      note: hasData ? costMetricNote(totalCost, visible.length) : '',
     },
     // ⚠️ 两个 '—' 是刻意留白。填上会让人以为运行级记账已经能用了 ——
     //   而它要等 /v1/jobs 那一层的按次记录。

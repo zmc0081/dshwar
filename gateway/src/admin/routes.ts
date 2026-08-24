@@ -143,8 +143,22 @@ export interface UsageRowLike {
   readonly model: string
   readonly inputTokens: number
   readonly outputTokens: number
-  readonly costMinorUnits: number
-  readonly currency: string
+  /**
+   * 成本 —— **扁平线上形状**,由 `@dshwar/metering` 的 `costToWire()` 产出。
+   *
+   * ⚠️ 网关**原样透传**,不在这一层做任何折叠。V0.9.0 Session 5.5 之前
+   * 这里是 `costMinorUnits: number` + `currency: string`,而那个 number
+   * 同时表示「没配价(算不出来)」与「不计费」两句相反的话。
+   */
+  readonly cost: CostWireLike
+}
+
+/** {@link UsageRowLike} 里成本那一格。与契约的 `Cost` schema 同形。 */
+export interface CostWireLike {
+  readonly kind: 'priced' | 'unpriced' | 'unbilled'
+  readonly amountMinor: number | null
+  readonly currency: string | null
+  readonly currencyExponent: number | null
 }
 
 /** `@dshwar/audit` 的 `AuditStore` 里本模块只读的那一小块。 */

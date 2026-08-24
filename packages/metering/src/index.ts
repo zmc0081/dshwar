@@ -19,8 +19,28 @@
  * 上游的 `usage` 是可选的:适配器没报就没有。没报的 step 计 0 并标
  * `unreported: true`,**不估算** —— 估算值混进账目比缺口更难审。
  *
+ * ## 钱:三种情况,三个类型
+ *
+ * 「这一格值多少钱」的答案有三种,而它们**不能共用一个 `0`**:
+ * 算出来了 / 没配价(算不出来)/ 不计费(终值就是不收)。
+ * 判据、价格表、线上形状全在 `cost.ts`,本文件只消费它。
+ *
  * @module @dshwar/metering
  */
+export {
+  assertAllPriced,
+  assertPriceTable,
+  costFor,
+  costToWire,
+  MalformedCostError,
+  PriceTableError,
+  readCost,
+  UnpricedModelError,
+  type Cost,
+  type CostWire,
+  type PriceTable,
+} from './cost.ts'
+import { costFor, type Cost, type PriceTable } from './cost.ts'
 
 /** 上游 TokenUsage 的结构性子集(不 import dsh-llm,契约包不拉运行时依赖)。 */
 export interface TokenUsageLike {
@@ -57,21 +77,6 @@ export function billedInputTokens(usage: TokenUsageLike): number {
   return usage.inputTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0)
 }
 
-/** 价格表:`provider/model` → 每百万 token 的价格(最小货币单位,整数)。 */
-export interface PriceTable {
-  /** 查不到价的模型计 0 成本时,行里仍要有币种。 */
-  readonly currency: string
-  readonly prices: Readonly<
-    Record<
-      string,
-      {
-        readonly inputPerMTokenMinor: number
-        readonly outputPerMTokenMinor: number
-      }
-    >
-  >
-}
-
 /** 与契约 `UsageRecord` 对齐的聚合行(按日 × 主体 × 模型)。 */
 export interface DailyUsageRow {
   readonly subjectId: string
@@ -81,8 +86,13 @@ export interface DailyUsageRow {
   readonly model: string
   readonly inputTokens: number
   readonly outputTokens: number
-  readonly costMinorUnits: number
-  readonly currency: string
+  /**
+   * 这一格值多少钱 —— **三种情况在类型层可分**,见 {@link Cost}。
+   *
+   * ⚠️ V0.9.0 Session 5.5 之前这里是 `costMinorUnits: number` + `currency: string`,
+   * 而那个 `number` 同时表示「算不出来」与「不收费」两句相反的话。
+   */
+  readonly cost: Cost
 }
 
 export interface UsageFilter {
@@ -177,12 +187,23 @@ export class KvMeteringStore implements MeteringStore {
 /**
  * 明细 → 契约的按日聚合行。
  *
- * 成本用**整数分**算:`tokens × pricePerMTokenMinor / 1e6`,每行四舍五入一次。
- * 查不到价的模型计 0 —— ⚠️ 这不是"免费",是"没配价"。部署方必须把用到的模型
- * 都配进价格表;README 里用加粗写了这条。
+ * 成本用**最小货币单位的整数**算:`tokens × pricePerMTokenMinor / 1e6`,
+ * 每行四舍五入一次(桶级重算而不是逐条累加 —— 先加 token 再算钱,
+ * 舍入误差只发生一次)。
+ *
+ * ⚠️ **查不到价的模型不再计 0**,它落进 {@link Cost} 的 `unpriced` 分支。
+ * 那个 0 曾经同时表示「没配价」与「不计费」两句相反的话,而账面上都是 ¥0.00
+ * —— 见 `cost.ts` 的模块注释。
+ *
+ * @param prices 价格表。`undefined` = 这个部署**没有声明计价口径**,
+ *   于是每一行都是 `unpriced`。**不回落到一个默认币种**:
+ *   一个「默认 CNY」的价格表会让「没配」与「配成人民币零价」再次长得一样。
  */
-export function aggregateDaily(records: readonly RawUsage[], prices: PriceTable): DailyUsageRow[] {
-  const buckets = new Map<string, DailyUsageRow>()
+export function aggregateDaily(
+  records: readonly RawUsage[],
+  prices: PriceTable | undefined,
+): DailyUsageRow[] {
+  const buckets = new Map<string, Omit<DailyUsageRow, 'cost'>>()
 
   for (const r of records) {
     const date = r.at.slice(0, 10)
@@ -200,24 +221,15 @@ export function aggregateDaily(records: readonly RawUsage[], prices: PriceTable)
       model: r.model,
       inputTokens: (prev?.inputTokens ?? 0) + input,
       outputTokens: (prev?.outputTokens ?? 0) + output,
-      // 成本在桶级重算而不是逐条累加:先加 token 再算钱,舍入误差只发生一次
-      costMinorUnits: 0,
-      currency: prices.currency,
     })
   }
 
-  const rows = [...buckets.values()].map((row) => {
-    const price = prices.prices[`${row.provider}/${row.model}`]
-    const cost =
-      price === undefined
-        ? 0
-        : Math.round(
-            (row.inputTokens * price.inputPerMTokenMinor +
-              row.outputTokens * price.outputPerMTokenMinor) /
-              1_000_000,
-          )
-    return { ...row, costMinorUnits: cost }
-  })
+  // ★ 定价走 costFor —— 与发票行是**同一个判据**。两处各写一遍,正是这个字段
+  //   最初出问题的方式:用量页与发票对同一笔消耗给出不同的说法。
+  const rows: DailyUsageRow[] = [...buckets.values()].map((row) => ({
+    ...row,
+    cost: costFor(prices, row.provider, row.model, row.inputTokens, row.outputTokens),
+  }))
 
   // 稳定排序:日期降序(最近的先看到),同日按主体
   return rows.sort((a, b) =>

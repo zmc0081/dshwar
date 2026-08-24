@@ -90,13 +90,46 @@ export interface ConsoleUsageRow {
   readonly inputTokens: number
   readonly outputTokens: number
   /**
-   * 最小货币单位(分)。
+   * 这一格值多少钱 —— 线上的扁平形状,见 {@link ConsoleCost}。
    *
-   * ⚠️ **不要在契约里用浮点表示钱。** 0.1 + 0.2 !== 0.3 这件事在账单上
-   * 就是对不上账,而对不上账的账单会被客户拿去质疑整个系统。
+   * ⚠️ V0.9.0 Session 5.5 之前这里是 `costMinorUnits: number` + `currency: string`。
+   * 那个 `number` 同时表示「算不出来」与「不收费」两句相反的话,
+   * 而 `currency` 旁边没有指数,于是每个消费方都写死了 `÷ 100`。
    */
-  readonly costMinorUnits: number
-  readonly currency: string
+  readonly cost: ConsoleCost
+}
+
+/**
+ * 成本在控制台线上的样子 —— **判别字段 + 仅 `priced` 非空的载荷**。
+ *
+ * 由 `@dshwar/metering` 的 `Cost` 经 `costToWire()` 投影而来;
+ * `test/conformance.test.ts` 有一条**往返**断言钉着两者
+ * (投影出去再读回来,三个分支各一次)。
+ *
+ * ## ⚠️ 为什么线上是扁平的,而领域侧是判别联合
+ *
+ * 判别联合在 OpenAPI 里要写成 `oneOf`,而 `model-ir.ts` 对 `oneOf`
+ * 按不透明处理 —— Kotlin / Swift SDK 里这个字段会退化成没有类型的
+ * `JsonElement` / `AnyCodable`。扁平形状换来的是三种语言都有类型。
+ *
+ * 代价是这个形状**允许**非法组合(`priced` 却没金额),
+ * 由 `readCost()` 这唯一入口兜住:非法组合一律抛,**不猜**。
+ */
+export interface ConsoleCost {
+  /** `priced` = 算出来了;`unpriced` = **算不出来**(没配价);`unbilled` = 不收费。 */
+  readonly kind: 'priced' | 'unpriced' | 'unbilled'
+  /** 最小货币单位的非负整数。**仅 `priced` 非空。** */
+  readonly amountMinor: number | null
+  /** ISO 4217 三字母代码。**仅 `priced` 非空。** */
+  readonly currency: string | null
+  /**
+   * minor → major 的指数(CNY = 2,JPY = 0,KWD = 3)。**仅 `priced` 非空。**
+   *
+   * 🚨 **消费方不许自带一张「币种 → 指数」表**:那是第二个事实源,
+   * 与服务端的计价口径迟早分家,而分家的表现是账目差 100 倍、
+   * 且没人知道该信哪一边。`check-guards.mjs` 有一条守卫盯着这件事。
+   */
+  readonly currencyExponent: number | null
 }
 
 /** 一条审计。由 `@dshwar/audit` 的 `AuditRecord` 投影而来。 */

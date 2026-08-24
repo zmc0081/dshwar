@@ -54,6 +54,8 @@
   "governance": {
     "pricing": {
       "currency": "CNY",
+      "currencyExponent": 2,
+      "unbilled": ["local"],
       "prices": {
         "deepseek/deepseek-chat": {
           "inputPerMTokenMinor": 200,

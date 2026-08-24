@@ -67,6 +67,19 @@ data class Capacity(
 )
 
 @Serializable
+data class Cost(
+    @SerialName("amountMinor")
+    val amountMinor: Long? = null,
+    @SerialName("currency")
+    val currency: String? = null,
+    @SerialName("currencyExponent")
+    val currencyExponent: Long? = null,
+    // 取值:priced | unpriced | unbilled
+    @SerialName("kind")
+    val kind: String
+)
+
+@Serializable
 data class CreateAttachmentResponse(
     @SerialName("attachment")
     val attachment: Attachment,
@@ -479,10 +492,8 @@ data class UpdateWorkspacePolicyRequest(
 
 @Serializable
 data class UsageRecord(
-    @SerialName("costMinorUnits")
-    val costMinorUnits: Long,
-    @SerialName("currency")
-    val currency: String,
+    @SerialName("cost")
+    val cost: Cost,
     @SerialName("date")
     val date: String,
     @SerialName("inputTokens")

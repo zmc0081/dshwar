@@ -37,15 +37,23 @@
 聚合与配额取数都从它走。上游哪天改口径,
 `adapters/dsh-0.1.0/test/usage-observability.test.ts` 先红。
 
-### ⚠️ 价格表必须配全
+### ⚠️ 价格表必须配全 —— 「没配价」不再是一个 0
 
-查不到价的模型成本计 **0**。这不是"免费",是"没配价":
+查不到价的模型给 `cost.kind = "unpriced"`(**算不出来**),不是 0。
+用量页显示 `—` 并说明有几格没配价;`billing-local` **拒绝出票**并点名是哪些模型。
+
+> V0.9.0 Session 5.5 之前它给 0,而「不计费」也给 0 —— 一份把「算不出来」
+> 印成「零元」的账单。两者在账面上一样,而处理方式完全相反。
+
+**本地算力不计费要显式声明**(`unbilled`),不能靠「查不到价就算 0」这个副作用:
 
 ```json
 {
   "governance": {
     "pricing": {
       "currency": "CNY",
+      "currencyExponent": 2,
+      "unbilled": ["local"],
       "prices": {
         "deepseek/deepseek-chat": { "inputPerMTokenMinor": 200, "outputPerMTokenMinor": 800 }
       }
@@ -53,6 +61,13 @@
   }
 }
 ```
+
+`currencyExponent` 是 minor → major 的指数:CNY / USD = 2,**JPY = 0**,**KWD = 3**。
+它必须与 `prices` 里数字的单位一致。消费方**不许自带币种指数表** ——
+那是第二个事实源,分家的表现是账目差 10 的整数次幂。
+
+⚠️ **整段 `pricing` 缺席 = 这个部署没有声明计价口径** → 每一行都是 `unpriced`,
+而不是「一律 0」。想让某些模型不计费,写 `unbilled`;想算钱,配 `prices`。
 
 价格是**每百万 token 的最小货币单位(整数分)**。成本在日×主体×模型的桶级
 一次舍入,不逐条累加 —— 逐条舍入会让账目随记录条数漂移。

@@ -8,7 +8,7 @@
  *
  * **props 是表现层类型,不是 API 类型。** 契约的 `UsageRecord` 是**逐条明细**
  * (`subjectId` / `tenantId` / `date` / `provider` / `model` / `inputTokens` /
- * `outputTokens` / `costMinorUnits` / `currency`),而这一屏展示的是**聚合之后**的东西:
+ * `outputTokens` / `cost`),而这一屏展示的是**聚合之后**的东西:
  *
  * | 屏上的字段 | 从 `UsageRecord` 怎么来 |
  * | --- | --- |
@@ -16,7 +16,7 @@
  * | `UsageRow.runs` | 该组的记录条数,已千分位 |
  * | `UsageRow.inputTokens` / `outputTokens` | ∑ 对应字段,已千分位 |
  * | `UsageRow.share` | 该组合计 ÷ 全体合计,已成 `'46.2%'` |
- * | `UsageRow.cost` | ∑`costMinorUnits` ÷ 100,按 `currency` 格式化 |
+ * | `UsageRow.cost` | ∑ `cost.amountMinor`,按 `cost.currencyExponent` 换算(**不是写死 ÷100**);算不出来时是 `'—'` |
  * | `UsageScreenProps.period` | 计费周期,由 `date` 的范围推出 |
  *
  * 聚合与格式化都是**调用方**的事,理由与 `ArtifactsScreen` 同:
@@ -210,8 +210,12 @@ export interface UsageScreenProps {
    *
    * ⚠️ 一张表里只能有一种货币 —— 混币求和得到的是一个**没有意义的数**,
    * 而它看起来和别的数一样正常。筛掉或分开聚合是调用方的事。
+   *
+   * ⚠️ **`null` = 这批数据里没有任何一行算出了钱**(全都没配价、或全都不计费)。
+   * 那时表头显示成「成本」而不是「成本 (—)」——
+   * 后者在读的人眼里是「币种取不到」,而真相是「没有金额,也就没有币种」。
    */
-  readonly currency: string
+  readonly currency: string | null
   readonly onDrillDown?: (id: string) => void
 
   /** 时间范围筛选的当前值与可选项。 */
@@ -271,7 +275,13 @@ export function UsageScreen({
     { key: 'out', label: '输出 (tok)', align: 'right', mono: true },
     { key: 'tot', label: '合计 (tok)', align: 'right', mono: true },
     { key: 'share', label: '占比', align: 'right', mono: true },
-    { key: 'cost', label: `成本 (${currency})`, align: 'right', mono: true },
+    // 没有币种时表头就是「成本」—— 不拼一个 `(—)` 出来,见 currency 的说明。
+    {
+      key: 'cost',
+      label: currency === null ? '成本' : `成本 (${currency})`,
+      align: 'right',
+      mono: true,
+    },
     { key: 'a', label: '', align: 'right', width: '40px' },
   ]
 

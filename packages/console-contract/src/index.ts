@@ -44,6 +44,7 @@ export type { AssetRef, TenantBranding } from './branding.ts'
 export type {
   ConsoleAuditEntry,
   ConsoleCapacity,
+  ConsoleCost,
   ConsoleMember,
   ConsoleQuota,
   ConsoleRole,

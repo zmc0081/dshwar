@@ -24,6 +24,7 @@ const SELLER = { legalName: legalEntity('Acme Inc.'), taxId: null, address: null
 const SECRET = 'whsec_gw_test'
 const PRICES: PriceTable = {
   currency: 'CNY',
+  currencyExponent: 2,
   prices: { 'deepseek/deepseek-chat': { inputPerMTokenMinor: 200, outputPerMTokenMinor: 800 } },
 }
 

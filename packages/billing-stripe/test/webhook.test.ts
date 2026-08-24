@@ -144,6 +144,7 @@ describe('防线 2 · 时间戳容差', () => {
 describe('防线 3 · 幂等', () => {
   const PRICES: PriceTable = {
     currency: 'CNY',
+    currencyExponent: 2,
     prices: { 'deepseek/deepseek-chat': { inputPerMTokenMinor: 200, outputPerMTokenMinor: 800 } },
   }
 

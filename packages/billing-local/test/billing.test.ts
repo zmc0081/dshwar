@@ -13,6 +13,7 @@ import { InMemoryInvoiceStore, LocalBilling } from '../src/index.ts'
 // deepseek-chat:输入 ¥2/M tokens = 200 分,输出 ¥8/M = 800 分
 const PRICES: PriceTable = {
   currency: 'CNY',
+  currencyExponent: 2,
   prices: {
     'deepseek/deepseek-chat': { inputPerMTokenMinor: 200, outputPerMTokenMinor: 800 },
     'deepseek/deepseek-reasoner': { inputPerMTokenMinor: 400, outputPerMTokenMinor: 1600 },
@@ -42,7 +43,11 @@ function usage(over: Partial<RawUsage> & { at: string }): RawUsage {
   }
 }
 
-async function harness() {
+/**
+ * @param over 覆盖价格表的一部分。`unbilled` 是这里唯一会被覆盖的字段 ——
+ *   「部署方声明不计费」是一个**装配期**的事实,不是每条测试临时改的开关。
+ */
+async function harness(over: Partial<PriceTable> = {}) {
   const ctx = new Context()
   const metering = new InMemoryMeteringStore()
   const invoices = new InMemoryInvoiceStore()
@@ -50,7 +55,7 @@ async function harness() {
   await ctx.plugin(LocalBilling, {
     seller: SELLER,
     metering,
-    prices: PRICES,
+    prices: { ...PRICES, ...over },
     invoices,
     // 单调时钟:listInvoices 的排序断言需要 createdAt 可区分
     now: () => `2026-08-01T00:00:${String((tick += 1)).padStart(2, '0')}Z`,
@@ -163,10 +168,47 @@ describe('验收:从 metering 用量出一张账单,金额全程整数', () => {
     expect(invoice.lines.every((l) => l.subjectId !== 'eve')).toBe(true)
   })
 
-  it('没配价的模型:行在、token 在、金额 0 —— 是「没配价」不是「隐身」', async () => {
+  /**
+   * ★★ 这一条在 V0.9.0 Session 5.5 **调转了方向**。
+   *
+   * 原文是「没配价的模型:行在、token 在、**金额 0**」—— 那正是要修的洞:
+   * 一张把「算不出来」印成「零元」的发票。客户拿它对账时,
+   * 「零元」的处理是「无事可做」,而真相是「这一行的钱还没算」。
+   *
+   * ⇒ 现在**拒绝出票**,与卖方未配置同一条纪律:
+   * 宁可出不了票,也不出一张金额栏是猜的发票。
+   */
+  it('★★ 没配价的模型 → **拒绝出票**(而不是给一个看起来像钱的 0)', async () => {
     await h.metering.record(usage({ at: '2026-07-03T10:00:00Z', model: 'unknown-model' }))
 
-    const invoice = await h.ctx.billing.generateInvoice('acme', JULY)
+    await expect(h.ctx.billing.generateInvoice('acme', JULY)).rejects.toThrow(
+      /没配价|deepseek\/unknown-model/,
+    )
+  })
+
+  it('★ 拒绝之后账本里不留半张发票 —— 拒绝不是「出了再撤」', async () => {
+    await h.metering.record(usage({ at: '2026-07-03T10:00:00Z', model: 'unknown-model' }))
+    await expect(h.ctx.billing.generateInvoice('acme', JULY)).rejects.toThrow()
+    expect(await h.ctx.billing.listInvoices('acme')).toEqual([])
+  })
+
+  it('★ 错误信息点名是哪些模型,并指向去哪补配价', async () => {
+    await h.metering.record(usage({ at: '2026-07-03T10:00:00Z', model: 'unknown-model' }))
+    // 只说「有模型没配价」而不说是哪个、去哪配,排查的人还得先找一遍 ——
+    // 那是这条拒绝有用的另一半(与 SELLER_CONFIG_PATH 同款)。
+    await expect(h.ctx.billing.generateInvoice('acme', JULY)).rejects.toThrow(
+      /deepseek\/unknown-model[\s\S]*governance\.pricing/,
+    )
+  })
+
+  it('★ 声明了不计费的模型:行在、token 在、金额 0 —— 而这个 0 是**终值**', async () => {
+    // 与上面那条的区别全在「部署方说过话没有」。同样是 0,一个是猜的、一个是声明的。
+    const withLocal = await harness({ unbilled: ['local'] })
+    await withLocal.metering.record(
+      usage({ at: '2026-07-03T10:00:00Z', provider: 'local', model: 'qwen3-30b' }),
+    )
+
+    const invoice = await withLocal.ctx.billing.generateInvoice('acme', JULY)
     expect(invoice.lines).toHaveLength(1)
     expect(invoice.lines[0]!.amountMinor).toBe(0)
     expect(invoice.lines[0]!.inputTokens).toBe(1_000_000)

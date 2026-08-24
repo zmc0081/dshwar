@@ -12,8 +12,9 @@
   },
   "dependencies": {
     "@dshwar/console-contract": "workspace:*",
-    "@dshwar/sdk": "workspace:*",
-    "@dshwar/design-system": "workspace:*"
+    "@dshwar/design-system": "workspace:*",
+    "@dshwar/metering": "workspace:*",
+    "@dshwar/sdk": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "19.2.2",

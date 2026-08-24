@@ -23,6 +23,8 @@ import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { InMemoryAuditStore } from '@dshwar/audit'
 import {
   aggregateDaily,
+  assertPriceTable,
+  costToWire,
   InMemoryMeteringStore,
   safeRecord,
   type PriceTable,
@@ -117,11 +119,27 @@ export interface ServerConfig {
   }
   /**
    * 治理(V0.4.0)。整段可选 —— 计量、配额、准入都是 opt-in。
-   * ⚠️ pricing 必须把用到的每个模型配全:查不到价计 0,是「没配价」不是「免费」。
+   *
+   * ⚠️ **pricing 缺席不再回落到一个默认币种。** 缺席 = 这个部署没有声明计价口径,
+   * 于是每一行成本都是 `unpriced`(**算不出来**),而不是 0。
+   * V0.9.0 Session 5.5 之前这里默认 `{ currency: 'CNY', prices: {} }` ——
+   * 那个默认值让「没配」与「配成人民币零价」长得一模一样。
    */
   readonly governance?: {
     readonly pricing?: {
       currency: string
+      /**
+       * minor → major 的指数。**必填**:CNY / USD = 2,JPY = 0,KWD = 3。
+       *
+       * 它必须与 `prices` 里那些数字的单位一致 —— 两者出自同一段配置,
+       * 正是这个值可信的全部理由(没有任何一张币种表参与)。
+       */
+      currencyExponent: number
+      /**
+       * 声明**不计费**的 provider 或 `provider/model`。本地算力是典型。
+       * 不声明的话它们会落进 `unpriced` —— 那是刻意的,见 metering 的 cost.ts。
+       */
+      unbilled?: readonly string[]
       prices: Record<string, { inputPerMTokenMinor: number; outputPerMTokenMinor: number }>
     }
     readonly quotas?: readonly { subjectId: string; tokenLimit: number | null }[]
@@ -230,7 +248,13 @@ export async function startServer(
   const audits = new InMemoryAuditStore()
   const metering = new InMemoryMeteringStore()
   const quotas = new InMemoryQuotaStore()
-  const pricing: PriceTable = config.governance?.pricing ?? { currency: 'CNY', prices: {} }
+  // ★ 缺席 = 没有声明计价口径 → 一律 unpriced,**不回落到默认币种**。
+  //   校验拦在装配期,与 billing-local 的 assertSellerConfigured 同一条理由:
+  //   不拦的话,配置错误要到第一次看账才显形,而那通常是月底。
+  const pricing: PriceTable | undefined =
+    config.governance?.pricing === undefined
+      ? undefined
+      : assertPriceTable(config.governance.pricing, 'gateway.config.json 的 governance.pricing')
   for (const q of config.governance?.quotas ?? []) {
     await quotas.setLimit(q.subjectId, q.tokenLimit)
   }
@@ -573,7 +597,12 @@ export async function startServer(
       },
       auditStore: audits,
       usageReader: {
-        daily: async (filter) => aggregateDaily(await metering.query(filter), pricing),
+        // 领域侧是判别联合,线上是扁平形状 —— 投影只有 costToWire 这一处。
+        daily: async (filter) =>
+          aggregateDaily(await metering.query(filter), pricing).map((row) => ({
+            ...row,
+            cost: costToWire(row.cost),
+          })),
       },
       quotaAdmin: {
         quotaOf: (id) => policyService.quotaOf(id),

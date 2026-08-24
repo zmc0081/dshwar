@@ -46,6 +46,7 @@ describe.skipIf(KEY === undefined || KEY === '')('Stripe live smoke(真实 test 
       tenantId: 'smoke-test',
       period: PERIOD,
       currency: 'usd', // test key 的账户未必开通 CNY;USD 是全账户默认
+      currencyExponent: 2,
       seller: { legalName: legalEntity('DSHWAR Smoke Test'), taxId: null, address: null },
       status: 'issued',
       lines: [],

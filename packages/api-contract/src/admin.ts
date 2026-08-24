@@ -103,6 +103,53 @@ export const UpdateQuotaRequest = z
   .object({ tokenLimit: z.number().int().min(0).nullable() })
   .meta({ id: 'UpdateQuotaRequest' })
 
+/**
+ * 一笔消耗的成本 —— **三种情况,一个判别字段**(V0.9.0 Session 5.5)。
+ *
+ * ## 它替换掉了什么,以及为什么必须一次换掉
+ *
+ * 旧形状是 `costMinorUnits: integer` + `currency: string`,上面挂着两个洞:
+ *
+ * 1. **语义折叠**:「这个模型没配价(算不出来)」与「部署方不计费(不收钱)」
+ *    产出同一个 `0`,直达发票金额栏 —— 而对账的人对两者的处理**完全相反**;
+ * 2. **单位假设**:契约注释写死「分」,消费方一律 `÷ 100`,
+ *    而 ISO 4217 的指数不都是 2(JPY = 0,KWD = 3)—— 日元差 **100 倍**。
+ *
+ * 两者都要改**同一个字段的形状**。分两次动 = 破坏性变更做两遍,
+ * 而第二次会发现第一次挑的形状不够用:`number | null` 装不下
+ * 「多少钱 + 什么币种 + 几位小数 + 算不算得出来」这四件事。
+ *
+ * ## ⚠️ 为什么是「判别字段 + 可空载荷」,不是 `oneOf`
+ *
+ * `model-ir.ts` 对 `oneOf` 按**不透明**处理(理由写在那里:判别联合的正确映射
+ * 三种语言各不相同)。用 `oneOf` 的话,Kotlin / Swift SDK 里这个字段会退化成
+ * `JsonElement` / `AnyCodable` —— **移动端拿到的成本字段没有类型**。
+ *
+ * 代价是线上形状允许非法组合(`priced` 却没金额),由 `@dshwar/metering`
+ * 的 `readCost()` 兜住:那是唯一入口,非法组合一律抛,**不猜**。
+ *
+ * ## 🚨 指数由服务端给,消费方不许自带币种表
+ *
+ * 前端自带一张「币种 → 指数」表是**第二个事实源**,与服务端的计价口径
+ * 迟早分家 —— 而分家的表现同样是账目差 100 倍,只是这次没人知道该信哪一边。
+ * `check-guards.mjs` 有一条守卫盯着这件事。
+ */
+export const Cost = z
+  .object({
+    /** `priced` = 算出来了;`unpriced` = **算不出来**(没配价);`unbilled` = 不收费。 */
+    kind: z.enum(['priced', 'unpriced', 'unbilled']),
+    /** 最小货币单位的非负整数。**仅 `priced` 非空。** */
+    amountMinor: z.number().int().min(0).nullable(),
+    /** ISO 4217 三字母代码。**仅 `priced` 非空。** */
+    currency: z.string().length(3).nullable(),
+    /**
+     * minor → major 的指数,**由部署方随价格一起声明**。
+     * CNY / USD = 2,JPY = 0,KWD = 3。**仅 `priced` 非空。**
+     */
+    currencyExponent: z.number().int().min(0).max(4).nullable(),
+  })
+  .meta({ id: 'Cost' })
+
 /** 用量明细(V0.4.0 的 metering 包)。 */
 export const UsageRecord = z
   .object({
@@ -113,9 +160,8 @@ export const UsageRecord = z
     model: z.string(),
     inputTokens: z.number().int().min(0),
     outputTokens: z.number().int().min(0),
-    /** 成本,以最小货币单位计(分)。避免浮点。 */
-    costMinorUnits: z.number().int().min(0),
-    currency: z.string().length(3),
+    /** 成本。三种情况在类型层可分 —— 见 {@link Cost}。 */
+    cost: Cost,
   })
   .meta({ id: 'UsageRecord' })
 

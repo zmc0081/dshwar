@@ -68,8 +68,14 @@ describe('映射:契约类型 → Swift 类型,逐条钉死', () => {
     // Int 在 32 位平台上是 32 位。契约里的整数含 token 计数与最小货币单位
     // 金额,两者都能越过 21 亿 —— 后果是**大额账单静默溢出**。
     expect(swiftType({ kind: 'integer' })).toBe('Int64')
+    // V0.9.0 Session 5.5:金额字段从 `costMinorUnits` 换成了 `Cost.amountMinor`
+    // (可空,因为「算不出来」与「不计费」都没有金额)。它仍然必须是 Int64。
     expect(committed, '金额字段不是 Int64 —— 大额会静默溢出').toContain(
-      'public let costMinorUnits: Int64',
+      'public let amountMinor: Int64?',
+    )
+    // ★ 顺带钉住指数也在:少了它,移动端只能写死 ÷100,而 JPY 会差 100 倍。
+    expect(committed, '契约不给指数的话,消费方只能猜').toContain(
+      'public let currencyExponent: Int64?',
     )
   })
 

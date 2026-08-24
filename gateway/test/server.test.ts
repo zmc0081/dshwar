@@ -187,6 +187,7 @@ describe('治理接线(冒烟抓到的两个 bug)', () => {
     governance: {
       pricing: {
         currency: 'CNY',
+        currencyExponent: 2,
         prices: {
           'deepseek/deepseek-chat': { inputPerMTokenMinor: 200, outputPerMTokenMinor: 800 },
         },

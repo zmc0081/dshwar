@@ -94,6 +94,26 @@ public struct Capacity: Codable, Sendable {
     }
 }
 
+public struct Cost: Codable, Sendable {
+    public let amountMinor: Int64?
+    public let currency: String?
+    public let currencyExponent: Int64?
+    /// 取值:priced | unpriced | unbilled
+    public let kind: String
+
+    public init(
+        amountMinor: Int64? = nil,
+        currency: String? = nil,
+        currencyExponent: Int64? = nil,
+        kind: String
+    ) {
+        self.amountMinor = amountMinor
+        self.currency = currency
+        self.currencyExponent = currencyExponent
+        self.kind = kind
+    }
+}
+
 public struct CreateAttachmentResponse: Codable, Sendable {
     public let attachment: Attachment
     /// 与服务端日志和审计记录对得上的调用标识
@@ -725,8 +745,7 @@ public struct UpdateWorkspacePolicyRequest: Codable, Sendable {
 }
 
 public struct UsageRecord: Codable, Sendable {
-    public let costMinorUnits: Int64
-    public let currency: String
+    public let cost: Cost
     public let date: String
     public let inputTokens: Int64
     public let model: String
@@ -737,8 +756,7 @@ public struct UsageRecord: Codable, Sendable {
     public let tenantId: String
 
     public init(
-        costMinorUnits: Int64,
-        currency: String,
+        cost: Cost,
         date: String,
         inputTokens: Int64,
         model: String,
@@ -747,8 +765,7 @@ public struct UsageRecord: Codable, Sendable {
         subjectId: String,
         tenantId: String
     ) {
-        self.costMinorUnits = costMinorUnits
-        self.currency = currency
+        self.cost = cost
         self.date = date
         self.inputTokens = inputTokens
         self.model = model

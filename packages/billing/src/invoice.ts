@@ -58,6 +58,20 @@ export interface Invoice {
   readonly period: BillingPeriod
   readonly currency: string
   /**
+   * minor → major 的指数(CNY / USD = 2,**JPY = 0**,**KWD = 3**)。
+   *
+   * ## ⚠️ 它今天没有消费方,而它仍然必填
+   *
+   * 发票现在只被 `billing-stripe` 读(Stripe 自己收最小单位的整数,不需要指数),
+   * 没有任何渲染方。按本仓的纪律,一个没有消费方的字段是可疑的 ——
+   * 这一个的理由是**它必须与 `currency` 一起走**:
+   *
+   * 一个「带币种但不带指数」的金额,正是 V0.9.0 Session 5.5 修掉的那个洞的形状
+   * (消费方只好写死 `÷ 100`,而 JPY 会差 100 倍)。第一个发票渲染器出现时,
+   * 它要么在这里找到指数,要么自己去猜 —— 而那时没人会记得这段话。
+   */
+  readonly currencyExponent: number
+  /**
    * 开票主体。**非可选** —— 一张没有卖方的发票不是发票,是一份数据错误。
    *
    * ⚠️ 与 `TenantBranding.legalEntityName`(页脚版权行)刻意不复用:

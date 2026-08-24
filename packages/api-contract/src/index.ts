@@ -58,6 +58,7 @@ export {
 export {
   AuditEntry,
   Capacity,
+  Cost,
   CredentialDescriptor,
   GetQuotaResponse,
   GetSubjectResponse,

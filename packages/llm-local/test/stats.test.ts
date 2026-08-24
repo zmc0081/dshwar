@@ -82,9 +82,16 @@ describe('账单语义:本地算力不计费,但不隐身', () => {
   it('★ 发票里本地行金额 0、行在、token 在;云端行照常计费', async () => {
     const ctx = new Context()
     const metering = new InMemoryMeteringStore()
-    // 价格表只配云端 —— 给本地 provider 配价才是错误(见 GOVERNANCE.md)
+    // 价格表只配云端 —— 给本地 provider 配价才是错误(见 GOVERNANCE.md)。
+    //
+    // ★ V0.9.0 Session 5.5:「本地不计费」现在要**声明**(`unbilled`),
+    //   不再靠「查不到价就算 0」这个副作用来实现。
+    //   两者的行为曾经一模一样,而含义相反:一个是部署方说的,一个是忘了配。
+    //   不声明的话这张发票会被**拒绝出票** —— 那也是对的,见下一条测试。
     const prices: PriceTable = {
       currency: 'CNY',
+      currencyExponent: 2,
+      unbilled: ['local'],
       prices: { 'deepseek/deepseek-chat': { inputPerMTokenMinor: 200, outputPerMTokenMinor: 800 } },
     }
     await metering.record(
@@ -119,5 +126,37 @@ describe('账单语义:本地算力不计费,但不隐身', () => {
     expect(local.inputTokens).toBe(5_000_000)
     expect(local.outputTokens).toBe(1_000_000)
     expect(invoice.totalMinor).toBe(200) // 总额只含云端
+  })
+
+  /**
+   * ★ 忘了声明 `unbilled` → **拒绝出票**,而不是悄悄按 0 计。
+   *
+   * 这一条与上一条只差一个 `unbilled: ['local']`,而结果完全不同 ——
+   * 那正是这次改动要的:「部署方不收这笔钱」与「谁也没说过这笔钱怎么算」
+   * 在**行为上**必须分得开,而不只是在注释里分得开。
+   */
+  it('★ 没声明 unbilled 的本地模型 → 拒绝出票(它与「不计费」不再是同一个 0)', async () => {
+    const ctx = new Context()
+    const metering = new InMemoryMeteringStore()
+    const prices: PriceTable = {
+      currency: 'CNY',
+      currencyExponent: 2,
+      // 刻意不写 unbilled
+      prices: { 'deepseek/deepseek-chat': { inputPerMTokenMinor: 200, outputPerMTokenMinor: 800 } },
+    }
+    await metering.record(usage({ usage: { inputTokens: 5_000_000, outputTokens: 0 } }))
+    await ctx.plugin(LocalBilling, {
+      seller: SELLER,
+      metering,
+      prices,
+      invoices: new InMemoryInvoiceStore(),
+    })
+
+    await expect(
+      ctx.billing.generateInvoice('acme', {
+        start: '2026-07-01T00:00:00Z',
+        end: '2026-08-01T00:00:00Z',
+      }),
+    ).rejects.toThrow(/没配价[\s\S]*unbilled/)
   })
 })

@@ -12,7 +12,10 @@ import {
   type InvoiceStatus,
 } from '@dshwar/billing'
 import {
+  assertAllPriced,
+  assertPriceTable,
   billedInputTokens,
+  costFor,
   type MeteringStore,
   type PriceTable,
   type RawUsage,
@@ -28,6 +31,10 @@ import type { InvoiceStore } from './store.ts'
  */
 const SELLER_CONFIG_PATH =
   'gateway.config.json 的 governance.billing.seller,或程序化装配时 LocalBilling 的 options.seller'
+
+/** 价格表的位置。同一条理由:说清**去哪补**,是这条拒绝有用的那一半。 */
+const PRICE_CONFIG_PATH =
+  'gateway.config.json 的 governance.pricing,或程序化装配时 LocalBilling 的 options.prices'
 
 export interface LocalBillingOptions {
   /**
@@ -87,6 +94,10 @@ export class LocalBilling extends Billing {
     // ★ 卖方拦在**装配期**,不等到出票 —— 理由见类注释。
     //   配置文件那条路类型是被擦掉的,所以这里必须是运行时断言。
     assertSellerConfigured(options.seller, SELLER_CONFIG_PATH)
+    // ★ 价格表同理:币种代码、指数区间、价格是不是整数,全在装配期判。
+    //   ⚠️ 它**不**检查「模型配全了没有」—— 那要到出票时才知道用到了哪些模型,
+    //   由 assertAllPriced 在 rateLines 里拦。两条各管一半,不要合并。
+    assertPriceTable(options.prices, PRICE_CONFIG_PATH)
     this.options = options
   }
 
@@ -113,6 +124,7 @@ export class LocalBilling extends Billing {
       tenantId,
       period,
       currency: this.options.prices.currency,
+      currencyExponent: this.options.prices.currencyExponent,
       seller: this.options.seller,
       status: 'draft',
       lines: this.rateLines(records),
@@ -210,26 +222,34 @@ export class LocalBilling extends Billing {
       })
     }
 
+    const rated = [...buckets.values()].map((b) => ({
+      bucket: b,
+      // ★ 定价判据只有一份 —— 与 `aggregateDaily` 是**同一个** `costFor`。
+      //   两处各写一遍正是这个字段最初出问题的方式:用量页与发票对同一笔
+      //   消耗给出不同的说法,而两边都「按自己的规则」是对的。
+      cost: costFor(this.options.prices, b.provider, b.model, b.input, b.output),
+    }))
+
+    // 🚨 有模型算不出钱来 → **拒绝出票**,与卖方未配置同一条纪律。
+    //    按 0 计的话,「算不出来」在发票上就变成了「不收费」——
+    //    而客户拿它对账时,这两者的处理方式完全相反。
+    assertAllPriced(
+      rated.map((r) => ({ cost: r.cost, label: `${r.bucket.provider}/${r.bucket.model}` })),
+      PRICE_CONFIG_PATH,
+    )
+
     return (
-      [...buckets.values()]
-        .map((b) => {
-          const price = this.options.prices.prices[`${b.provider}/${b.model}`]
-          const amount =
-            price === undefined
-              ? 0
-              : Math.round(
-                  (b.input * price.inputPerMTokenMinor + b.output * price.outputPerMTokenMinor) /
-                    1_000_000,
-                )
-          return {
-            subjectId: b.subjectId,
-            provider: b.provider,
-            model: b.model,
-            inputTokens: b.input,
-            outputTokens: b.output,
-            amountMinor: amount,
-          }
-        })
+      rated
+        .map(({ bucket: b, cost }) => ({
+          subjectId: b.subjectId,
+          provider: b.provider,
+          model: b.model,
+          inputTokens: b.input,
+          outputTokens: b.output,
+          // 走到这里只剩 priced 与 unbilled 两种:前者是算出来的金额,
+          // 后者是**部署方声明过的**零 —— 于是发票上的 0 只有一个意思。
+          amountMinor: cost.kind === 'priced' ? cost.amountMinor : 0,
+        }))
         // 稳定排序:金额降序(大头先看到),同额按主体 —— 发票是给人看的
         .sort((a, b) =>
           a.amountMinor === b.amountMinor

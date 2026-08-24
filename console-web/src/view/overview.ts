@@ -25,7 +25,7 @@
  * | `metrics.monthlyUsage.note` | ❌ 没有租户级 token 额度 | `null` —— 附注整行不显示 |
  * | `metrics.activeTenants` | ❌ 租户清单取不到(见上) | `'—'` |
  * | `metrics.agentRuns` | ❌ 运行/作业级记录不存在(`/v1/jobs` 是 planned) | `'—'` |
- * | `metrics.estimatedBill` | ✅ `costMinorUnits` + `currency` | 单一币种才合计,见 {@link toEstimatedBill} |
+ * | `metrics.estimatedBill` | ✅ `cost`(金额 + 币种 + 指数) | 单一币种、单一指数、且**没有算不出来的行**才合计,见 {@link toEstimatedBill} |
  * | `degrade` | ❌ 没有降级**事件**流 | `null` —— 这一条根本不渲染 |
  * | `quota.used` | ✅ 与 `monthlyUsage` 同一个和 | 同上求和 |
  * | `quota.total` | ❌ 没有租户级 token 容量 | 🚨 哨兵 `0`,见 {@link toQuota} |
@@ -123,6 +123,7 @@
  * @module @dshwar/console-web/view/overview
  */
 import type { ConsoleCapacity } from '@dshwar/console-contract'
+import { readCost } from '@dshwar/metering'
 import type {
   OverviewMetric,
   OverviewQuota,
@@ -183,30 +184,18 @@ const COMPACT_UNITS: readonly (readonly [number, string])[] = [
   [1_000, 'K'],
 ]
 
-/**
- * ISO 4217 的最小货币单位指数。
- *
- * 🚨 **不能一律除以 100。** JPY 与 KRW 没有小数位 —— 把 38204 日元当成
- * 「382.04」会把账单说小 100 倍,而那个数**看起来完全正常**。
- * 这正是本仓最贵的那一类错:算错的表现不是崩溃,是一个像模像样的数字。
- *
- * ⚠️ 认不出的币种走 `undefined` 分支({@link formatMoney} 返回 `null` → 屏上 `'—'`),
- * **不假设 2**。三位小数的 KWD / BHD / OMR 等刻意不列:列进来需要有人逐个核对,
- * 而一个没核对过的条目与猜一个 2 没有区别。要支持它们时,连着单测一起加。
- */
-const MINOR_UNIT_EXPONENT: Readonly<Record<string, number>> = {
-  CNY: 2,
-  USD: 2,
-  EUR: 2,
-  GBP: 2,
-  HKD: 2,
-  SGD: 2,
-  AUD: 2,
-  CAD: 2,
-  CHF: 2,
-  JPY: 0,
-  KRW: 0,
-}
+// 🚨 这里曾经有一张 11 条的「币种 → 指数」表(V0.9.0 Session 5.5 删除)。
+//
+// 它本身是**对的**(CNY/USD 2、JPY/KRW 0,认不出的回落 '—' 而不是假设 2),
+// 删它的理由是它是**第二个事实源**:服务端按自己的口径把价格写成最小单位的整数,
+// 前端按自己的表还原 —— 两者一旦不同步,账目差 10 的整数次幂,
+// 而分家的表现与正常的数长得一模一样。
+//
+// 现在指数随金额一起从契约的 `cost.currencyExponent` 来,
+// 而它与服务端的价格出自同一段配置(`governance.pricing`),不存在分家的路径。
+//
+// ⚠️ 别把它加回来。`check-guards.mjs` 的「前端不自带币种指数表」守卫盯着这件事,
+//    负向验证在 `verify-guards.mjs` 的 42a–c。
 
 /** 这一屏的全部输入。字段的取舍与「用不上的那两个」见模块注释。 */
 export interface OverviewInput {
@@ -299,31 +288,46 @@ export function compactTokens(n: number): string {
 }
 
 /**
- * 最小货币单位 → 展示串,如 `(38204, 'CNY')` → `'CNY 382.04'`。
+ * 最小货币单位 → 展示串,如 `(38204, 'CNY', 2)` → `'CNY 382.04'`。
  *
  * ⚠️ **用 ISO 代码而不是符号。** `¥` 同时是 CNY 与 JPY 的符号,而两者的小数位
  * 差一个数量级 —— 一个既认不出币种、金额又差 100 倍的账单数字,
  * 是「看起来正常的错数」的完美形态。
  *
+ * ## 🚨 指数**由契约给**(V0.9.0 Session 5.5)
+ *
+ * 这里原本挂着一张 11 条的 `MINOR_UNIT_EXPONENT` 表,认不出的币种回落 `null`。
+ * 那张表被删掉了,理由不是它写错了(它是对的),而是**它是第二个事实源**:
+ *
+ * - 服务端按自己的口径把价格写成最小单位的整数,
+ * - 前端按自己的表把整数还原成金额,
+ * - 两者一旦不同步,账目差 10 的整数次幂,**而没人知道该信哪一边**。
+ *
+ * ⚠️ 同一份代码里当时还有第二处换算:`view/usage.ts` 写死 `÷ 100`。
+ * 两处对 JPY 的答案**已经不一样**了 —— 一个前端里的两个事实源。
+ *
  * @param minorUnits 最小单位金额。契约的下界是 0,故不处理负数。
- * @returns 展示串;**币种不在 {@link MINOR_UNIT_EXPONENT} 里时返回 `null`** ——
- *   由调用方渲染成 `'—'`,而不是在这里假设两位小数。
+ * @param currency ISO 4217 代码,来自 `cost.currency`
+ * @param currencyExponent 来自 `cost.currencyExponent`。**不许在这里回落到 2**
  */
-export function formatMoney(minorUnits: number, currency: string): string | null {
+export function formatMoney(
+  minorUnits: number,
+  currency: string,
+  currencyExponent: number,
+): string {
   const code = currency.toUpperCase()
-  const exponent = MINOR_UNIT_EXPONENT[code]
-  if (exponent === undefined) return null
-  if (exponent === 0) return `${code} ${thousands(minorUnits)}`
-  const divisor = 10 ** exponent
+  if (currencyExponent === 0) return `${code} ${thousands(minorUnits)}`
+  const divisor = 10 ** currencyExponent
   const major = Math.trunc(minorUnits / divisor)
   const minor = minorUnits % divisor
-  return `${code} ${thousands(major)}.${String(minor).padStart(exponent, '0')}`
+  return `${code} ${thousands(major)}.${String(minor).padStart(currencyExponent, '0')}`
 }
 
 /**
  * 「预估账单」指标卡。
  *
- * 这是这一屏**唯一**有真来源的钱数:`UsageRecord.costMinorUnits` + `currency`。
+ * 这是这一屏**唯一**有真来源的钱数:`UsageRecord.cost`
+ * (金额 + 币种 + **指数**,三样一起来 —— 少了指数就只能猜 ÷100)。
  *
  * ⚠️ 它是**计量成本的合计**,不含订阅费、折扣与税 —— 所以「预估」两个字站得住,
  * 但它也不是账单。屏幕把这一格渲染成 muted,正是这个意思。
@@ -340,24 +344,59 @@ export function toEstimatedBill(usage: readonly UsageRecord[]): OverviewMetric {
   // `| undefined` 分支(在 size===1 时永远不进,又是一个假装在挡什么的 if),
   // 要么断言。逐条比一次,币种与「是否混合」一起得出,没有不可达分支。
   let currency: string | null = null
+  let exponent: number | null = null
   let mixed = false
+  let mixedExponent = false
+  let priced = 0
+  let unpriced = 0
+  let unbilled = 0
+
   for (const record of usage) {
-    const code = record.currency.toUpperCase()
+    // ★ 唯一入口。非法组合在这里抛,不猜 —— 猜错的表现是账面上多一个 0。
+    const cost = readCost(record.cost)
+    if (cost.kind === 'unpriced') {
+      unpriced += 1
+      continue
+    }
+    if (cost.kind === 'unbilled') {
+      unbilled += 1
+      continue
+    }
+    priced += 1
+    const code = cost.currency.toUpperCase()
     if (currency === null) currency = code
     else if (currency !== code) mixed = true
+    if (exponent === null) exponent = cost.currencyExponent
+    else if (exponent !== cost.currencyExponent) mixedExponent = true
   }
 
+  // 🚨 有算不出来的行 ⇒ **合计不成立**,而不是「合计里少了几行」。
+  //    给一个只算了一部分的数是最糟的选项:它看起来是全部。
+  //    这一条排在最前面 —— 它比「多币种」更根本(那时连能不能加都不知道)。
+  if (unpriced > 0) {
+    return { value: UNKNOWN, note: `${unpriced} 格没配价 · 合计算不出来` }
+  }
+  // 有记录、但没有一行算出钱来 ⇒ 全都是「部署方声明不计费」。
+  // 那是一个**确定的**结论,与「不知道」不同,所以说出来。
+  if (priced === 0) return { value: UNKNOWN, note: unbilled > 0 ? '全部不计费' : null }
   // 一条记录都没有 ⇒ 连币种都不知道。这里的 `'—'` 与「合计为 0」不同:
   // 0 元账单要先知道是 0 **什么**元,而我们连单位都没有。
-  if (currency === null) return { value: UNKNOWN, note: null }
+  if (currency === null || exponent === null) return { value: UNKNOWN, note: null }
   if (mixed) return { value: UNKNOWN, note: '多币种 · 未合计' }
+  // 同币种两个指数 ⇒ 两段数据不在同一个刻度上,相加的数没有意义。
+  // 它通常意味着服务端中途改过 governance.pricing 的 currencyExponent。
+  if (mixedExponent) return { value: UNKNOWN, note: '同币种两种指数 · 未合计' }
 
-  const minorUnits = sumOf(usage, (record) => record.costMinorUnits)
+  // ⚠️ 刻意**不写** `amountMinor ?? 0`:那个 `?? 0` 正是这个 Session 拆掉的形状 ——
+  //   它把「没有金额」当成「金额是零」。走到这里 unpriced 已经是 0,
+  //   而 unbilled 的贡献是**真的**零,所以直接按 priced 求和,一格都不用兜底。
+  const minorUnits = sumOf(usage, (record) => {
+    const cost = readCost(record.cost)
+    return cost.kind === 'priced' ? cost.amountMinor : 0
+  })
   if (minorUnits === null) return { value: UNKNOWN, note: '合计超出可精确表示的范围' }
 
-  const money = formatMoney(minorUnits, currency)
-  if (money === null) return { value: UNKNOWN, note: `未知币种 ${currency} 的最小单位` }
-  return { value: money, note: null }
+  return { value: formatMoney(minorUnits, currency, exponent), note: null }
 }
 
 /**

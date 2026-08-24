@@ -82,7 +82,11 @@ describe('映射:契约类型 → Kotlin 类型,逐条钉死', () => {
     // Int 是 32 位。契约里的整数含 token 计数与最小货币单位金额,
     // 两者都能轻易越过 21 亿 —— 用 Int 的后果是**大额账单静默溢出**。
     expect(kotlinType({ kind: 'integer' })).toBe('Long')
-    expect(committed, '金额字段不是 Long —— 大额会静默溢出').toContain('val costMinorUnits: Long')
+    // V0.9.0 Session 5.5:金额字段从 `costMinorUnits` 换成了 `Cost.amountMinor`
+    // (可空,因为「算不出来」与「不计费」都没有金额)。它仍然必须是 Long。
+    expect(committed, '金额字段不是 Long —— 大额会静默溢出').toContain('val amountMinor: Long?')
+    // ★ 顺带钉住指数也在:少了它,移动端只能写死 ÷100,而 JPY 会差 100 倍。
+    expect(committed, '契约不给指数的话,消费方只能猜').toContain('val currencyExponent: Long?')
   })
 
   it('日期时间映射成 String,不引 kotlinx.datetime', () => {

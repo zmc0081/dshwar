@@ -33,6 +33,7 @@ import { InMemoryInvoiceStore, LocalBilling } from '../src/index.ts'
 
 const PRICES: PriceTable = {
   currency: 'CNY',
+  currencyExponent: 2,
   prices: { 'deepseek/deepseek-chat': { inputPerMTokenMinor: 200, outputPerMTokenMinor: 800 } },
 }
 const JULY = { start: '2026-07-01T00:00:00Z', end: '2026-08-01T00:00:00Z' }

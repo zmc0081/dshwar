@@ -32,6 +32,7 @@ const raw = (over: Partial<RawUsage> = {}): RawUsage => ({
 
 const prices: PriceTable = {
   currency: 'CNY',
+  currencyExponent: 2,
   // 每百万 token:输入 200 分(2 元),输出 800 分(8 元)
   prices: { 'deepseek/deepseek-chat': { inputPerMTokenMinor: 200, outputPerMTokenMinor: 800 } },
 }
@@ -83,19 +84,68 @@ describe('按日聚合', () => {
     expect(rows[1]!).toMatchObject({ date: '2026-08-16', inputTokens: 200, outputTokens: 20 })
   })
 
-  it('成本按整数分计算,舍入只发生一次', () => {
+  it('成本按最小货币单位的整数计算,舍入只发生一次', () => {
     // 200 万 token 输入 × 200 分/百万 = 400 分;10 万输出 × 800 分/百万 = 80 分
     const rows = aggregateDaily(
       [raw({ usage: { inputTokens: 2_000_000, outputTokens: 100_000 } })],
       prices,
     )
-    expect(rows[0]!.costMinorUnits).toBe(480)
-    expect(rows[0]!.currency).toBe('CNY')
+    expect(rows[0]!.cost).toEqual({
+      kind: 'priced',
+      amountMinor: 480,
+      currency: 'CNY',
+      currencyExponent: 2,
+    })
   })
 
-  it('查不到价的模型成本计 0 —— 是"没配价"不是"免费",README 有加粗警告', () => {
+  /**
+   * ★ 这一条曾经断言 `costMinorUnits === 0`(V0.9.0 Session 5.5 之前)。
+   *
+   * 那个 0 与「部署方声明不计费」产出的 0 一模一样,而两者对账的人的处理
+   * **完全相反**:没配价要去补价再重算,不计费是终值。
+   * 现在它们是两个不同的 `kind`,而且都**不是** 0。
+   */
+  it('★ 查不到价 → unpriced,而不是 0', () => {
     const rows = aggregateDaily([raw({ model: 'unknown-model' })], prices)
-    expect(rows[0]!.costMinorUnits).toBe(0)
+    expect(rows[0]!.cost).toEqual({ kind: 'unpriced' })
+    // 判据落在「不是 0」上 —— 这正是这次改动的全部理由。
+    expect(rows[0]!.cost).not.toHaveProperty('amountMinor', 0)
+  })
+
+  it('★ 部署方声明不计费 → unbilled,与 unpriced 分得开', () => {
+    const withLocal: PriceTable = { ...prices, unbilled: ['local'] }
+    const rows = aggregateDaily(
+      [raw({ provider: 'local', model: 'qwen3-30b' }), raw({ model: 'unknown-model' })],
+      withLocal,
+    )
+    const byProvider = new Map(rows.map((r) => [r.provider, r.cost]))
+    expect(byProvider.get('local')).toEqual({ kind: 'unbilled' })
+    expect(byProvider.get('deepseek')).toEqual({ kind: 'unpriced' })
+  })
+
+  it('★ 单个模型也能声明不计费,不必整个 provider', () => {
+    const withOne: PriceTable = { ...prices, unbilled: ['local/qwen3-30b'] }
+    const rows = aggregateDaily(
+      [raw({ provider: 'local', model: 'qwen3-30b' }), raw({ provider: 'local', model: 'other' })],
+      withOne,
+    )
+    const byModel = new Map(rows.map((r) => [r.model, r.cost]))
+    expect(byModel.get('qwen3-30b')).toEqual({ kind: 'unbilled' })
+    // 同一个 provider 下没被点名的模型仍然是「算不出来」—— 声明是逐条的,不是前缀。
+    expect(byModel.get('other')).toEqual({ kind: 'unpriced' })
+  })
+
+  it('★ 不计费的声明比价格表更强 —— 既声明又配价时不收费', () => {
+    const both: PriceTable = { ...prices, unbilled: ['deepseek'] }
+    const rows = aggregateDaily([raw()], both)
+    // 反过来的话,一个「已经说了不收费」的模型会因为误配的价格而被计费,
+    // 而部署方的声明应当是更强的那一条。
+    expect(rows[0]!.cost).toEqual({ kind: 'unbilled' })
+  })
+
+  it('★ 整个部署没有价格表 → 全部 unpriced,不回落到某个默认币种', () => {
+    const rows = aggregateDaily([raw()], undefined)
+    expect(rows[0]!.cost).toEqual({ kind: 'unpriced' })
   })
 
   it('会计恒等式:聚合行的 token 总和 = 明细逐条相加', () => {

@@ -1593,6 +1593,64 @@ function checkPrimaryColorHasNoFallback() {
 }
 
 /**
+ * ★ **任何一处都不许自带「币种 → 最小单位指数」对照表。**
+ *
+ * ## 它防的是什么(V0.9.0 Session 5.5)
+ *
+ * 金额是最小货币单位的整数,而 minor → major 的指数**不都是 2**:
+ * JPY 是 0,KWD 是 3。谁想显示金额,谁就需要指数。
+ *
+ * 曾经有两处各自解决了这个问题,而它们**已经不一致**:
+ *
+ * | 位置 | 当时的做法 | JPY 的答案 |
+ * | --- | --- | --- |
+ * | `console-web/src/view/overview.ts` | 自带 11 条的表 | 对 |
+ * | `console-web/src/view/usage.ts` | 写死 `÷ 100` | **差 100 倍** |
+ *
+ * 一个前端里的两个事实源。⇒ 现在指数**随金额一起从契约来**
+ * (`Cost.currencyExponent`),而它与服务端的价格出自同一段配置。
+ *
+ * ⚠️ **服务端同样不许有这张表。** 那会是一份**会过期的数据**(币种改制真的发生过),
+ * 而它一过期,正确的配置反而会被判成错的。所以这条守卫扫全仓,不只扫前端。
+ *
+ * ## 判据
+ *
+ * 一行里出现「三个大写字母 + 冒号 + 0–4 的整数」即违规 —— 那是这张表的长相。
+ *
+ * ⚠️ 判据**刻意偏宽**:它可能误伤一个恰好长这样的常量(`{ GET: 1 }` 之类)。
+ * 取这个宽度的理由是代价不对称 —— 误伤一次加一个带理由的豁免标记就过去了,
+ * 而漏一次是账目差 10 的整数次幂,且**看起来完全正常**。
+ * 实测:本仓当下命中 **0 处**,所以这个宽度今天不产生任何噪声。
+ *
+ * 反向对照(`verify-guards.mjs` 42b/42c)钉住两个合法形态:
+ * `currency: 'JPY'`(币种是**值**,不是键)与 `currencyExponent: 2`(从契约收下来的那个数)。
+ *
+ * @returns {{file: string, line: number, text: string}[]}
+ */
+function checkNoCurrencyExponentTable() {
+  /** @type {{file: string, line: number, text: string}[]} */
+  const out = []
+  // 与 primaryColor 那条同款:**扫全仓的 .ts / .tsx**,不写死目录清单。
+  // 写死清单的后果在 Session 1/2 已经付过两次学费(新建的根级前端包不在清单里)。
+  const files = collectFiles(REPO, isTs)
+  out.push(
+    ...grepFiles(files, /\b[A-Z]{3}\s*:\s*[0-4]\b/g, REPO).map((h) => ({
+      ...h,
+      text: `${h.file}:${String(h.line)}  ${h.text}`,
+    })),
+  )
+  // ★ 出口计数:全仓一个 .ts 都没扫到 = 空集扫描,而它显示为「通过」。
+  if (files.length === 0) {
+    out.push({
+      file: 'package.json',
+      line: 0,
+      text: '全仓一个 .ts 都没扫到 —— 本条退化成空集扫描,永远绿',
+    })
+  }
+  return out
+}
+
+/**
  * ★ **每个 SDK 都要有「与契约同步」的断言。**
  *
  * ## 它防的是「加了第四种语言,而没人盯着它」
@@ -2086,6 +2144,20 @@ if (colorFallback.length === 0) {
   console.log('        类型上仍分开,行为上又合并,而且没有任何东西会变红。')
   console.log('        判空收敛在派生入口一处(derive(seed: string | null)),不在调用点判。')
   for (const h of colorFallback) console.log(`        ${h.text}`)
+}
+
+const currencyTable = checkNoCurrencyExponentTable()
+if (currencyTable.length === 0) {
+  console.log('  通过  没有人自带「币种 → 指数」对照表(指数随金额从契约来)')
+} else {
+  failed += 1
+  console.log(`  违规  有人自带了币种指数表  (${currencyTable.length} 处)`)
+  console.log('        minor → major 的指数不都是 2(JPY 是 0,KWD 是 3),而自带一张表')
+  console.log('        就是**第二个事实源** —— 它与服务端的计价口径迟早分家,')
+  console.log('        分家的表现是账目差 10 的整数次幂,且没人知道该信哪一边。')
+  console.log('        V0.9.0 Session 5.5 之前 console-web 里就有两处,答案已经不一致。')
+  console.log('        ⇒ 指数随金额一起从契约来:Cost.currencyExponent。')
+  for (const h of currencyTable) console.log(`        ${h.text}`)
 }
 
 const sdkSync = checkSdkHasSyncAssertion()

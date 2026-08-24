@@ -113,6 +113,9 @@ importers:
       '@dshwar/design-system':
         specifier: workspace:*
         version: link:../packages/design-system
+      '@dshwar/metering':
+        specifier: workspace:*
+        version: link:../packages/metering
       '@dshwar/sdk':
         specifier: workspace:*
         version: link:../sdk/typescript

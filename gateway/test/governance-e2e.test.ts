@@ -13,6 +13,7 @@
 import { InMemoryAuditStore } from '@dshwar/audit'
 import {
   aggregateDaily,
+  costToWire,
   InMemoryMeteringStore,
   safeRecord,
   type PriceTable,
@@ -36,6 +37,7 @@ const aliceId = AUTH_ENTRIES[0]!.id
 
 const prices: PriceTable = {
   currency: 'CNY',
+  currencyExponent: 2,
   prices: {
     'fake/fake-1': { inputPerMTokenMinor: 200, outputPerMTokenMinor: 800 },
     'cheap/cheap-1': { inputPerMTokenMinor: 20, outputPerMTokenMinor: 80 },
@@ -142,7 +144,11 @@ beforeAll(async () => {
       credentialRefs: [],
       subjects: { find: async () => undefined },
       usageReader: {
-        daily: async (filter) => aggregateDaily(await metering.query(filter), prices),
+        daily: async (filter) =>
+          aggregateDaily(await metering.query(filter), prices).map((row) => ({
+            ...row,
+            cost: costToWire(row.cost),
+          })),
       },
       quotaAdmin: {
         quotaOf: (id) => policyService.quotaOf(id),

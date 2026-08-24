@@ -26,6 +26,7 @@ import {
   Subject,
   UpdateQuotaRequest,
   UsageRecord,
+  Cost,
 } from './admin.ts'
 import { ErrorResponse } from './common.ts'
 import { StreamEvent } from './events.ts'
@@ -88,6 +89,7 @@ export const SCHEMA_REGISTRY: Readonly<Record<string, z.ZodType>> = {
   Quota,
   GetQuotaResponse,
   UpdateQuotaRequest,
+  Cost,
   UsageRecord,
   ListUsageResponse,
   Policy,

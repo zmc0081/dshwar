@@ -19,6 +19,7 @@ function invoice(over: Partial<Invoice> = {}): Invoice {
     tenantId: 'acme',
     period: PERIOD,
     currency: 'CNY',
+    currencyExponent: 2,
     seller: { legalName: legalEntity('Acme Inc.'), taxId: null, address: null },
     status: 'issued',
     lines: [],

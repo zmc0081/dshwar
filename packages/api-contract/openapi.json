@@ -3542,6 +3542,62 @@
         ],
         "additionalProperties": false
       },
+      "Cost": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "priced",
+              "unpriced",
+              "unbilled"
+            ]
+          },
+          "amountMinor": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 3
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "currencyExponent": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "amountMinor",
+          "currency",
+          "currencyExponent"
+        ],
+        "additionalProperties": false
+      },
       "UsageRecord": {
         "type": "object",
         "properties": {
@@ -3575,15 +3631,8 @@
             "minimum": 0,
             "maximum": 9007199254740991
           },
-          "costMinorUnits": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          },
-          "currency": {
-            "type": "string",
-            "minLength": 3,
-            "maxLength": 3
+          "cost": {
+            "$ref": "#/components/schemas/Cost"
           }
         },
         "required": [
@@ -3594,8 +3643,7 @@
           "model",
           "inputTokens",
           "outputTokens",
-          "costMinorUnits",
-          "currency"
+          "cost"
         ],
         "additionalProperties": false
       },

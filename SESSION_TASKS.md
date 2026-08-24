@@ -378,7 +378,7 @@ git add . && git commit -m "feat: session N - 功能描述" && git push
 | 3       | 运营后台(console kit)                                | ✅   |
 | 4       | 认证:系统浏览器 + PKCE + loopback + 钥匙串           | ✅   |
 | 5       | Tauri 壳:一份 React 三宿主 + 运行期主题 + updater    | ✅   |
-| 5.5     | `costMinorUnits` 的两个洞(语义折叠 + 单位假设)       | ⬜   |
+| 5.5     | `costMinorUnits` 的两个洞(语义折叠 + 单位假设)       | ✅   |
 | 6       | 打包(单独两周,不混功能)                              | ⬜   |
 
 ---
@@ -627,7 +627,7 @@ state 匹配才算回调 / 收完等响应落地再兑现)、
 
 ---
 
-### Session 5.5 · `costMinorUnits` 的两个洞(同一个字段,一次动完)
+### Session 5.5 · `costMinorUnits` 的两个洞(同一个字段,一次动完)✅
 
 > **为什么单独成一个 Session,而不是顺手补进 Session 3。**
 >
@@ -636,10 +636,35 @@ state 匹配才算回调 / 收完等响应落地再兑现)、
 > 分两次动的后果是第一次改完看起来对了,第二次再来时前一次的判断已经
 > 被当成既成事实 —— 而正确的做法是**先把两条一起摆出来再决定**。
 
-**交付**:`packages/metering/`(语义折叠的修法)、
-`packages/api-contract/openapi.json`(`currencyExponent` 或等价表达)、
-`console-web/src/view/usage.ts`(换算改为按契约给的指数)、
-`packages/billing-local/`(与计价口径对齐)。
+**交付**:`packages/metering/src/cost.ts`(`Cost` 判别联合 + 价格表 + 唯一的定价判据)、
+`packages/api-contract/src/admin.ts`(契约的 `Cost`,替换 `costMinorUnits` + `currency`)、
+`console-web/src/view/usage.ts`(换算按契约给的指数 / 算不出来时显示「—」)、
+`console-web/src/view/overview.ts`(**删掉自带的 11 条币种表**)、
+`console-web/test/cost.test.ts`(JPY / KWD 各一条,且都钉「不等于 ÷100 的结果」)、
+`packages/billing-local/src/service.ts`(遇到没配价的模型**拒绝出票**)、
+`docs/DECISIONS/coupled-holes-in-one-field.md`(形状:两个洞为什么必须一起动)、
+`scripts/check-guards.mjs`(新守卫:没有人自带币种指数表)、
+`.changeset/usage-cost-shape.md`(破坏性变更声明与迁移写法)。
+
+**验收**:
+① 三种情况在类型层可分:`priced` / `unpriced` / `unbilled` —— **没有一种退化成 0**;
+② JPY(指数 0)与 KWD(指数 3)各有断言,金额显示正确;
+③ 前端没有任何币种表 —— grep 得到 0,并由守卫钉住;
+④ 负向验证:把指数写死回 2 → ②里那两条各自变红(探针 27 / 28)。
+
+> ✅ **契约破坏性 3 处,如实声明**(`check-contract` 输出):
+> `UsageRecord.costMinorUnits` 与 `.currency` 两处 `property.removed`,
+> 加 `cost` 的 `property.required.added`;另有相容 1 处(`Cost` 新增类型)。
+> **没有为了让它是 0 而收缩改动。**
+>
+> ⚠️ 线上形状刻意**不是** `oneOf`:`model-ir.ts` 对 `oneOf` 按不透明处理,
+> 用它的话 Kotlin / Swift SDK 里成本字段会退化成 `JsonElement` / `AnyCodable`。
+> 实测确认:扁平形状下两端都拿到了带类型的 `Cost`(`val amountMinor: Long?` /
+> `public let currencyExponent: Int64?`)。
+>
+> 🚨 **本地不计费从「副作用」变成「声明」**:以前靠「查不到价就算 0」实现,
+> 现在要写 `unbilled: ['local']`。没写的部署会拒绝出票并点名模型 ——
+> 那正是这次改动要的:两件事在**行为上**分得开,而不只是在注释里。
 
 ---
 
