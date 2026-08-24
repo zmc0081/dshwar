@@ -352,6 +352,13 @@ export function toMembersProps(input: {
   readonly capacity: ConsoleCapacity
   /** 本次列表响应的 requestId。今天 `ConsoleApi` 给不出 —— 传 `null`,别凑。 */
   readonly requestId: string | null
+  /**
+   * 成员清单是不是取完了。
+   *
+   * ⚠️ 必填。默认 true 会让漏传的人拿到一句「共 N 人」的假话,而没有任何东西会红。
+   * 见 `api.ts` 的 {@link Page} 与 MembersScreen 的 `countComplete`。
+   */
+  readonly complete: boolean
   /** IdP 连接。今天契约里没有这个端点 —— 传 `null`,别编。见模块注释。 */
   readonly idp: IdpConnection | null
   readonly selectedIndex?: number
@@ -388,6 +395,7 @@ export function toMembersProps(input: {
     selectedIndex: input.selectedIndex ?? -1,
     // ⚠️ 分母是**筛选前**的条数。用 capacity.memberCount 会渲染出「4 / 2」,见模块注释。
     totalCount: input.subjects.length,
+    countComplete: input.complete,
     // D2:容量读数只有一个构造点。isolationLevel 认不出的第三档在那里抛,不在这里退化。
     capacity: toCapacityReading(input.capacity),
     query,

@@ -57,15 +57,100 @@ export interface NotImplemented {
 
 export type MaybeImplemented<T> = { readonly kind: 'ok'; readonly value: T } | NotImplemented
 
+/**
+ * 一次**完整取回**的结果 —— 不是「一页」。
+ *
+ * ## 🚨 它修的是什么
+ *
+ * V0.9.0 Session 3 的第一版把每个列表方法都写成 `(await client.x()).data` ——
+ * 把 `nextCursor` 与 `requestId` 在那一行就丢了。三个后果:
+ *
+ * | 丢了什么 | 后果 |
+ * | --- | --- |
+ * | `nextCursor` | 成员超过一页时**分母偏小** |
+ * | `nextCursor` | 角色选项漏掉后面那些页里才出现的角色 |
+ * | `requestId` | 工单里没有可查的调用标识 |
+ *
+ * 第一条最要紧:验收① 刚刚证明「1 / 64 位成员」的**分母**来自服务端,
+ * 而**分子**若只数了第一页,那个刚被验证过的读数就被上游的分页悄悄污染了。
+ * 一个被验证过的数字比一个没人验过的更危险 —— 它有背书。
+ *
+ * ## ⚠️ `complete: false` 必须被呈现出来
+ *
+ * 自动翻页要有安全上限,否则一个几万人的租户会把界面挂死。
+ * 但**一个不报出来的上限,就是原来那个 bug 换了个位置** ——
+ * 照样是「界面显示的数比真实的少,而没有任何提示」。
+ *
+ * 所以上限撞到时 `complete` 为 `false`,而调用方**必须**据此改口:
+ * 不能再说「共 N 人」,只能说「至少 N 人」。
+ *
+ * ## ⚠️ `requestIds` 是**复数**
+ *
+ * 翻了三页就是三次调用、三个 id。只留一个等于让工单少两条线索;
+ * 而少的那两条恰恰是「后面几页出了什么问题」的入口。
+ */
+export interface Page<T> {
+  readonly data: readonly T[]
+  /** 每一页各一个,按取回顺序。空数组 = 一次都没调成功(不该发生)。 */
+  readonly requestIds: readonly string[]
+  /** 游标是否走完。`false` = 撞上了 {@link MAX_PAGES},**后面还有数据**。 */
+  readonly complete: boolean
+}
+
+/**
+ * 自动翻页的安全上限。
+ *
+ * 100 页 × 默认 50 条 = 5000 条。超过这个量的租户,运营后台本来也不该
+ * 一次拉完 —— 那时要的是服务端筛选,不是更大的上限。
+ *
+ * ⚠️ 撞上它**不是错误**,是「这一屏不适合展示这么多」。所以它走
+ * {@link Page.complete} 而不是抛异常:抛出来会让整屏白掉,
+ * 而实际上前 5000 条是好的、可用的。
+ */
+export const MAX_PAGES = 100
+
 /** 运营后台需要的那部分 API。刻意收窄 —— 组件拿不到它不该用的东西。 */
 export interface ConsoleApi {
   capacity(): Promise<ConsoleCapacity>
-  listSubjects(): Promise<Subject[]>
+  /** ⚠️ 返回 {@link Page} 而不是裸数组 —— 见 Page 的注释,分母被截断过一次。 */
+  listSubjects(): Promise<Page<Subject>>
   getQuota(subjectId: string): Promise<Quota>
   updateQuota(subjectId: string, tokenLimit: number | null): Promise<Quota>
-  usage(): Promise<UsageRecord[]>
-  policies(): Promise<Policy[]>
-  audit(): Promise<AuditEntry[]>
+  usage(): Promise<Page<UsageRecord>>
+  policies(): Promise<Page<Policy>>
+  audit(): Promise<Page<AuditEntry>>
+}
+
+/**
+ * 顺着 `nextCursor` 取完,收齐每一页的 `requestId`。
+ *
+ * @param fetchPage 取一页。`cursor` 为 `undefined` 表示取第一页。
+ *
+ * ⚠️ **出口计数式的循环**:`pages` 数到上限就停,并把 `complete` 置为 false。
+ * 少了这一层,一个坏掉的服务端(每页都回同一个 cursor)会让这里死循环。
+ */
+async function collectPages<T>(
+  fetchPage: (cursor?: string) => Promise<{
+    data: T[]
+    nextCursor: string | null
+    requestId: string
+  }>,
+): Promise<Page<T>> {
+  /** @type {T[]} */
+  const data: T[] = []
+  const requestIds: string[] = []
+  let cursor: string | undefined
+  let pages = 0
+
+  for (;;) {
+    const page = await fetchPage(cursor)
+    data.push(...page.data)
+    requestIds.push(page.requestId)
+    pages += 1
+    if (page.nextCursor === null) return { data, requestIds, complete: true }
+    if (pages >= MAX_PAGES) return { data, requestIds, complete: false }
+    cursor = page.nextCursor
+  }
 }
 
 /**
@@ -124,12 +209,17 @@ export function createConsoleApi(options: {
         basis: raw.basis,
       }
     },
-    listSubjects: async () => (await client.listSubjects()).data,
+    // ⚠️ 四个列表方法**一律走 collectPages**。写成 `(await client.x()).data`
+    //   是 Session 3 第一版的写法 —— 那一行同时丢掉 nextCursor 与 requestId,
+    //   而丢掉的后果只在「数据超过一页」时才显形,开发环境里永远碰不到。
+    listSubjects: () =>
+      collectPages((cursor) => client.listSubjects(cursor === undefined ? {} : { cursor })),
     getQuota: async (subjectId) => (await client.getQuota(subjectId)).quota,
     updateQuota: async (subjectId, tokenLimit) =>
       (await client.updateQuota(subjectId, { tokenLimit })).quota,
-    usage: async () => (await client.usage()).data,
-    policies: async () => (await client.policies()).data,
-    audit: async () => (await client.audit()).data,
+    usage: () => collectPages((cursor) => client.usage(cursor === undefined ? {} : { cursor })),
+    policies: () =>
+      collectPages((cursor) => client.policies(cursor === undefined ? {} : { cursor })),
+    audit: () => collectPages((cursor) => client.audit(cursor === undefined ? {} : { cursor })),
   }
 }

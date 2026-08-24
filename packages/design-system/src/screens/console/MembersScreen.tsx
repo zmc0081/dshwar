@@ -166,6 +166,25 @@ export interface MembersScreenProps {
    */
   readonly totalCount: number
   /**
+   * `totalCount` 是不是**完整的总数**。
+   *
+   * ## 🚨 为什么它必须是一个必填的 prop,而不是默认 `true`
+   *
+   * 上游按游标分页。取回方若撞上自动翻页的安全上限,`totalCount` 就只是
+   * **已经取到的那些**,而不是全部 —— 那时「共 N 人」是一句假话。
+   *
+   * V0.9.0 Session 3 的第一版正是这个形状:取回层只取了第一页,
+   * 于是分母被悄悄截断。而验收① 刚刚证明**分母**(`capacity.memberCap`)
+   * 来自服务端 —— 一个被验证过的读数,被上游的分页污染了分子。
+   * **被验证过的数字比没人验过的更危险,它有背书。**
+   *
+   * 默认 `true` 会让下一个漏传的人拿到同样的假话,而且没有任何东西会红。
+   * 必填之后漏传是编译错误。
+   *
+   * `false` 时计数行改口为「至少 N」,并给出一句说明。
+   */
+  readonly countComplete: boolean
+  /**
    * 整份容量读数。隔离档与成员上限都从这里读,本屏**不另算一份**。
    *
    * V0.5.0 的 D2 要的就是这件事:容量条与开户闸门是同一个来源。
@@ -239,6 +258,7 @@ export function MembersScreen({
   rows,
   selectedIndex,
   totalCount,
+  countComplete,
   capacity,
   query,
   role,
@@ -431,7 +451,8 @@ export function MembersScreen({
                   color: 'var(--text-tertiary)',
                 }}
               >
-                {rows.length} / {totalCount} · 上次同步{' '}
+                {rows.length} / {countComplete ? totalCount : '至少 ' + String(totalCount)} ·
+                {' 上次同步 '}
                 {lastSyncedAt === null ? '从未同步' : lastSyncedAt}
                 {requestId === null ? null : (
                   <>

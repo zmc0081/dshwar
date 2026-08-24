@@ -148,6 +148,7 @@ import {
   type AuditEntry,
   type ConsoleApi,
   type MaybeImplemented,
+  type Page,
   type Policy,
   type Quota,
   type Subject,
@@ -239,10 +240,10 @@ export function App({ api, branding, operator }: AppProps): React.JSX.Element {
 
   // ---- 远程数据。五个来源,各自独立失败 ----
   const [capacity, setCapacity] = useState<Remote<ConsoleCapacity>>({ kind: 'loading' })
-  const [subjects, setSubjects] = useState<Remote<readonly Subject[]>>({ kind: 'loading' })
-  const [usage, setUsage] = useState<Remote<readonly UsageRecord[]>>({ kind: 'loading' })
-  const [policies, setPolicies] = useState<Remote<readonly Policy[]>>({ kind: 'loading' })
-  const [audit, setAudit] = useState<Remote<readonly AuditEntry[]>>({ kind: 'loading' })
+  const [subjects, setSubjects] = useState<Remote<Page<Subject>>>({ kind: 'loading' })
+  const [usage, setUsage] = useState<Remote<Page<UsageRecord>>>({ kind: 'loading' })
+  const [policies, setPolicies] = useState<Remote<Page<Policy>>>({ kind: 'loading' })
+  const [audit, setAudit] = useState<Remote<Page<AuditEntry>>>({ kind: 'loading' })
   const [quota, setQuota] = useState<Remote<Quota | null>>({ kind: 'ok', value: null })
 
   // ---- 界面状态。全部由本层持有,屏幕不留副本 ----
@@ -402,14 +403,14 @@ export function App({ api, branding, operator }: AppProps): React.JSX.Element {
     }
   }, [api, subjectId])
 
-  const tenantIds = tenantIdsFrom(subjects, usage)
+  const tenantIds = tenantIdsFrom(pageOf(subjects), pageOf(usage))
 
   // ---- 唯一租户时替用户选中它;多于一个时**不替他选** ----
   useEffect(() => {
     if (tenantId !== null) return
     // ⚠️ 在 effect 里重算一遍,而不是把上面那个 `tenantIds` 放进依赖数组:
     //   它每次渲染都是一个新数组,进依赖就是每次渲染都跑一次 effect。
-    const ids = tenantIdsFrom(subjects, usage)
+    const ids = tenantIdsFrom(pageOf(subjects), pageOf(usage))
     // ⚠️ 只在「恰好一个」时自动选。两个以上还替他挑一个的话,屏上会出现一份
     //   属于某个租户的读数,而他从没选过那个租户 —— 与 `policies[0]` 那条
     //   「静默展示别人的策略」是同一族。
@@ -493,8 +494,8 @@ export function App({ api, branding, operator }: AppProps): React.JSX.Element {
         <OverviewScreen
           {...toOverviewProps({
             capacity: cap,
-            usage: records,
-            subjects: list,
+            usage: records.data,
+            subjects: list.data,
             // 「查看全部租户」去的是租户屏 —— 那里今天是一张说明卡。
             // 送人去一张说清缺口的页,好过给一个点了没反应的链接。
             onViewAllTenants: () => go('tenants'),
@@ -522,12 +523,15 @@ export function App({ api, branding, operator }: AppProps): React.JSX.Element {
     //   React 渲染,把整棵树连同左侧导航一起卸掉 —— 见 {@link attempt}。
     const built = attemptValue(() =>
       toMembersProps({
-        subjects: list,
+        subjects: list.data,
         capacity: cap,
-        // ⚠️ 契约的 ListSubjectsResponse 带 requestId,而 `api.ts` 只取了 `.data`。
-        //   修法是放宽那一层的返回,不是在这里生成一个 —— 一个服务端日志里查不到的
-        //   id 是伪造的凭据。
-        requestId: null,
+        // ★ V0.9.0 收尾:`api.ts` 改成返回 {@link Page} 之后,requestId 真的有了。
+        //   翻了几页就有几个 —— 取**第一个**,并在 UI 上带出总页数。
+        //   一个也没有(不该发生)时给 null,而不是编。
+        requestId: list.requestIds[0] ?? null,
+        // ⚠️ 撞上自动翻页上限时,「共 N 人」这句话就不成立了 ——
+        //   调用方必须据此改口。传下去,不在这里悄悄圆场。
+        complete: list.complete,
         idp: null,
         query: memberQuery,
         role: memberRole,
@@ -595,7 +599,7 @@ export function App({ api, branding, operator }: AppProps): React.JSX.Element {
       return remoteNotice(policies, '准入策略', 'GET /v1/admin/policies')
     }
     if (tenantId === null) return chooseTenantNotice()
-    const policy = pickPolicy(policies.value, tenantId)
+    const policy = pickPolicy(policies.value.data, tenantId)
     if (policy === null) {
       return (
         <Gap
@@ -633,7 +637,7 @@ export function App({ api, branding, operator }: AppProps): React.JSX.Element {
     }
     const result: MaybeImplemented<readonly Policy[]> =
       policies.kind === 'ok'
-        ? { kind: 'ok', value: policies.value }
+        ? { kind: 'ok', value: policies.value.data }
         : {
             kind: 'not-implemented',
             plannedVersion: policies.plannedVersion,
@@ -675,7 +679,7 @@ export function App({ api, branding, operator }: AppProps): React.JSX.Element {
         {attempt(() => (
           <UsageScreen
             {...toUsageProps({
-              records,
+              records: records.data,
               dimension: usageDimension,
               tenant: usageTenant,
               seriesLimit,
@@ -711,7 +715,7 @@ export function App({ api, branding, operator }: AppProps): React.JSX.Element {
     return attempt(() => (
       <AuditScreen
         {...toAuditProps({
-          entries,
+          entries: entries.data,
           now: auditNow,
           selectedId: auditId,
           query: auditQuery,
@@ -817,12 +821,12 @@ function toShellBranding(branding: TenantBranding): ShellBranding {
  * 「还没有租户可配」,一句假话。成员与用量两个来源都不受策略端点影响。
  */
 function tenantIdsFrom(
-  subjects: Remote<readonly Subject[]>,
-  usage: Remote<readonly UsageRecord[]>,
+  subjects: readonly Subject[],
+  usage: readonly UsageRecord[],
 ): readonly string[] {
   const seen = new Set<string>()
-  if (subjects.kind === 'ok') for (const s of subjects.value) seen.add(s.tenantId)
-  if (usage.kind === 'ok') for (const r of usage.value) seen.add(r.tenantId)
+  for (const s of subjects) seen.add(s.tenantId)
+  for (const r of usage) seen.add(r.tenantId)
   // 字典序(UTF-16 码元序),与 `view/usage.ts` 的 `byCodeUnit` 同口径:
   // `localeCompare` 依赖 ICU,同一份数据在两台机器上能排出两种顺序。
   return [...seen].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
@@ -986,6 +990,17 @@ function attemptValue<T>(build: () => T): Attempt<T> {
   } catch (error) {
     return { kind: 'failed', message: messageOf(error) }
   }
+}
+
+/**
+ * 取出一页的数据部分。
+ *
+ * ⚠️ **只在「这一处真的只需要数组」时用。** 它丢掉 `complete` 与 `requestIds`,
+ * 而那两样正是 V0.9.0 收尾要补回来的东西 —— 见 api.ts 的 {@link Page}。
+ * 需要它们的地方(成员计数、工单标识)必须显式接上,不许走这条捷径。
+ */
+function pageOf<T>(remote: Remote<Page<T>>): readonly T[] {
+  return remote.kind === 'ok' ? remote.value.data : []
 }
 
 /** 把任何 throw 出来的东西变成一句能显示的话。 */
