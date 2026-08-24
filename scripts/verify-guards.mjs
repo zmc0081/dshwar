@@ -35,12 +35,14 @@ import { execFileSync } from 'node:child_process'
 import {
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readdirSync,
   readFileSync,
   renameSync,
   rmSync,
   writeFileSync,
 } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 import { runTestsUnderMutation, withRestoredFiles } from './lib/mutate.mjs'
@@ -938,6 +940,130 @@ try {
         )
       }
     })
+  }
+
+  // ---------------------------------------------------------------------
+  // 45. 未推送提交的 advisory:三向(V0.9.0 Session 6 收尾)
+  //
+  //     `check-unpushed.mjs` 是 `check:all` 里**唯一一条永不阻塞**的检查。
+  //     这件事本身很危险 —— 一条永远退出 0 的检查与没有这条检查,
+  //     在退出码上完全一样。所以它的负向验证必须钉**两件事**:
+  //
+  //       a 落后超阈值时**真的打印**(而不是安静通过)
+  //       b **退出码不变**(advisory 不许偷偷变成阻塞)
+  //
+  //     ⚠️ 两件缺一不可:只验 a,它哪天变成阻塞没人发现;
+  //     只验 b,它哪天什么都不打印也没人发现 —— 而后者正是它要防的那种沉默。
+  //
+  //     另加两条反向对照:没落后时不吵、没有远端时说明白。
+  //
+  //     ⚠️ 夹具是**临时目录里的真 git 仓库**,不碰本仓:
+  //     本仓的落后数是真实状态,拿它当夹具等于让这条验证的结论随时漂。
+  // ---------------------------------------------------------------------
+  {
+    const script = p('scripts/check-unpushed.mjs')
+    /** 在指定目录跑脚本,拿到输出与退出码。 */
+    const runAt = (/** @type {string} */ cwd) => {
+      try {
+        const stdout = execFileSync(process.execPath, [script], {
+          cwd,
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+        })
+        return { code: 0, output: stdout }
+      } catch (error) {
+        const e = /** @type {{status?: number, stdout?: unknown, stderr?: unknown}} */ (error)
+        return { code: e.status ?? 1, output: `${e.stdout ?? ''}${e.stderr ?? ''}` }
+      }
+    }
+    const g = (/** @type {string[]} */ args, /** @type {string} */ cwd) =>
+      execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+
+    const tmp = mkdtempSync(join(tmpdir(), 'dshwar-unpushed-'))
+    try {
+      const remote = join(tmp, 'remote.git')
+      const work = join(tmp, 'work')
+      g(['init', '--bare', '-b', 'main', remote], tmp)
+      g(['init', '-b', 'main', work], tmp)
+      g(['config', 'user.email', 'verify@dshwar.test'], work)
+      g(['config', 'user.name', 'verify'], work)
+      writeFileSync(join(work, 'a.txt'), 'base\n')
+      g(['add', '-A'], work)
+      g(['commit', '-m', 'base'], work)
+      g(['remote', 'add', 'origin', remote], work)
+      g(['push', '-u', 'origin', 'main'], work)
+
+      // 45c 先跑:此刻 0 个未推 —— 反向对照,不该吵
+      {
+        const r = runAt(work)
+        const quiet = !/领先.*个提交,还没推/.test(r.output) && /通过/.test(r.output)
+        expect(
+          '45c ★ 反向对照:没有未推送提交时不吵(规则不是「见到 git 就提醒」)',
+          quiet && r.code === 0,
+          quiet ? undefined : `刚推完就报了 advisory:\n${r.output.slice(0, 300)}`,
+        )
+      }
+
+      // 45a/45b:攒 5 个不推
+      for (let i = 1; i <= 5; i += 1) {
+        writeFileSync(join(work, `c${String(i)}.txt`), `x${String(i)}\n`)
+        g(['add', '-A'], work)
+        g(['commit', '-m', `c${String(i)}`], work)
+      }
+      const ahead = runAt(work)
+
+      // ★ 先确认夹具真的造出来了 —— 数不出 5 就不是被测对象的问题。
+      const behindBy = execFileSync('git', ['rev-list', '--count', 'origin/main..HEAD'], {
+        cwd: work,
+        encoding: 'utf8',
+      }).trim()
+      if (behindBy !== '5') {
+        expect(
+          '45a 落后 5 个提交 → advisory 打印',
+          false,
+          `夹具没造对(数出来是 ${behindBy})—— 本条结论作废`,
+        )
+      } else {
+        const printed = /领先 origin\/main 5 个提交,还没推/.test(ahead.output)
+        expect(
+          '45a 落后 5 个提交 → advisory 真的打印(而不是安静通过)',
+          printed,
+          printed
+            ? undefined
+            : `攒了 5 个没推,它一句话都没说 —— 那与没有这条检查等价:\n${ahead.output.slice(0, 400)}`,
+        )
+        expect(
+          '45b ★ 退出码仍是 0 —— advisory 不许偷偷变成阻塞',
+          ahead.code === 0,
+          ahead.code === 0
+            ? undefined
+            : `它把门禁弄红了(退出码 ${ahead.code})。而它想帮的那个人,` +
+                '正是此刻推不了的那个人 —— 阻塞只会教人绕过它。',
+        )
+      }
+
+      // 45d:没有远端跟踪分支 —— 说明白,不装作通过
+      {
+        const lonely = join(tmp, 'lonely')
+        g(['init', '-b', 'main', lonely], tmp)
+        g(['config', 'user.email', 'verify@dshwar.test'], lonely)
+        g(['config', 'user.name', 'verify'], lonely)
+        writeFileSync(join(lonely, 'a.txt'), 'x\n')
+        g(['add', '-A'], lonely)
+        g(['commit', '-m', 'only'], lonely)
+        const r = runAt(lonely)
+        const said = /跳过 {2}没有远端跟踪分支/.test(r.output)
+        expect(
+          '45d ★ 没有远端跟踪分支 → 说明白并退出 0(不静默通过)',
+          said && r.code === 0,
+          said ? undefined : `它没说清为什么没查:\n${r.output.slice(0, 300)}`,
+        )
+      }
+    } finally {
+      // ⚠️ 夹具在临时目录里,清不掉也不会污染仓库 —— 但仍然清,
+      //   免得跑一百次留一百个几 MB 的目录。
+      rmSync(tmp, { recursive: true, force: true })
+    }
   }
 
   // ---------------------------------------------------------------------

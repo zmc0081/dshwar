@@ -9,6 +9,10 @@
 *.png binary
 *.jpg binary
 *.ico binary
+# macOS 的图标包(V0.9.0 Session 6 起有)。git 的启发式今天把它认成二进制了,
+# 但**别指望启发式** —— 一次误判会把 `* text=auto` 的行尾规范化用在二进制上,
+# 而结果是 macOS 上一个装得上、图标却坏掉的包。
+*.icns binary
 *.woff binary
 *.woff2 binary
 pnpm-lock.yaml -diff linguist-generated=true
