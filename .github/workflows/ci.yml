@@ -168,11 +168,28 @@ jobs:
         with:
           node-version: 22
 
+      # ⚠️ 与门禁那一步同款,把关键行喂进 annotation。
+      #
+      #   🚨 这个包装是**补上去的**:这个 job 第一次真跑就红在下面那一步,
+      #   而 annotation 里只有一句「Process completed with exit code 1」——
+      #   日志要 admin 才下得到,于是「为什么红」对外完全不可见。
+      #   本轮刚做完 ci-annotate.mjs,转头加的新 job 却没接上它。
+      #   ⇒ **新增会失败的 step 时,顺手问一句「它红了别人看得到吗」。**
       - name: 真实产物必须编得过
-        run: node scripts/compile-sdks.mjs --require-toolchains
+        run: |
+          set -o pipefail
+          node scripts/compile-sdks.mjs --require-toolchains 2>&1 | tee "$RUNNER_TEMP/sdk.log" || {
+            node scripts/ci-annotate.mjs "$RUNNER_TEMP/sdk.log" "SDK 产物编译失败"
+            exit 1
+          }
 
       - name: 自检 —— 植入语法错误必须变红,原样副本必须编得过
-        run: node scripts/compile-sdks.mjs --self-check
+        run: |
+          set -o pipefail
+          node scripts/compile-sdks.mjs --self-check 2>&1 | tee "$RUNNER_TEMP/sdk-self.log" || {
+            node scripts/ci-annotate.mjs "$RUNNER_TEMP/sdk-self.log" "SDK 编译检查的自检失败"
+            exit 1
+          }
 
   # 桌面壳:Rust 断言 + 真的打一次包(V0.9.0 Session 6)。
   #

@@ -170,10 +170,19 @@ const SDKS = [
  */
 const USE_SHELL = process.platform === 'win32'
 
+/** @type {Map<string, string>} 各工具链探测时报的版本号 —— 只在失败诊断里用。 */
+const toolchainVersion = new Map()
+
 /** 探一个工具链在不在。用 spawnSync 而不是 execFileSync —— 「不在」是正常情况,不是异常。 */
 function hasToolchain(/** @type {typeof SDKS[number]} */ sdk) {
   const [bin, args] = sdk.probe
   const r = spawnSync(bin, args, { encoding: 'utf8', shell: USE_SHELL })
+  // 版本号留给失败诊断 —— 「哪个版本编不过」比「编不过」有用得多,
+  // 而这个信息只有此刻拿得到。
+  toolchainVersion.set(
+    sdk.id,
+    `${r.stdout ?? ''}${r.stderr ?? ''}`.split('\n')[0]?.trim() ?? '(版本号读不到)',
+  )
   return r.status === 0
 }
 
@@ -204,14 +213,25 @@ function ensureDep(/** @type {(typeof KOTLIN_DEPS)[number]} */ dep) {
  *
  * @param {typeof SDKS[number]} sdk
  * @param {string[]} files
- * @returns {{ ok: boolean, output: string }}
+ * @returns {{ ok: boolean, output: string, cmd: string }}
  */
 function compile(sdk, files) {
   const outDir = mkdtempSync(join(tmpdir(), `dshwar-${sdk.id}-`))
   try {
     const [bin, args] = sdk.command(files, outDir)
+    // 命令行里把仓库根换成 . —— 否则一行里绝大部分是重复的绝对路径,
+    // 而 annotation 的预算很紧。
+    const cmd = [bin, ...args]
+      .map((a) =>
+        a
+          .split(REPO + '\\')
+          .join('')
+          .split(REPO)
+          .join('.'),
+      )
+      .join(' ')
     const r = spawnSync(bin, args, { encoding: 'utf8', shell: USE_SHELL, cwd: REPO })
-    return { ok: r.status === 0, output: `${r.stdout ?? ''}${r.stderr ?? ''}` }
+    return { ok: r.status === 0, output: `${r.stdout ?? ''}${r.stderr ?? ''}`, cmd }
   } finally {
     rmSync(outDir, { recursive: true, force: true })
   }
@@ -283,7 +303,10 @@ for (const sdk of SDKS) {
       failed += 1
       console.log(`  违规  ${sdk.label}:${files.length} 个文件**编译不过**`)
       console.log('        生成器产出了编不过的代码 —— 文本比对的断言看不见这一类。')
-      for (const line of r.output.split('\n').slice(0, 25)) console.log(`        ${line}`)
+      console.log(`        工具链:${toolchainVersion.get(sdk.id) ?? '(没探到)'}`)
+      console.log(`        命令:${r.cmd}`)
+      console.log('        ── 编译器说了什么 ──')
+      for (const line of r.output.split('\n').slice(0, 60)) console.log(`        ${line}`)
     }
     continue
   }
