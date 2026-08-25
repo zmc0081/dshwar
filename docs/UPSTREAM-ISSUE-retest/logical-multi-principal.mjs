@@ -167,7 +167,7 @@ async function main() {
   // ── 并发,各三轮 ───────────────────────────────────────────────────
   const ROUNDS = 3
   await Promise.all(
-    Object.entries(handles).map(async ([sid, h]) => {
+    Object.values(handles).map(async (h) => {
       for (let i = 0; i < ROUNDS; i += 1) {
         h.agent.followup(
           createUserMessage({

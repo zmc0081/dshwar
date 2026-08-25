@@ -27,10 +27,11 @@ import LlmRuntime, { createUserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SessionPersistenceJsonl from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import * as ToolFs from '@deepseek-ai/dsh-tool-fs'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { StaticAuth } from '@dshwar/auth-static'
 import { MultiuserCredentials, type PrincipalCredentialStore } from '@dshwar/credentials-multiuser'
-import { TenantFileSystem } from '@dshwar/fs-tenant'
+import { TenantFileSystem, tenantWorkspaceRoot } from '@dshwar/fs-tenant'
 import { ANONYMOUS, PRINCIPAL_BINDING, PrincipalService, type Principal } from '@dshwar/principal'
 import type { AgentHandleLike } from './sessions/store.ts'
 
@@ -50,6 +51,7 @@ export const GATEWAY_PLUGINS = [
   '@deepseek-ai/dsh-session-persistence-jsonl',
   '@deepseek-ai/dsh-llm',
   '@deepseek-ai/dsh-tools',
+  '@deepseek-ai/dsh-tool-fs',
   '@deepseek-ai/dsh-system-prompt',
   '@deepseek-ai/dsh-agent',
   '@deepseek-ai/dsh-agent-loop',
@@ -83,6 +85,32 @@ export interface StaticAuthEntry {
   readonly id: string
   readonly tenantId: string
   readonly roles?: readonly string[]
+}
+
+/**
+ * 工具清单提示段的正文 —— **纯函数,可直接断言**。
+ *
+ * 抽出来是为了让「零工具时说了什么」测得到:留在装配里的话,
+ * 要验它就得再装一套没有工具的运行时,而那等于把同一段逻辑抄两遍。
+ *
+ * @param names 当前注册到的工具名(顺序即呈现顺序)
+ */
+export function renderToolInventory(names: readonly string[]): string {
+  if (names.length === 0) {
+    return [
+      '## 本部署未注册任何工具',
+      '',
+      '你**没有**读写文件、执行命令或访问网络的能力。',
+      '不要声称你做过这些操作 —— 做不到就直说做不到。',
+    ].join('\n')
+  }
+  return [
+    '## 本部署可用的工具',
+    '',
+    names.map((n) => `- \`${n}\``).join('\n'),
+    '',
+    '**清单之外没有别的工具。** 需要清单外的能力时直说做不到,不要假装完成。',
+  ].join('\n')
 }
 
 export interface RuntimeOptions {
@@ -188,16 +216,55 @@ export async function assembleRuntime(options: RuntimeOptions): Promise<Assemble
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(AgentLoop, { agents: [] })
 
+  // ★ **出厂带文件工具。** 不带的话 `fs-tenant` 守的是一件出厂做不了的事 ——
+  //   工作区、路径钉死、逃逸测试、V0.4.7 那个发布阻塞项,全部围着它转。
+  //   **发一把锁而没有门**,是这一版之前的实际状态(实测见
+  //   docs/DECISIONS/gateway-registers-no-tools.md)。
+  //
+  // ⚠️ 只带**文件**工具。bash / 网络 / 其余一律 opt-in ——
+  //   它们不是本基座的隔离对象,而带上它们等于替部署方做了一次安全决定。
+  await ctx.plugin(ToolFs, {})
+
+  // ★ **模型必须知道这个部署有哪些工具。**
+  //
+  //   零工具是合法配置(纯对话部署),所以这里**不 fail closed**。
+  //   但「没有工具」与「模型不知道有没有工具」是两回事,后者是缺陷:
+  //   实测过,零工具时请求里**连 tools 字段都没有**,系统提示也不提 ——
+  //   一个被训练成「我有文件工具」的模型得不到任何相反信号,
+  //   于是它会说「我已经读完了 note.txt」,而**没有任何东西能反驳它**。
+  //
+  //   这比拒绝更坏:拒绝是有东西表了态(billing 落 401 是那一族),
+  //   这里是没有任何东西表态。
+  ctx.systemPrompt.section({
+    name: 'dshwar/tool-inventory',
+    // 上游约定:工具相关的说明用 100–199。
+    order: 100,
+    text: () => renderToolInventory(ctx.tools.schemas().map((t) => t.name)),
+  })
+
   return {
     ctx,
-    createAgent: async (input) =>
-      (await ctx.agents.create({
+    createAgent: async (input) => {
+      // ★ **每个会话的工作区靠 `meta.cwd` 交给上游。**
+      //
+      //   上游的文件工具用 `exec.agent.session.header.cwd` 决定相对路径解析到哪
+      //   (`dsh-tool-fs` 的 sessionCwd;`dsh-tool-bash` 的 workdir 同款)。
+      //   不传的话,相对路径解析到**服务器的启动目录**,而不是这个人的工作区。
+      //
+      // ⚠️ 这不是隔离防线,是**默认值**。防线仍在 `fs-tenant`:
+      //   它把任何 cwd(包括这一个)`pinPath` 进当前主体的工作区根,
+      //   并在 realpath 之后复查。两层的失效场景不同,所以都要有。
+      const principal = ctx.principal.current()
+      const cwd = tenantWorkspaceRoot(options.workspaceRoot, principal)
+      return (await ctx.agents.create({
         sessionId: SessionId(input.sessionId),
+        meta: { cwd },
         agentOptions: {
           provider: input.provider ?? options.defaultProvider,
           model: input.model ?? options.defaultModel,
         },
-      })) as unknown as AgentHandleLike,
+      })) as unknown as AgentHandleLike
+    },
     userMessage: (text) =>
       createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } }),
     // cordis 的 Context 没有 stop();拆卸走拥有它的 fiber。

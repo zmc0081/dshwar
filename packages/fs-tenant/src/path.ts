@@ -245,6 +245,9 @@ export function isWithin(root: string, candidate: string): boolean {
  * 把一个调用方提供的相对路径钉进工作区根。
  *
  * 这是**字面层**的防线:拦掉 `../`、绝对路径、UNC、空字节这些一眼可见的逃逸。
+ *
+ * ⚠️ **只用于模型请求的路径。** 工作目录(`cwd`)走 {@link pinCwd} ——
+ * 它来自会话头,上游要求它是**绝对路径**,拿这里去判会一律拒绝。
  * 它**不足以**保证安全 —— 符号链接可以在字面层完全合法的路径上把你带到根外。
  * 因此调用方必须在 realpath 之后再用 {@link isWithin} 复查一次。
  *
@@ -257,6 +260,50 @@ export function isWithin(root: string, candidate: string): boolean {
  * @returns 钉死后的绝对路径(尚未 realpath)
  * @throws {PathEscapeError} 路径含空字节、是绝对路径 / UNC,或归一化后逃出根
  */
+/**
+ * 把调用方给的**工作目录**钉进工作区根。
+ *
+ * ## 为什么 cwd 不能复用 {@link pinPath}
+ *
+ * 两者的输入来源完全不同,而 `pinPath` 的「绝对路径一律拒绝」只对其中一种成立:
+ *
+ * | 输入 | 来自谁 | 绝对路径意味着 |
+ * | --- | --- | --- |
+ * | `path`(请求路径) | **模型** | 逃逸企图 —— 拒绝是对的 |
+ * | `cwd`(工作目录) | **会话头**(我们自己在建会话时写的) | 正常 —— 上游要求它是绝对路径 |
+ *
+ * 🚨 **实测代价**:出厂带上 `dsh-tool-fs` 之后第一次真实驱动,
+ * 每一次文件操作都失败于 `不接受绝对路径` —— 因为上游把会话的
+ * `header.cwd`(绝对路径,`CreateAgentOptions.meta.cwd` 写进去的)
+ * 作为 `opts.cwd` 传了进来,而这里拿 `pinPath` 去判它。
+ *
+ * ⇒ 判据改成**按来源分**:相对路径照旧钉进根;绝对路径**做包含性检查** ——
+ * 在根内就接受(那正是我们自己传的那个),在根外才是逃逸。
+ *
+ * ⚠️ 接受根内的绝对 cwd **不放松任何防线**:请求路径仍走 `pinPath`,
+ * realpath 之后仍复查包含性。这里放行的只是「从哪儿开始算相对路径」。
+ */
+export function pinCwd(workspaceRoot: string, cwd: string): string {
+  if (cwd.includes('\u0000')) {
+    throw new PathEscapeError('工作目录含空字节')
+  }
+  const normalized = cwd.normalize('NFC')
+
+  // 相对路径:与请求路径同款处理,钉进根。
+  if (!isAbsolute(normalized) && !/^[A-Za-z]:/.test(normalized) && !normalized.startsWith('\\\\')) {
+    return pinPath(workspaceRoot, normalized)
+  }
+
+  const resolved = resolvePath(normalized)
+  if (!isWithin(workspaceRoot, resolved)) {
+    throw new PathEscapeError(
+      `工作目录落在工作区根之外(根 ${JSON.stringify(workspaceRoot)},` +
+        `收到 ${JSON.stringify(cwd)})`,
+    )
+  }
+  return resolved
+}
+
 export function pinPath(workspaceRoot: string, requestedPath: string): string {
   if (requestedPath.includes('\u0000')) {
     throw new PathEscapeError('路径含空字节')

@@ -38,6 +38,7 @@ import {
   DEFAULT_WORKSPACE_ID,
   isWithin,
   PathEscapeError,
+  pinCwd,
   pinPath,
   tenantWorkspaceRoot,
 } from './path.ts'
@@ -100,6 +101,22 @@ export interface TenantFileSystemConfig {
  * 见 `docs/FEASIBILITY-REPORT.md` §4.1。
  */
 export class TenantFileSystem extends FileSystem {
+  /**
+   * ★ **声明对 principal 的依赖 —— 少了它,经工具层的调用一律抛。**
+   *
+   * cordis 会把 `this.ctx` 重绑到**访问方**的上下文。从根上直接调 `ctx.fs` 时
+   * 读 `this.ctx.principal` 没问题;而**经 agent 的工具层**调进来时,
+   * 访问方的 ctx 带着 inject 保护,于是抛
+   * `cannot get property "principal" without inject`。
+   *
+   * 🚨 **这条在 V0.9.0 之前从未被触发过** —— 因为网关一个工具都没注册,
+   * 本类的隔离逻辑从来没有走过真实的工具路径(见
+   * `docs/DECISIONS/gateway-registers-no-tools.md`)。出厂带上 `dsh-tool-fs`
+   * 的第一次真实驱动就红在这里:**每一次文件操作都失败**,
+   * 而失败信息是一句 cordis 的内部错误,与租户隔离毫无字面关系。
+   */
+  static inject = ['principal']
+
   private readonly inner: FileSystem
   private readonly root: string
   private readonly workspaceOf: (() => string | undefined) | undefined
@@ -152,7 +169,9 @@ export class TenantFileSystem extends FileSystem {
     const workspaceRoot = this.currentWorkspaceRoot()
 
     // cwd 也必须钉死。允许调用方自带 cwd 而不校验,等于把整道防线拱手让人。
-    const cwd = opts?.cwd === undefined ? workspaceRoot : pinPath(workspaceRoot, opts.cwd)
+    // ⚠️ 但判据与请求路径**不同**:cwd 来自会话头,上游要求它是绝对路径。
+    //    用 pinPath 判它会一律拒绝 —— 见 pinCwd 的注释。
+    const cwd = opts?.cwd === undefined ? workspaceRoot : pinCwd(workspaceRoot, opts.cwd)
 
     const pinned = pinPath(workspaceRoot, path)
     const target = await this.inner.resolve(pinned, {
@@ -171,7 +190,7 @@ export class TenantFileSystem extends FileSystem {
     signal?: AbortSignal,
   ): Promise<FsPathInfo | undefined> {
     const workspaceRoot = this.currentWorkspaceRoot()
-    const cwd = opts?.cwd === undefined ? workspaceRoot : pinPath(workspaceRoot, opts.cwd)
+    const cwd = opts?.cwd === undefined ? workspaceRoot : pinCwd(workspaceRoot, opts.cwd)
     const pinned = pinPath(workspaceRoot, path)
 
     // lstat 刻意不跟随最后一跳的符号链接,所以这里**不能**做 realpath 复查 ——

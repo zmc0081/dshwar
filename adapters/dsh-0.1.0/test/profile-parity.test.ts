@@ -238,13 +238,40 @@ describe('两个 profile 的差异集恰好是预期的那几个插件', () => {
     const added = gateway.filter((n) => !team.includes(n)).sort()
     const removed = team.filter((n) => !gateway.includes(n)).sort()
 
-    // 少任何一个,ctx.agents.create() 能建出对象但 followup() 不产生输出。
-    // 清单来自 docs/FEASIBILITY-REPORT-V2.md §4.2 的实测装配。
+    // 这四个分两类,理由不同 —— 合成一句「驱动 agent 所需」会把第二类的
+    // 决定隐掉,而那是一次**安全决定**,该被看见。
+    //
+    // ① 前三个:少任何一个,ctx.agents.create() 能建出对象但 followup() 不产生输出。
+    //    清单来自 docs/FEASIBILITY-REPORT-V2.md §4.2 的实测装配。
+    // ② dsh-tool-fs:**能力**,不是驱动。出厂带它是因为 fs-tenant 存在的
+    //    全部意义就是隔离文件操作 —— 不带的话那把锁没有门
+    //    (docs/DECISIONS/gateway-registers-no-tools.md)。
+    //    ⚠️ team.yml 不需要它:那份 profile 交给 dsh 自己的 loader,
+    //    而 dsh 的默认装配本来就带工具。
+    // ⚠️ bash / 网络工具**不在这里** —— 那是部署方的安全决定,不是基座替他做。
     expect(added).toEqual([
       '@deepseek-ai/dsh-agent-loop',
       '@deepseek-ai/dsh-system-prompt',
+      '@deepseek-ai/dsh-tool-fs',
       '@deepseek-ai/dsh-tools',
     ])
+
+    // ★ 反向对照:能跑命令的工具一个都不许出厂。
+    //   上一条是「多了什么」,这一条是「不许多什么」—— 方向相反,
+    //   而只有前者的话,哪天有人往 profile 里加个 bash 工具,
+    //   改一行期望值就过了。
+    for (const forbidden of [
+      '@deepseek-ai/dsh-tool-bash',
+      '@deepseek-ai/dsh-tool-pwsh',
+      '@deepseek-ai/dsh-tool-web',
+      // ⚠️ `dsh-subprocess-local` **不在这张表里**,而它确实在 profile 里 ——
+      //    它是 shell 的**后端**,不是模型能调的工具,且程序化装配刻意不装它
+      //    (runtime.ts 的 DELIBERATELY_OMITTED:node-pty 原生构建 + win32 抛错)。
+      //    这条对照管的是「模型手上有什么」,不是「profile 里声明了什么」——
+      //    后者由出厂装配那一侧的断言管(gateway/test/factory-tools.test.ts)。
+    ]) {
+      expect(gateway, forbidden + ' 不该出厂 —— 那是部署方的安全决定').not.toContain(forbidden)
+    }
     expect(removed).toEqual([])
   })
 

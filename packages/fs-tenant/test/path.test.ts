@@ -12,13 +12,14 @@
  * 那正是加一层路径段时最容易漏的地方。
  */
 import { createPrincipal } from '@dshwar/principal'
-import { resolve as resolvePath, sep } from 'node:path'
+import { join, resolve as resolvePath, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_WORKSPACE_ID,
   encodeSegment,
   isWithin,
   PathEscapeError,
+  pinCwd,
   pinPath,
   tenantUserRoot,
   tenantWorkspaceRoot,
@@ -27,6 +28,7 @@ import {
 
 const ROOT = resolvePath('/data/workspaces')
 const alice = createPrincipal({ id: 'alice-e6f1', tenantId: 'acme' })
+const bob = createPrincipal({ id: 'bob-a2b3', tenantId: 'globex' })
 const WS = tenantWorkspaceRoot(ROOT, alice)
 
 describe('tenantWorkspaceRoot', () => {
@@ -430,5 +432,42 @@ describe('跨工作区不可见 —— 同一用户的两个工作区之间也�
     const theirs = tenantWorkspaceRoot(ROOT, mallory, 'proj-a')
     expect(isWithin(wsA, theirs)).toBe(false)
     expect(isWithin(theirs, wsA)).toBe(false)
+  })
+})
+
+describe('pinCwd —— 工作目录与请求路径的判据不同', () => {
+  // 🚨 这一族是出厂带上 `dsh-tool-fs` 之后第一次真实驱动逼出来的:
+  //    上游把会话头里的 **绝对** cwd 传进 `resolvePath(path, { cwd })`,
+  //    而当时这里拿 `pinPath` 去判它 —— 于是**每一次文件操作都失败**,
+  //    报的是「不接受绝对路径」,与租户隔离毫无字面关系。
+  const root = tenantWorkspaceRoot(ROOT, alice)
+
+  it('★ 根内的**绝对** cwd 被接受(那正是我们自己写进会话头的那个)', () => {
+    expect(pinCwd(root, root)).toBe(resolvePath(root))
+    expect(pinCwd(root, join(root, 'sub'))).toBe(resolvePath(join(root, 'sub')))
+  })
+
+  it('相对 cwd 照旧钉进根', () => {
+    expect(pinCwd(root, 'sub')).toBe(resolvePath(root, 'sub'))
+  })
+
+  it('★ 根外的绝对 cwd 仍然拒绝 —— 放行的只是「在根内」这一种', () => {
+    expect(() => pinCwd(root, tenantWorkspaceRoot(ROOT, bob))).toThrow(PathEscapeError)
+    expect(() => pinCwd(root, ROOT)).toThrow(PathEscapeError)
+  })
+
+  it('相对路径里的 `..` 逃逸仍然拒绝', () => {
+    expect(() => pinCwd(root, '../..')).toThrow(PathEscapeError)
+  })
+
+  it('空字节拒绝', () => {
+    expect(() => pinCwd(root, 'a b')).toThrow(PathEscapeError)
+  })
+
+  it('★ 反向对照:请求路径的判据**没有**跟着放松', () => {
+    // pinCwd 放宽的只是 cwd 这一个入口。模型请求的路径仍然一律拒绝绝对路径 ——
+    // 两者混为一谈的话,`read("/etc/passwd")` 会变成合法调用。
+    expect(() => pinPath(root, root)).toThrow(PathEscapeError)
+    expect(() => pinPath(root, '/etc/passwd')).toThrow(PathEscapeError)
   })
 })

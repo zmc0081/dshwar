@@ -529,6 +529,15 @@ const PRINCIPAL_CONSUMERS = [
     why: '🚨 受影响且不 fail closed:loop 内落进 anonymous/anonymous/,跨租户共用。V0.4.7 修',
   },
   {
+    file: 'gateway/src/runtime.ts',
+    why:
+      '✅ **不受影响** —— createAgent 跑在**请求作用域**里(HTTP 处理器建会话的那一刻),' +
+      '不在 agent loop 内。那正是 principal 绑定正确的时刻;算出的工作区根' +
+      '作为 meta.cwd 写进会话头,之后由上游按调用传给工具(实测见 ' +
+      'docs/DECISIONS/principal-scope-binding.md 的 2026-08-25 一节)。' +
+      '⚠️ 若哪天有人把它挪进 loop 内,读到的会是 ANONYMOUS —— 这条登记就是那个提醒',
+  },
+  {
     file: 'packages/storage-scoped/src/index.ts',
     why: '⚠️ 受影响:同 fs-tenant。当前未装配,V0.5.5 工作台后端会装配 —— 必须赶在那之前修',
   },

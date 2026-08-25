@@ -102,6 +102,11 @@
 - id: tools
   name: '@deepseek-ai/dsh-tools'
 
+# 出厂只带**文件**工具 —— fs-tenant 的隔离对象就是它。
+# bash / 网络 / 其余一律 opt-in:那是部署方的安全决定,不是基座替他做。
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+
 - id: system-prompt
   name: '@deepseek-ai/dsh-system-prompt'
 
