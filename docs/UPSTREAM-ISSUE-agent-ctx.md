@@ -1,7 +1,11 @@
 # 待提交的上游 issue:`ctx.agents.create()` 无法继承调用方的 context 作用域
 
 > **状态**:🟠 **草稿,待仓库所有者提交。**
-> 提交是对外动作,且本仓当前没有配置任何 remote —— 见 `docs/RELEASE-CHECKLIST.md`。
+> 提交是对外动作 —— 由仓库所有者决定时机。
+> ~~本仓当前没有配置任何 remote~~ 已不成立:仓库已 public
+> (<https://github.com/zmc0081/dshwar>),正文里引用的
+> `docs/DECISIONS/principal-scope-binding.md` **可以直接给链接**,
+> 不必再让对方「在我们仓库里找」。
 > 提交后请把 issue 链接回填到本文件与
 > [`docs/DECISIONS/principal-scope-binding.md`](DECISIONS/principal-scope-binding.md)。
 >
@@ -14,12 +18,29 @@
 补测之后确认:**这是通往低成本多租户模式的唯一路径。**
 
 没有这个钩子,一个 runtime 只能服务一个 principal,多租户就只剩「一人一进程」
-一条路 —— 50 人团队 = 50 进程 ≈ 2.9 GB 常驻。有了它,同一个 runtime 能安全地
-服务多个主体,内存成本降一到两个数量级。
+一条路 —— 50 人团队 = 50 进程 ≈ **3.2 GB** 常驻(Linux 实测 63 MB/进程;
+Windows 是 58 MB,≈ 2.9 GB)。有了它,同一个 runtime 能安全地服务多个主体,
+内存成本降一到两个数量级。
 
-上游还在 `0.1.0-rc.x` 快速迭代,**API 尚未定型** —— 这是影响它的最高性价比窗口。
-DSHWAR 大概率是第一个认真做多租户的消费方,这个约束对单用户场景完全不可见,
-所以不主动提,上游没有理由发现它。
+上游还在 `0.1.x-rc.x` 快速迭代,**API 尚未定型** —— 这是影响它的最高性价比窗口。
+
+> 🚨 **提交前必须先处理这一条(2026-08-24 核实)。**
+>
+> 正文里的全部实测都是对着 **`0.1.0-rc.6`** 做的,而上游 npm 上现在是
+> **`0.1.1-rc.2`**(`@deepseek-ai/dsh` 的 `latest` 与 `next` 都指向它)。
+> 本仓仍锁在 `0.1.0-rc.6`。
+>
+> **「这个在最新版上还复现吗?」几乎一定是对方的第一句话。** 两个选择:
+>
+> | 做法                                   | 代价     | 得到什么                   |
+> | -------------------------------------- | -------- | -------------------------- |
+> | 先在 `0.1.1-rc.2` 上重测一遍再提       | 一次实测 | 不给对方一个合理的搁置理由 |
+> | 照提,但在正文里写明测的是 `0.1.0-rc.6` | 0        | 诚实,但很可能换来一次往返  |
+>
+> ⚠️ 无论走哪条,**正文里的版本号必须与实际测过的那个一致** ——
+> 这正是本仓反复付学费的那一类:一个没验过的前提,写下来就会被当成事实。
+> DSHWAR 大概率是第一个认真做多租户的消费方,这个约束对单用户场景完全不可见,
+> 所以不主动提,上游没有理由发现它。
 
 它是异步的,回复可能几周,**不阻塞 DSHWAR 任何工作** —— 进程隔离档已经可用。
 
@@ -77,9 +98,15 @@ resolve that back to an agent identity.
 **Why this matters beyond tidiness**
 
 Without it, a runtime can serve exactly one principal, so multi-tenancy costs one
-process per user: ~58 MB resident and ~115 ms cold start each, measured. A 50-person
-deployment is ~2.9 GB before doing any work. With it, one runtime could serve many
-principals safely.
+process per user. Measured, five-sample median:
+
+| platform | cold start | resident per process |
+| -------- | ---------- | -------------------- |
+| Linux    | 86 ms      | 63 MB                |
+| Windows  | 115 ms     | 58 MB                |
+
+A 50-person deployment is ~3.2 GB resident before doing any work. With it, one
+runtime could serve many principals safely.
 
 **Proposed change**
 

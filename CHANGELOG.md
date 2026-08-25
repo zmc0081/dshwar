@@ -2,7 +2,10 @@
 
 > ⚠️ **本仓至今未发布到 npm。** 首发被 npm 组织占名与 GitHub 仓库创建阻塞
 > (见 [`docs/RELEASE-CHECKLIST.md`](docs/RELEASE-CHECKLIST.md))。
-> 因此**首个公开版本将是 0.4.5**,内容包含下面全部六节。
+> 因此**首个公开版本会一次性包含下面全部版本**,而不只是最后一节。
+> ⚠️ 这里**刻意不写死是哪个版本号** —— 上一版写的是「将是 0.4.5」,
+> 而开发一路走到了 0.9.0,那句话过时了五个版本没人发现。
+> 同样的教训 `docs/RELEASE-CHECKLIST.md` 早就记过(「不要再往标题里写死一个」)。
 >
 > 相应地,各版本的变更集在版本号提升时**并入本文件并删除** ——
 > 否则 `changeset version` 会把 0.4.1 再推成 0.5.0,而 CLAUDE.md 第四节承诺
@@ -10,6 +13,120 @@
 > changesets 记录的是**发布之间的增量**,而首发之前不存在「之间」。
 >
 > 发布之后恢复正常流程:每个改动写 changeset,`changeset version` 生成条目。
+
+---
+
+## 0.9.0 —— 端:Web 工作台 + Tauri 桌面壳(开发完成,未发布)
+
+> 版本线上没有 0.7.0 —— 它规划的内容以 0.9.0 落地(0.8.0 先做完,版本号只能递增)。
+
+### 新增
+
+- **`@dshwar/design-system`**(private):真实渲染台,React + react-dom,
+  屏幕组件在测试里真的挂载渲染,不是快照字符串
+- **`@dshwar/workbench-web`**(private):一份 React,三个宿主(Web / 桌面 / Tauri),
+  差别收敛在 `hosts.ts` 一处;主题在运行期读一次,同时喂给 `data-theme` 与 `applyAccent`
+- **`@dshwar/auth-pkce`**(private):系统浏览器 + PKCE + loopback 回调,
+  三个宿主共用同一份实现,差别只在端口。浏览器宿主**拒绝**注入 `SecretStore` ——
+  长效凭据不进浏览器存储
+- **运营后台**(`console-web`):租户 / 用量 / 配额 / 审计 / 白牌
+- **Tauri 桌面壳**(`src-tauri/`):拉起 sidecar → 读端口 → 再开窗;
+  每次启动一枚新的 32 字节令牌;refresh token 进系统钥匙串
+- **桌面端打包链路**:`scripts/pack-sidecar.mjs`(Node 运行时 + 生产依赖树 +
+  原生模块,target-triple 命名)· `scripts/pack-desktop.mjs`(三步编排)·
+  `scripts/make-icon.mjs`(**生成**的中性图标 —— 安装包永远中性,白牌走运行期主题)
+- **CI 两个新 job**:`desktop-shell`(Rust 断言 + 真打一次包,ubuntu + windows)·
+  `sdk-compile`(Kotlin / Swift 产物**编译得过**,含一条自检 step)
+- `scripts/ci-annotate.mjs`:失败日志 → GitHub annotation 的关键行提取
+- `scripts/check-unpushed.mjs`:advisory,本地领先远端超过阈值就说一声(不阻塞)
+
+### 变更(破坏性)
+
+- 🚨 **`UsageRecord` 的成本字段换形状**:`costMinorUnits` + `currency`
+  → `cost` 判别联合(`priced` / `unpriced` / `unbilled`)。
+  影响 `@dshwar/api-contract`、`@dshwar/metering`、`@dshwar/console-contract`。
+
+  两个洞一次补完:① `costMinorUnits: 0` 同时表示「免费」与「查不到价」,
+  两种状态被压成同一个数;② 金额的**单位指数**此前由消费方各自猜(前端两处
+  各有一张币种表,对日元给出相差 100 倍的答案)。
+  现在 `currencyExponent` **随金额从契约来**,并有守卫禁止任何人自带对照表。
+
+  ⚠️ **算不出来时拒绝,不给一个看起来像钱的 0**:查不到价 → `unpriced`,
+  用量页显示 `—`,`billing-local` 拒绝出票。本地算力不计费要**显式**写
+  `unbilled`,而不是靠「查不到价」这个副作用。
+- `TenantBranding.primaryColor` 相关的白牌契约随之调整(`@dshwar/console-contract`)
+
+### 修复
+
+- 🚨 **`JobStatus` 被引用却从未声明** —— `sdk-compile` job 第一次真跑抓到的。
+  `Job.status` 指向顶层字符串枚举,而模型 IR 只给 object 出模型,
+  于是 Kotlin 与 Swift 的产物**两种语言都编译不过**,从 0.8.0 起活了两个版本。
+  指向非 object 的 `$ref` 现按**别名**展开;悬空 `$ref` 与别名成环一律拒绝生成
+- **`@dshwar/gateway` 的 17 个运行时依赖躺在 `devDependencies` 里** ——
+  workspace 把它们铺平了,于是测试绿、build 绿、直接跑 dist 也能起来,
+  而 `pnpm deploy --prod` 出来的产物第一行 import 就 `ERR_MODULE_NOT_FOUND`。
+  已修 + 加守卫
+- 前端交互态样式回到 CSS 伪类,不用 JS 承载;成功回执不得在 `catch` 之外
+
+### 纪律
+
+- 新增八条规则进 `CLAUDE.md`:守卫不能惩罚记录(五个实例)· 凡「改一处再看结果」
+  的验证先断言那一处真的被改到 · 负向验证的预期结果不只有「红」还有「挂住」·
+  负向验证不得依赖仓库当前碰巧处于的状态 · 批量 agent 作业的返回计数不可信 ·
+  **两份实现同一条规则 = 一个证人,不是两个**
+- 守卫负向验证 99 → **159**,断言探针 → **30**
+
+---
+
+## 0.8.0 —— 移动端 SDK 模型(Kotlin / Swift)(开发完成,未发布)
+
+> ⚠️ 这一版的名字是「移动端 SDK」,但十二个提交里只有两个是 SDK。
+> 其余十个来自开工后的审计与门禁补强 —— 它们没有单独立版本。
+
+### 新增
+
+- **`packages/api-contract/src/model-ir.ts`**:与语言无关的模型 IR。
+  **认不出的形状拒绝生成,不猜** —— 回落成 `string` 会把一个契约问题
+  变成三个运行时问题
+- **`@dshwar/sdk-kotlin` / `@dshwar/sdk-swift`**:各 42 个模型,由 IR 生成
+- 三道「与契约同步」断言,**逐语言一条,不共用**(探针 16 / 17 / 18)
+- **`gateway/test/shipped-assembly.test.ts`**:调真实 `startServer()` 起端口发 HTTP,
+  对 `ROUTES` 逐条断言
+
+### 修复
+
+- 🚨 **七条 `/v1/workspaces*` 在真实部署里全部 404** —— `registerWorkspaceRoutes`
+  从 0.5.5 起实现完整、测试齐全,而 `server.ts` 从不传 `workbenchRoutes`。
+  三个版本没有一道红:所有工作台测试**自己手工把它挂上去**,
+  验的是「挂进去之后行为正确」,不是「出厂真的挂了它」
+- **`/v1/jobs`** 契约标 `implemented` 而 handler 根本不存在(已改标 `planned`)
+- `MeteringStore.query` 的排序承诺(两个实现各验一次)· `markPaid` 的审计接缝
+
+### 变更
+
+- **白牌契约**:`TenantBranding.primaryColor` 从哨兵默认色改为 `string | null`,
+  「未配置」与「配置成某个值」不再被压成同一种状态;
+  默认值移到 OKLab 中亮带之外
+- `billing` 的发票卖方在类型层区分「未配置」与「显式为空」——
+  未配置时**拒绝出票**,不出一张署名为空的发票
+
+### 契约冻结分类器:从 14 个分类码补到 23 个 + 1 个 advisory 档
+
+实测补前有 **8 种破坏性变更全部漏报**:响应体 `$ref` 换掉、删已声明的响应码、
+请求体换 schema、`components.schemas` 内部的 `$ref`、`anyOf` 两个方向、
+operation 的 `security` 改掉。
+
+最刺眼的一条:`StreamEvent` 的 `oneOf` 节点上既没有 `type` 也没有 `properties`,
+比较器走完一遍**一个字段都比不到** —— **删掉一整个 SSE 事件类型 = 0 处破坏**。
+
+补完之后拿八个版本的历史**逐对**追溯重跑(不只比首尾):**破坏性 0**。
+追溯同时逼出三处误报,各自成为一条豁免。
+
+### 纪律
+
+- 守卫 54 → **99**;三条完备性断言(分类码 / 守卫 / 开源纯净度)+ 九条反向对照
+- `check:all` **132 s → 106 s**
+- 范围更正:Kotlin / Swift **客户端与可运行示例不在本版本内**(见 README 与任务书)
 
 ---
 

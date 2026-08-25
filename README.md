@@ -310,8 +310,16 @@ SDK 的类型由 OpenAPI 生成,不手写。错误码是闭集,映射成可穷�
 - `/v1/` 路径版本化。破坏性变更**升大版**,v1 与新版本**并行不少于 6 个月**。
 - 破坏性变更必须显式声明:CI 的契约冻结检查(`pnpm check:contract`)拿上一次提交里的
   OpenAPI 做基线比对,检出破坏性差异且没有点名契约包的 `major` changeset 时直接变红。
-- **给闭集枚举加值也算破坏性。** 错误码定成 `z.enum` 就是为了让你写出可穷举的
-  `switch` —— 多一个值,你已经写全的 `switch` 立刻编译失败。这是设计后果,不是误判。
+- 🚨 **闭集枚举会在 v1 内追加新值 —— 请写 `default` 分支。**
+  错误码与事件类型定成 `z.enum` 是为了让你**枚举得出已知取值**,
+  不是为了承诺这个集合永不变大。契约源码里写着这条要求
+  ([`common.ts`](packages/api-contract/src/common.ts)),冻结检查也照此放行
+  (`enum.value.added` 判为相容,V0.4.6 决策 1)。
+  **收缩**闭集(删值、删响应码)才是破坏性的。
+
+  > ⚠️ 本条在 V0.9.0 之前写反了 —— 曾写作「加值也算破坏性」,与契约源码
+  > 和门禁的实际判定相反。照那句话写出的穷尽 `switch` 会被一次相容变更打断编译。
+  > 首发前核对对外表述时发现并更正。
 
 ### 部署
 
@@ -326,8 +334,28 @@ SDK 的类型由 OpenAPI 生成,不手写。错误码是闭集,映射成可穷�
 `pnpm pack:desktop` —— 前端产物 → sidecar(Node 运行时 + 生产依赖树 + 原生模块)
 → `cargo tauri build`。见 [`docs/PACKAGING.md`](docs/PACKAGING.md)。
 
-⚠️ **产出的包没有签名**:Windows 走 SignPath Foundation(开源免费,需先有 release),
-macOS 走 Apple Developer($99/年)。签名之前,Windows 上安装会有 SmartScreen 警告。
+#### 🔏 关于代码签名:首发未签名,而这是发布顺序的必然
+
+**Windows 上安装会出现 SmartScreen 警告。这不是遗漏,也不是「暂时先这样」。**
+
+| 步骤                                                         | 说明                               |
+| ------------------------------------------------------------ | ---------------------------------- |
+| ① 发布一个**未签名**的 release                               | 第一个 release 必然如此            |
+| ② 拿它申请 [SignPath Foundation](https://signpath.org/) 签名 | **资格要求里就有「已有 release」** |
+| ③ 下一个 release 起带签名                                    | 取决于 ② 的审批                    |
+
+**顺序不能倒过来** —— 没有 release 就申请不了。任何走 SignPath 这条路的
+开源项目都会经过同一个位置。
+
+macOS 侧原因不同:签名要 Apple Developer($99/年),而**没签名的 `.dmg`
+会被 Gatekeeper 直接拦下**。跑一个装不上的产物没有意义,所以现阶段
+**不出 macOS 产物**,而不是出一个装不上的。
+
+在此期间验真的办法:每个产物的 SHA-256 列在 Release 页,
+且构建全过程在 GitHub Actions 的公开日志里,可复核。
+
+> 这段话在 [`.github/RELEASE_TEMPLATE.md`](.github/RELEASE_TEMPLATE.md) 里也有一份。
+> 两处必须一致,改一处就改两处。
 
 ---
 
@@ -487,9 +515,18 @@ webhook 验签防重放幂等齐全,自建者够用);商业客户买的是省掉
 - **逻辑档只支持单 principal** —— 架构限制,非待办。多用户请用 `isolation: process`,
   逻辑档 + 多用户身份会被拒绝启动。见上方隔离模型章节
 - **逻辑隔离不是强边界** —— 见上方警告;**进程隔离也不是容器**,同样见上方
-- **进程隔离的代价是实打实的** —— 冷启动 ~115 ms、常驻 ~58 MB/进程
-  (实测见 [`docs/FEASIBILITY-REPORT-V45.md`](docs/FEASIBILITY-REPORT-V45.md) §6)。
-  单机 100 个活跃 principal ≈ 5.8 GB,`maxProcesses` 是必需配置而非调优项
+- **进程隔离的代价是实打实的,而且分平台** —— 五次采样中位数:
+
+  | 平台           | 冷启动     | 常驻/进程 |
+  | -------------- | ---------- | --------- |
+  | Linux(CI 基线) | **86 ms**  | **63 MB** |
+  | Windows        | **115 ms** | **58 MB** |
+
+  「Linux 更便宜」只对冷启动成立(−25%),**常驻内存方向是反的**(+9%)。
+  单机 100 个活跃 principal ≈ **6.3 GB**(按 Linux),`maxProcesses` 是必需配置
+  而非调优项。数字由 CI 常驻门禁盯着,实测见
+  [`docs/FEASIBILITY-REPORT-V45.md`](docs/FEASIBILITY-REPORT-V45.md) §6
+
 - **进程隔离下,配额耗尽的租户仍能占用进程槽位** —— 配额判定挂在发起轮次上,
   而进程在建会话时就起来了。已知缺口,修复在计划中
 - **`storage-scoped` 的 `loadAll()` 仍会把整个 unit 读进内存** —— 上游契约的形状,
