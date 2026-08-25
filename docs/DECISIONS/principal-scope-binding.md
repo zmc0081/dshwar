@@ -231,6 +231,61 @@ cordis 的 inject 保护同样拦住祖先链。
 principal)。这比「三个小回调」重,但比「服务生命周期全面改成 per-agent」轻 ——
 只涉及三个包,且范围限定在 agent ctx 上。
 
+---
+
+## 🚨 实测记录(2026-08-25,`0.1.1-rc.2`)—— **结论尚未更改,待裁决**
+
+> 本节只记**测到了什么**。下面「四条路全部走不通」等结论**原样保留**,
+> 因为改它们需要一次裁决,而不是一次实测。
+> harness:`docs/UPSTREAM-ISSUE-retest/logical-multi-principal.mjs`
+
+### 怎么测的
+
+一个 runtime、两个 principal(`sess-alice` → acme/alice,`sess-bob` → globex/bob),
+**真实驱动**:`agent.followup()` + `whenIdle()`,穿过 agent loop 与工具层
+(假 LLM 每轮先发一次 `tool-call`,拿到结果再收尾)。
+**并发,各三轮**,工具实际执行 **6/6** 次。
+
+⚠️ 刻意**不用** `isolate` / `provide` —— 那一族的可见性在上一轮被记为**未测出**
+(出现过「作用域建立之前创建的 agent 也读到了值」这种自相矛盾的结果),
+不能拿一个未测出的东西当本次的前提。
+
+### 测到了什么
+
+| #   | 路径                                                        | 结果                                                |
+| --- | ----------------------------------------------------------- | --------------------------------------------------- |
+| ①   | 工具闭包住的**根 ctx** 上取服务 → 服务里读 `this.ctx.agent` | ❌ `undefined` → 两人都落进 `anonymous/anonymous`   |
+| ②   | 工具执行上下文的 `exec.agent`                               | ✅ 每次都是正确的调用方(`sess-alice` / `sess-bob`)  |
+| ③   | **`exec.agent.ctx` 上取服务** → 服务里读 `this.ctx.agent`   | ✅ **`acme/alice` 与 `globex/bob`,各是各的,无串号** |
+
+⚠️ ③ 第一次报 `cannot get property "probeFs" without inject` —— 那是**读**被
+inject 保护拦住,不是路走不通。换成 `ctx.get('probeFs')` 之后立刻拿到正确结果。
+**两者在错误信息上完全不同,在「这条路通不通」的结论上会被混成一个。**
+
+### ⇒ 机制是**在的**;没测到的是**接线**
+
+「一个 runtime 多个 principal,服务方法怎么知道现在是谁在问」——
+**0.1.1-rc.2 上有答案了**:一份装在根上的服务,**只要是经 agent 自己的 ctx 拿到的**,
+`this.ctx.agent` 就解得出正确身份。
+
+⚠️ 而这**不等于**逻辑档就能开,因为还差一步没测:
+
+> **上游自己的工具(`read_file` 之类)拿 `ctx.fs` 时,拿的是 agent 的 ctx 还是根的?**
+
+- 拿 agent 的 → fs-tenant 不改上游就能解身份,①那一行不再是真实路径
+- 拿根的 → ① 就是真实路径,身份照样丢
+
+**今天测不出来,因为 DSHWAR 根本没注册任何工具** ——
+`gateway/src/runtime.ts` 装了 `ToolRuntime` 但一个工具都没注册。
+⇒ 这一步要么装上上游的工具包实测,要么读它的源码确认。
+
+### 顺带:路 2 / 路 4 仍然堵着,**但可能不再需要**
+
+「每个 agent 各装一份同名服务」实测仍抛 `service "X" has been registered at <scope>`。
+而 ③ 说明**不需要每个 agent 一份** —— 一份根上的服务读 `this.ctx.agent` 就够了。
+⇒ 上游 issue 剩下的诉求可能比「同名服务各装一份」更小,
+甚至只是一句文档(说明 `agent.ctx` 是解身份的正路,以及为什么要 `ctx.get()`)。
+
 ### 遮蔽也不成立(V0.4.6 补测)—— 于是这是架构限制,不是待办
 
 ```
