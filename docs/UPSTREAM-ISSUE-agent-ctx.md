@@ -1,6 +1,6 @@
 # 待提交的上游 issue:`ctx.agents.create()` 无法继承调用方的 context 作用域
 
-> **状态**:🟠 **草稿,待仓库所有者提交。**
+> **状态**:🔴 **正文需要重写后才能提** —— 在 `0.1.1-rc.2` 上重测后,四条路里有一条已被上游修掉,另有一个新钩子覆盖了部分诉求。详见下方重测小节。
 > 提交是对外动作 —— 由仓库所有者决定时机。
 > ~~本仓当前没有配置任何 remote~~ 已不成立:仓库已 public
 > (<https://github.com/zmc0081/dshwar>),正文里引用的
@@ -43,6 +43,82 @@ Windows 是 58 MB,≈ 2.9 GB)。有了它,同一个 runtime 能安全地服务�
 > 所以不主动提,上游没有理由发现它。
 
 它是异步的,回复可能几周,**不阻塞 DSHWAR 任何工作** —— 进程隔离档已经可用。
+
+---
+
+## 🚨 在 `0.1.1-rc.2` 上重测的结果(2026-08-24)——**不要按原文提交**
+
+按裁决在上游最新版上重跑了四条路。**结论有变化,而且变化足以改写这份 issue。**
+重测脚本在 `docs/UPSTREAM-ISSUE-retest/`(不进 workspace),逐条对如下。
+
+### 逐条
+
+| 路                                      | `0.1.0-rc.6`  | `0.1.1-rc.2` 实测                             |
+| --------------------------------------- | ------------- | --------------------------------------------- |
+| 1 · 根上 provide(污染所有 agent)        | ❌ 能用但污染 | ❌ **不变**:两个 agent 读到同一个值           |
+| 2 · 每个 agent 自己的 ctx 上 provide    | ❌ 第二个抛   | ❌ **不变**:`service "X" has been registered` |
+| 3 · 从服务视角把 ctx 解回 agent 身份    | ❌ 走不通     | ✅ **已修** —— 见下                           |
+| 4 · 给 agent 装一份自己的服务实例(遮蔽) | ❌ 抛         | ❌ **不变**:同一机制                          |
+
+### ✅ 路 3 已经不成立了 —— 上游给了 `Context.agent`
+
+`0.1.1-rc.2` 的 `dsh-agent` 里新增了一个**公开字段**:
+
+```ts
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** The agent association installed as an own property on `Agent.ctx`.
+        Contexts derived from `Agent.ctx` inherit the association. */
+    agent?: Agent
+  }
+}
+```
+
+实测:两个 agent 的 `ctx.agent` 分别解回各自的 session id,
+**且从 `agent.ctx` 派生出来的 ctx 继承这个关联**(服务方法里的 `this.ctx`
+通常正是派生出来的那种)。
+
+⇒ **issue 正文里「Walk the fiber chain … `cannot get property "ctx" without inject`」
+那一行现在是错的。** 照原文提交,等于拿一条已经被修掉的观察去要一个新 API。
+
+### ⚠️ 还有一个新钩子:`create({ setup })`
+
+`CreateAgentOptions` 新增了 `setup?: (agentCtx: Context) => …`,文档写着:
+
+> Creation-time composition of the agent's scoped world. The factory awaits setup
+> after minting `agentCtx` but BEFORE inserting or announcing either the session
+> or agent … Everything registered through `agentCtx` … exists before
+> `session/created`, `agent/created` …
+
+这与本 issue 「Proposed change」里求的 `parentCtx` **不是同一个东西,但覆盖了
+同一类需求的一部分**:调用方现在能在 agent 发布之前往它的作用域里放东西。
+
+**但它没有解决路 2 / 路 4**:实测在 `setup` 里给两个 agent 各装一份同名服务,
+第一个成功、第二个仍然抛 `service "tenantFs" has been registered at <TenantFs>`。
+**服务名的注册是跨作用域全局的,这一条没变。**
+
+### ⚠️ 一条我没能可信测出来的
+
+issue 正文第一张表(scoped 绑定在 `agent.ctx` 上可不可见,三行全 ✗)
+**我这次没有做出可信的复现**。三次尝试都出现了一个自相矛盾的结果:
+**在作用域建立之前就创建好的 agent,也「读到」了那个值** ——
+若真是作用域派生,那一行必须是 ✗。
+
+⇒ 这说明**探针本身没做对**(多半是 `provide` 的 builtin 语义与 `isolate`
+的相互作用),不是上游改了行为。按本仓的规矩:一条实验反复给出不可能的结果时,
+**可疑的是实验,不是被测对象**。所以这一格记为**未测出**,不记为「已修」。
+
+### ⇒ 提交前要做的事
+
+1. **重写路 3 那一行** —— 它已经不成立。
+2. **把 `setup` 写进正文**:先说明上游已经提供了什么,再说明**剩下的缺口**
+   (服务名全局注册,导致 per-agent 服务实例仍然装不上)。
+   否则对方第一句话会是「你说的这个我们上一版就加了」。
+3. **重新判断 issue 还该不该提、以什么范围提。** 今天真正剩下的诉求只有一条:
+   **让同名服务能按 agent 作用域各装一份**(或等价地,让 `restrict()` /
+   `isolate()` 的结果能落在 agent 自己的那个 ctx 上)。
+   这比原来的 `parentCtx` 提案窄得多,也具体得多。
+4. 第一张表要么按正确的探针重测,要么从正文里删掉 —— **不要留一张自己没验过的表**。
 
 ---
 

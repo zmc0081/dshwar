@@ -2212,6 +2212,7 @@ try {
         '将发布的包,import 的东西都在 dependencies 里(出厂装得上)', // 43a–43c
         '正向对照都点名了自己那条守卫(判据不是整条门禁的退出码)', // 44a–44c
         'sdk-compile 的两个 step 都在(真编 + 自检)', // 47b–47d
+        'files 白名单里列的文件都真的存在(manifest 不撒谎)', // 48a–48c
       ]
 
       const accounted = new Set([...HARD_RULE_FIXTURES.map((f) => f.guard), ...VERIFIED_ELSEWHERE])
@@ -4291,6 +4292,91 @@ try {
       named
         ? flagged
           ? '守卫把原样的 ci.yml 也报成违规了 —— 规则不是「见到 sdk-compile 就红」'
+          : undefined
+        : '输出里找不到这条守卫的通过行 —— 它可能根本没跑,本条结论作废',
+    )
+  }
+}
+
+// ---------------------------------------------------------------------
+// 48 files 白名单里列的文件必须真的存在
+//
+// 起因是首发前的 tarball 审计:**八个将发布的包没有 README.md,
+// 而其中六个的 files 里明明白白写着 "README.md"**。npm 不报错 ——
+// 它只是安静地少打一个文件进 tarball,于是包页面空白,
+// 而 manifest 看起来完全正常。
+//
+// 与本仓一路在追的是同一个形状:**声称与实际之间没有人对账**
+// (契约标 implemented 而 handler 不存在 · Session 标 ✅ 而产物不存在 ·
+//  守卫登记了不存在的项目)。每一条都曾经绿着。
+//
+//   48a 删掉一个被 files 列着的文件 → 必须红
+//   48b files 里加一个不存在的条目 → 必须红
+//   48c ★ 正向对照:原样放行,且点名自己那条标记
+// ---------------------------------------------------------------------
+{
+  const FILES_MARKER = /files 白名单/
+  // 挑一个**真实存在**且被 files 列着的文件当靶子。
+  // ⚠️ 不写死某个包:哪天它的 files 变了,写死的锚点会静默失配。
+  const victimPkg = 'packages/principal/package.json'
+  const victimFile = 'packages/principal/README.md'
+
+  const stashed = beginMutation(REPO, [victimPkg, victimFile])
+  const pristinePkg = readFileSync(p(victimPkg), 'utf8')
+  const pristineFile = existsSync(p(victimFile)) ? readFileSync(p(victimFile), 'utf8') : undefined
+
+  try {
+    // 前提核对:靶子必须真的被 files 列着,否则本组验证全部空跑。
+    const listed = JSON.parse(pristinePkg).files ?? []
+    if (!listed.includes('README.md') || pristineFile === undefined) {
+      expect(
+        '48a 删掉被 files 列着的文件 → 守卫必须红',
+        false,
+        `夹具前提不成立:${victimPkg} 的 files 里没有 README.md,或文件不存在 —— 本组结论作废`,
+      )
+    } else {
+      // 48a 删文件
+      rmSync(p(victimFile), { force: true })
+      {
+        const r = runGuards()
+        const hit = flaggedBy(r.output, FILES_MARKER)
+        expect(
+          '48a 删掉被 files 列着的文件 → 守卫必须红',
+          hit,
+          hit ? undefined : 'files 里写着它而文件没了,守卫却放行 —— npm 会安静地少打一个文件',
+        )
+      }
+      writeFileSync(p(victimFile), pristineFile, 'utf8')
+
+      // 48b 加一个不存在的条目
+      {
+        const json = JSON.parse(pristinePkg)
+        json.files = [...(json.files ?? []), 'NOPE-does-not-exist.md']
+        writeFileSync(p(victimPkg), JSON.stringify(json, null, 2) + '\n', 'utf8')
+        const r = runGuards()
+        const hit = flaggedBy(r.output, FILES_MARKER)
+        expect(
+          '48b files 里加一个不存在的条目 → 守卫必须红',
+          hit,
+          hit ? undefined : '守卫放行了一个指不到东西的白名单条目',
+        )
+      }
+    }
+  } finally {
+    stashed.restore()
+  }
+
+  // 48c ★ 正向对照:判据是**这条守卫点名了自己**,不是整条门禁的退出码。
+  {
+    const r = runGuards()
+    const named = /files 白名单里列的文件都真的存在/.test(r.output)
+    const flagged = flaggedBy(r.output, FILES_MARKER)
+    expect(
+      '48c ★ 正向对照:原样的仓库被放行,且守卫点名了自己',
+      named && !flagged,
+      named
+        ? flagged
+          ? '守卫把原样的仓库也报成违规了 —— 规则不是「见到 files 就红」'
           : undefined
         : '输出里找不到这条守卫的通过行 —— 它可能根本没跑,本条结论作废',
     )

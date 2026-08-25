@@ -1711,6 +1711,78 @@ function checkPositiveControlsNameTheirGuard() {
  *
  * @returns {{file: string, line: number, text: string}[]}
  */
+/**
+ * ★ **`files` 白名单里列的东西必须真的存在。**
+ *
+ * ## 它防的是什么:manifest 声称有,而实际没有
+ *
+ * 首发前的 tarball 审计实测:**八个将发布的包没有 README.md,
+ * 而其中六个的 `files` 里明明白白写着 `"README.md"`。**
+ * npm 不会因此报错 —— 它只是**安静地少打一个文件进去**,
+ * 于是包页面空白,而 manifest 看起来完全正常。
+ *
+ * 这与本仓一路在追的是同一个形状:**声称与实际之间没有人对账**。
+ * 「契约标 implemented 而 handler 不存在」「Session 标 ✅ 而交付产物不存在」
+ * 「守卫登记了不存在的项目」—— 每一条都是这个形状的一个实例,
+ * 而每一条都曾经绿着。
+ *
+ * ## 判据
+ *
+ * 只判**字面**条目。含 `*` 的通配与 `!` 开头的排除跳过 ——
+ * 它们要展开才能判,而展开的规则(npm 的 glob 方言)与这条守卫想管的事无关。
+ * ⚠️ 跳过的条目**计数并在出口断言**:一个「全都跳过了」的检查与没有检查等价。
+ *
+ * 谁验证它:`verify-guards.mjs` 的 48a(删掉一个被列的文件 → 红)、
+ * 48b(`files` 里加一个不存在的条目 → 红)、
+ * 48c(正向对照:原样放行,且点名自己那条标记)。
+ */
+function checkFilesWhitelistResolves() {
+  /** @type {{file: string, line: number, text: string}[]} */
+  const out = []
+  let literalChecked = 0
+  let globSkipped = 0
+
+  for (const manifest of collectFiles(REPO, isPackageJson)) {
+    const dir = dirname(manifest)
+    /** @type {{name?: string, private?: boolean, files?: string[]}} */
+    let pkg
+    try {
+      pkg = JSON.parse(readFileSync(manifest, 'utf8'))
+    } catch {
+      continue
+    }
+    if (pkg.private === true || pkg.name === undefined) continue
+    if (!Array.isArray(pkg.files)) continue
+
+    for (const entry of pkg.files) {
+      if (typeof entry !== 'string' || entry === '') continue
+      if (entry.startsWith('!') || entry.includes('*')) {
+        globSkipped += 1
+        continue
+      }
+      literalChecked += 1
+      if (!existsSync(join(dir, entry))) {
+        out.push({
+          file: `${repoPath(REPO, manifest)}`,
+          line: 0,
+          text: `${pkg.name} 的 files 里列了 \`${entry}\`,而它不存在 —— npm 会安静地少打一个文件`,
+        })
+      }
+    }
+  }
+
+  // ★ 出口计数:一条「一个字面条目都没判到」的守卫与没有守卫等价,
+  //   而它在输出上与「全部通过」一模一样。
+  if (literalChecked === 0) {
+    out.push({
+      file: 'scripts/check-guards.mjs',
+      line: 0,
+      text: `一个字面 files 条目都没判到(跳过了 ${globSkipped} 个通配)—— 本条空跑了`,
+    })
+  }
+  return out
+}
+
 function checkPublishedDepsAreDeclared() {
   /** @type {{file: string, line: number, text: string}[]} */
   const out = []
@@ -2456,6 +2528,18 @@ if (sdkSync.length === 0) {
   console.log('        「改了契约没重新生成」在 V0.5.0 抓到过一次,那时只有 TS SDK。')
   console.log('        每多一种语言,漏洞面就多一份 —— 断言也必须多一份。')
   for (const h of sdkSync) console.log(`        ${h.file}  ${h.text}`)
+}
+
+const filesWhitelist = checkFilesWhitelistResolves()
+if (filesWhitelist.length === 0) {
+  console.log('  通过  files 白名单里列的文件都真的存在(manifest 不撒谎)')
+} else {
+  failed += 1
+  console.log(`  违规  files 白名单列了不存在的文件  (${filesWhitelist.length} 处)`)
+  console.log('        npm 不会报错 —— 它只是安静地少打一个文件进 tarball,')
+  console.log('        于是包页面空白,而 manifest 看起来完全正常。')
+  console.log('        首发前实测:八个包缺 README,其中六个的 files 里写着它。')
+  for (const h of filesWhitelist) console.log(`        ${h.file}  ${h.text}`)
 }
 
 const sdkCompile = checkSdkCompileJobIntact()

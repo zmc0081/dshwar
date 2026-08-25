@@ -64,6 +64,7 @@ DeepSeek Harness（npm 依赖 @deepseek-ai/dsh-*，精确锁版）
 | **V0.6.5** | **本地模型 + 离线能力**(Ollama / llama.cpp)               | 2 周 | 待启动                                                   |
 | V0.7.0     | 端:Web 工作台 + Tauri 桌面壳(胖客户端)                    | 4 周 | 🔄 **以 V0.9.0 落地**(V0.8.0 先做完,版本号只能递增)      |
 | V0.8.0     | 移动端 SDK **模型**(Kotlin / Swift)                       | 2 周 | ✅ 开发完成(客户端与示例已移出,见下)                     |
+| **V0.9.1** | **首发后的两件小事**(见下)                                | 1 天 | 待启动                                                   |
 | V0.9.5     | 移动端 SDK 客户端与可运行示例(前置:**定下分发渠道**)      | 1 周 | 待启动                                                   |
 
 ### 两条并行轨(不占 Session 编号,不阻塞开发)
@@ -649,8 +650,15 @@ state 匹配才算回调 / 收完等响应落地再兑现)、
 `console-web/test/cost.test.ts`(JPY / KWD 各一条,且都钉「不等于 ÷100 的结果」)、
 `packages/billing-local/src/service.ts`(遇到没配价的模型**拒绝出票**)、
 `docs/DECISIONS/coupled-holes-in-one-field.md`(形状:两个洞为什么必须一起动)、
-`scripts/check-guards.mjs`(新守卫:没有人自带币种指数表)、
-`.changeset/usage-cost-shape.md`(破坏性变更声明与迁移写法)。
+`scripts/check-guards.mjs`(新守卫:没有人自带币种指数表)。
+
+> ⚠️ **本 Session 曾产出一份破坏性变更集,它已经不在仓库里了。**
+> 内容(`UsageRecord` 成本字段换形状的声明与迁移写法)已按 CLAUDE.md 第四节
+> 并入 `CHANGELOG.md` 的 0.9.0 一节,变更集本身在首发清点时删除。
+>
+> 删它的理由不是整理:预标版本号与 changesets 的 bump 模型天然冲突 ——
+> 留着一份 `major` 声明,`changeset version` 会把 **28 个包一次推到 1.0.0**,
+> 于是首发版本号这个决定被工具替人做掉了。
 
 **验收**:
 ① 三种情况在类型层可分:`priced` / `unpriced` / `unbilled` —— **没有一种退化成 0**;
@@ -801,6 +809,56 @@ CI 上 Rust 断言与打包都真的跑(不再是「吵着跳过」)。
 >
 > ⚠️ **macOS 不在 CI 矩阵里**:没签名的 `.dmg` 会被 Gatekeeper 直接拦下,
 > 跑一个装不上的产物只是把 CI 时间花掉。签名进来的那一天再加 `macos-latest`。
+
+---
+
+## <span style="color:#2f6feb">●</span> M0.9.1 · 首发后的两件小事 <span style="color:#2f6feb">[待启动]</span>
+
+> **两件都在首发前的清点里发现,都刻意没在发布前动。**
+> 共同理由:它们**不影响正确性**,而首发前动它们各有各的风险。
+> 「不阻塞发布」与「不重要」是两回事 —— 记在这里,免得变成第二种。
+
+### 1 · `dist/.tsbuildinfo` 不该进 tarball
+
+**现状**:26 个将发布的包的 tarball 里带着 `dist/.tsbuildinfo`
+(多数还带 `.tsbuildinfo.test`,`api-contract` 与 `sdk` 另带 `.tsbuildinfo.scripts`)。
+
+**核实过的边界**:里面**没有绝对路径**(TS 存的是相对路径),
+所以**不是信息泄漏** —— 只是把构建状态、包括**测试的**构建状态发给了用户,
+每个包多几十 KB。
+
+**为什么首发前不动**:一行改动 × 26 个 manifest,而发布前引入 26 处
+配置变更有它自己的风险 —— 收益是几 KB,代价是一次不必要的意外面。
+
+**怎么改**(两种,选一种):
+
+| 做法                                | 代价                           |
+| ----------------------------------- | ------------------------------ |
+| `files` 加 `"!dist/*.tsbuildinfo*"` | 26 个 manifest,不动构建路径    |
+| `tsBuildInfoFile` 挪出 `dist/`      | 26+ 个 tsconfig,改构建产物位置 |
+
+⚠️ 改完**必须重新拆 tarball 核对**,不能只看 `files` 写对了 ——
+这一条正是 `files` 白名单守卫(V0.9.0 加的)管不到的那一半:
+它判「列的东西在不在」,判不了「不该在的东西进没进去」。
+
+### 2 · `@dshwar/auth-pkce` 要不要开源发布
+
+**现状**:`private: true`,只被 private 的前端包消费(`workbench-web`),
+package.json 里**没有一句说明为什么**。
+
+**站得住的理由**:它今天只服务三个宿主,而三个宿主本身不发布。
+
+**站不住的地方**:CLAUDE.md 第八节承诺「开源用户拿到**可用的完整基座**」,
+而自建客户端的人恰恰需要这份 PKCE + loopback 实现 ——
+它是「系统浏览器 + 回环回调」这条路上最容易写错的一段
+(端口绑定校验、码只兑换一次、refresh token 不进浏览器存储)。
+
+**为什么首发后再动**:发布它会动依赖图(private → public 要连带确认
+它的依赖也都是 public 的),而那是发布日不该做的事。
+
+⇒ **无论结论是发还是不发,都要在 package.json 上留一句话。**
+今天的问题不是「private 对不对」,是**没人说得出为什么** ——
+下一个人只能重新推一遍。
 
 ---
 
