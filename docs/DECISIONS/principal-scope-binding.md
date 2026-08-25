@@ -286,6 +286,51 @@ inject 保护拦住,不是路走不通。换成 `ctx.get('probeFs')` 之后立�
 ⇒ 上游 issue 剩下的诉求可能比「同名服务各装一份」更小,
 甚至只是一句文档(说明 `agent.ctx` 是解身份的正路,以及为什么要 `ctx.get()`)。
 
+### ✅ 补测(2026-08-25):装上**上游真实的工具**之后,身份是怎么到达的
+
+上面那次用的是**自写**工具,模拟「上游工具从根 ctx 拿 `ctx.fs`」。
+读源码不等于跑过 —— 所以装了真的:`@deepseek-ai/dsh-tool-fs@0.1.1-rc.2`
+(注册出 `read` / `write` / `edit`)+ `dsh-fs-local`,
+两个 principal 各自 `meta.cwd` 指向自己的工作区,并发各两轮读同名文件。
+
+harness:`docs/UPSTREAM-ISSUE-retest/real-tools.mjs`
+
+**实测 4 次 `fs.resolve`,结果一致:**
+
+| 观察             | 值                                                     |
+| ---------------- | ------------------------------------------------------ |
+| `this.ctx.agent` | **全部 `undefined`** —— 与自写工具那次一致             |
+| `opts.cwd`       | **两个不同的工作区,按会话正确分开**                    |
+| 读到的内容       | alice 拿到 alice 的,bob 拿到 bob 的,**并发两轮无串号** |
+
+#### ⇒ 身份**不经 ctx** 到达 —— 它作为**调用参数**到达
+
+`dsh-tool-fs` 的 `sessionCwd(exec)` 读 `exec.agent.session.header.cwd`,
+把它作为 `opts.cwd` 送进 `ctx.fs.resolve(path, opts)`。上游的原话:
+
+> the calling agent's per-session workspace (`exec.agent.session.header.cwd`),
+> so each session's `read`/`write`/`edit` act on ITS workspace, not the server's
+> launch dir — mirroring how `dsh-tool-bash` defaults a bash `workdir` to the
+> session cwd.
+
+而那个 `header.cwd` 来自创建 agent 时的 **`meta.cwd`**
+(`CreateAgentOptions.meta.cwd`,上游描述为 "validated absolute `cwd`")。
+
+🚨 **这是第三种机制,四条路里一条都没有覆盖到它。**
+当初那四条问的全是「怎么把身份**放进 ctx**」,而上游的答案是
+**根本不放进 ctx,按调用传**。
+
+#### 这对结论意味着什么(待裁决,本节不改结论)
+
+- 逻辑档下**文件这一维**的租户隔离,今天**不需要上游改任何东西**:
+  建会话时把 `meta.cwd` 设成 `{root}/{tenant}/{subject}/{workspace}`,
+  由 `fs-tenant` 守住「解析结果不得逃出该根」。
+- ⚠️ 但这**只证明了 fs 这一维**。`storage-scoped`、`attachment-tenant`、
+  以及**每 principal 的凭据**是另外几维,各有各的到达方式,**都没测**。
+- ⚠️ `gateway/src/runtime.ts` 的 `createAgent` **今天不传 `meta.cwd`**。
+- ⚠️ 而且今天网关**一个工具都没注册**,所以这条路径在真实部署里
+  一次都没发生过 —— 见 `docs/DECISIONS/gateway-registers-no-tools.md`。
+
 ### 遮蔽也不成立(V0.4.6 补测)—— 于是这是架构限制,不是待办
 
 ```
